@@ -31,7 +31,8 @@ class MainActivity : ComponentActivity() {
       receivedSessionId = initialSessionId
     }
 
-    // Initialize the DepthLens Software Update System
+    // Initialize the DepthLens Theme and Software Update Systems
+    com.example.ui.theme.ThemeManager.init(applicationContext)
     GithubUpdateManager.init(applicationContext)
     GithubUpdateManager.checkForUpdates(applicationContext, force = false)
 

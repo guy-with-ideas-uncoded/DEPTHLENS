@@ -109,6 +109,24 @@ object GithubUpdateManager {
         return prefs.getString(KEY_DISMISSED_VER, null)
     }
 
+    fun getInstalledVersion(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val stored = prefs.getString("installed_version", null)
+        if (stored != null) return stored
+        
+        return try {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            packageInfo.versionName ?: "3.0"
+        } catch (e: Exception) {
+            "3.0"
+        }
+    }
+
+    fun setInstalledVersion(context: Context, versionTag: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString("installed_version", versionTag).apply()
+    }
+
     private fun addHistory(context: Context, event: String) {
         val current = _updateHistory.value.toMutableList()
         current.add(0, event)
@@ -215,9 +233,7 @@ object GithubUpdateManager {
                         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                         prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                        val localVersion = packageInfo.versionName ?: "1.0"
-                        
+                        val localVersion = getInstalledVersion(context)
                         val isNew = isNewerVersion(tagName, localVersion)
                         _isChecking.value = false
                         onComplete(isNew, release)
@@ -226,25 +242,18 @@ object GithubUpdateManager {
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
-                    val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                    val localVersion = packageInfo.versionName ?: "1.0"
+                    val localVersion = getInstalledVersion(context)
                     
                     val mockRelease = GitHubRelease(
-                        tagName = "v2.0",
-                        name = "DepthLens Intelligence Core",
-                        publishedAt = "June 4, 2026",
+                        tagName = "v3.0",
+                        name = "DepthLens Intelligence Core v3.0",
+                        publishedAt = "June 5, 2026",
                         body = "### What's New\n" +
-                                "- **Cognitive Continuity Engine v3**: Dramatically improved situational aware context recollection between discussions.\n" +
-                                "- **Real-time Live Audio Processing**: Secure high-fidelity audio capture with animated live spectral visual HUD.\n" +
-                                "- **Quantum Secured Memory Encryption**: Local vector logs are now sealed with military-grade crypto.\n\n" +
-                                "### Bug Fixes\n" +
-                                "- Fixed minor race conditions when analyzing multiple large screenshot attachments simultaneously.\n" +
-                                "- Resolved audio recorder crash on Android 14 devices.\n\n" +
-                                "### Improvements\n" +
-                                "- Optimized UI layout, reducing recomposition frames by 34%.\n" +
-                                "- Enhanced glassmorphic container gradients for better legibility.",
-                        apkUrl = "https://github.com/ashah331/DepthLens/releases/download/v2.0/app-release.apk",
-                        apkFileName = "DepthLens_v2.0_release.apk",
+                                "- **Polished Polar Dawn Theme**: Beautiful light theme visual upgrade with increased contrast and high readability.\n" +
+                                "- **Compact Theme Selector**: Quick & responsive dialog that applies the new theme instantly.\n" +
+                                "- **Automated Update Checking**: Automatically monitors for new versions on startup with status markers in system controls.",
+                        apkUrl = "https://github.com/ashah331/DepthLens/releases/download/v3.0/app-release.apk",
+                        apkFileName = "DepthLens_v3.0_release.apk",
                         apkSize = 41943040L
                     )
                     
@@ -255,7 +264,7 @@ object GithubUpdateManager {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                    val isNew = isNewerVersion("v2.0", localVersion)
+                    val isNew = isNewerVersion("v3.0", localVersion)
                     onComplete(isNew, mockRelease)
                 }
             }
@@ -324,6 +333,7 @@ object GithubUpdateManager {
                         
                         val timeStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
                         addHistory(context, "Successfully downloaded release ${release.tagName} (${timeStr})")
+                        setInstalledVersion(context, release.tagName)
                         
                         Toast.makeText(context, "Integrity verified. Soft launching installer...", Toast.LENGTH_LONG).show()
                         installApk(context, destinationFile)
@@ -368,6 +378,7 @@ object GithubUpdateManager {
                         
                         val timeStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())
                         addHistory(context, "Downloaded release ${release.tagName} (Network Offline Fallback - $timeStr)")
+                        setInstalledVersion(context, release.tagName)
                         
                         Toast.makeText(context, "Offline mockup integrity check complete. Launching installer...", Toast.LENGTH_LONG).show()
                         installApk(context, destinationFile)

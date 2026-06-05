@@ -249,7 +249,7 @@ fun SplashOpeningScreen(
             Text(
                 text = "DEPTHLENS",
                 style = MaterialTheme.typography.headlineMedium,
-                color = Color.White,
+                color = TextPrimaryColor,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 6.sp,
                 fontFamily = FontFamily.SansSerif,

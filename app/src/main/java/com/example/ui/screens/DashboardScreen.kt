@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -97,6 +98,7 @@ fun DashboardScreen(
     }
 
     var showFeedbackDialog by remember { mutableStateOf(false) }
+    var showThemeSelectorDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showReportBugDialog by remember { mutableStateOf(false) }
     
@@ -232,8 +234,7 @@ fun DashboardScreen(
     LaunchedEffect(latestRelease) {
         val rel = latestRelease
         if (rel != null) {
-            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            val curVer = pInfo.versionName ?: "1.0"
+            val curVer = GithubUpdateManager.getInstalledVersion(context)
             if (GithubUpdateManager.isNewerVersion(rel.tagName, curVer)) {
                 val dismissed = GithubUpdateManager.getDismissedVersion(context)
                 if (dismissed != rel.tagName) {
@@ -279,6 +280,9 @@ fun DashboardScreen(
             showFeedbackDialog -> {
                 showFeedbackDialog = false
             }
+            showThemeSelectorDialog -> {
+                showThemeSelectorDialog = false
+            }
             showReportBugDialog -> {
                 showReportBugDialog = false
             }
@@ -322,7 +326,7 @@ fun DashboardScreen(
                         text = "Memory Storage & Privacy",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = TextPrimaryColor,
                         fontFamily = FontFamily.Monospace
                     )
                 }
@@ -353,7 +357,7 @@ fun DashboardScreen(
                                         text = "Memory Engine Enabled",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = TextPrimaryColor
                                     )
                                     Text(
                                         text = if (isMemoryEnabled) "Silent tracking active" else "Context learning suspended",
@@ -380,7 +384,7 @@ fun DashboardScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("Total Memories Compiled:", fontSize = 11.sp, color = TextSecondaryColor)
-                                Text("${memoryInsights.size} nodes cached", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("${memoryInsights.size} nodes cached", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimaryColor)
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -409,7 +413,7 @@ fun DashboardScreen(
                                         text = "Opt-In collective learning",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = TextPrimaryColor
                                     )
                                     Text(
                                         text = "Share anonymous structural patterns with peers.",
@@ -529,7 +533,7 @@ fun DashboardScreen(
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
             containerColor = RichNavy,
-            title = { Text("Purge Cached Memories?", color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 16.sp) },
+            title = { Text("Purge Cached Memories?", color = TextPrimaryColor, fontFamily = FontFamily.Monospace, fontSize = 16.sp) },
             text = { Text("This will permanently discard all ${memoryInsights.size} compiled memory nodes. Future insights won't be contextually adapted. Proceed?", color = TextSecondaryColor, fontSize = 12.sp) },
             confirmButton = {
                 Button(
@@ -555,7 +559,7 @@ fun DashboardScreen(
         AlertDialog(
             onDismissRequest = { showResetConfirm = false },
             containerColor = RichNavy,
-            title = { Text("Wipe All Application Data?", color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 16.sp) },
+            title = { Text("Wipe All Application Data?", color = TextPrimaryColor, fontFamily = FontFamily.Monospace, fontSize = 16.sp) },
             text = { Text("This completely wipes all thread archives, uploaded links, and compiled behaviors. DepthLens will re-initialize to pristine clean states.", color = TextSecondaryColor, fontSize = 12.sp) },
             confirmButton = {
                 Button(
@@ -590,7 +594,7 @@ fun DashboardScreen(
                 isMounted = true
             }
             val scale by animateFloatAsState(
-                targetValue = if (isMounted) 1f else 0.85f,
+                targetValue = if (isMounted) 1f else 0.92f,
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioLowBouncy,
                     stiffness = Spring.StiffnessMedium
@@ -599,17 +603,18 @@ fun DashboardScreen(
             )
             val alpha by animateFloatAsState(
                 targetValue = if (isMounted) 1f else 0f,
-                animationSpec = tween(durationMillis = 200),
+                animationSpec = tween(durationMillis = 220),
                 label = "alpha"
             )
 
             Card(
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = RichNavy),
-                border = BorderStroke(1.5.dp, ElectricViolet.copy(alpha = 0.8f)),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (ThemeManager.isDarkTheme) Color(0xEC14141E) else Color(0xECFFFFFF)
+                ),
+                border = BorderStroke(1.dp, CardBorderColor.copy(alpha = 0.4f)),
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+                    .fillMaxWidth(0.88f)
                     .graphicsLayer(
                         scaleX = scale,
                         scaleY = scale,
@@ -623,97 +628,79 @@ fun DashboardScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Title Header with Glowing Branded Logo
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(64.dp)
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(ElectricViolet.copy(alpha = 0.35f), Color.Transparent)
-                                )
-                            )
+                    // Modern compact header
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(DeepMidnight)
-                                .border(1.5.dp, PremiumCyan, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_depthlens_logo),
-                                contentDescription = "DepthLens Core",
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
+                        Text(
+                            text = "✦ Leave DepthLens?",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = TextPrimaryColor,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 0.5.sp
+                        )
                     }
 
                     Text(
-                        text = "Exit DepthLens?",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 0.5.sp
-                    )
-
-                    Text(
-                        text = "Your conversations and memories are safely saved.\n\nWould you like to exit?",
+                        text = "Your current analysis will remain saved.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondaryColor,
-                        lineHeight = 20.sp,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     // Buttons Layout
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // STAY (Primary / High Prominence)
+                        // EXIT (Primary Linear Gradient Button)
                         Button(
-                            onClick = { showExitConfirm = false },
-                            colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
+                            onClick = {
+                                showExitConfirm = false
+                                val activity = (context as? android.app.Activity)
+                                activity?.finish()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                            contentPadding = PaddingValues(0.dp),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(46.dp)
+                                .background(
+                                    brush = Brush.linearGradient(
+                                        colors = listOf(Color(0xFF7C3AED), Color(0xFF06B6D4))
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
                         ) {
                             Text(
-                                "Stay",
+                                "Exit",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
                         }
 
-                        // EXIT (Secondary / Subtler)
-                        OutlinedButton(
-                            onClick = {
-                                showExitConfirm = false
-                                val activity = (context as? android.app.Activity)
-                                activity?.finish()
-                            },
-                            border = BorderStroke(1.dp, ErrorColor.copy(alpha = 0.6f)),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = Color.Transparent,
-                                contentColor = ErrorColor
-                            ),
-                            shape = RoundedCornerShape(12.dp),
+                        // STAY (Minimal Transparent Text Button)
+                        TextButton(
+                            onClick = { showExitConfirm = false },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(46.dp)
-                         ) {
+                                .height(46.dp),
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color.Transparent)
+                        ) {
                             Text(
-                                "Exit",
+                                "Stay",
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = ErrorColor
+                                fontWeight = FontWeight.Medium,
+                                color = if (ThemeManager.isDarkTheme) Color(0xFF8E8D9F) else Color(0xFF64748B)
                             )
                         }
                     }
@@ -769,7 +756,7 @@ fun DashboardScreen(
                         text = "DEPTHLENS",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = TextPrimaryColor,
                         letterSpacing = 2.sp,
                         fontFamily = FontFamily.Monospace
                     )
@@ -794,7 +781,7 @@ fun DashboardScreen(
                     Text(
                         text = "Most people see the surface.\n\nDepthLens reveals what lies beneath reality.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.9f),
+                        color = TextPrimaryColor,
                         textAlign = TextAlign.Center,
                         lineHeight = 18.sp
                     )
@@ -809,6 +796,160 @@ fun DashboardScreen(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.border(1.2.dp, ElectricViolet, RoundedCornerShape(16.dp))
         )
+    }
+
+    if (showThemeSelectorDialog) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showThemeSelectorDialog = false },
+            properties = androidx.compose.ui.window.DialogProperties(
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true
+            )
+        ) {
+            var isMounted by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                isMounted = true
+            }
+            val scale by animateFloatAsState(
+                targetValue = if (isMounted) 1f else 0.92f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMedium
+                ),
+                label = "scale"
+            )
+            val alpha by animateFloatAsState(
+                targetValue = if (isMounted) 1f else 0f,
+                animationSpec = tween(durationMillis = 220),
+                label = "alpha"
+            )
+
+            Card(
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (ThemeManager.isDarkTheme) Color(0xEC14141E) else Color(0xECFFFFFF)
+                ),
+                border = BorderStroke(1.dp, CardBorderColor.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .padding(16.dp)
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        alpha = alpha
+                    )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.Start,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Appearance",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = TextPrimaryColor,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        val themesList = listOf(
+                            Triple(true, "Deep Midnight", "Dark • Focused • Cinematic"),
+                            Triple(false, "Polar Dawn", "Clean • Bright • Productive")
+                        )
+
+                        themesList.forEach { (isDark, name, desc) ->
+                            val isSelected = ThemeManager.isDarkTheme == isDark
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        ThemeManager.setTheme(context, isDark)
+                                        android.widget.Toast.makeText(context, "Theme Applied: $name", android.widget.Toast.LENGTH_SHORT).show()
+                                        coroutineScope.launch {
+                                            kotlinx.coroutines.delay(500)
+                                            showThemeSelectorDialog = false
+                                        }
+                                    }
+                                    .background(
+                                        color = if (isSelected) {
+                                            if (isDark) Color(0xFF1E1E2E) else Color(0xFFF1F5F9)
+                                        } else Color.Transparent,
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) {
+                                            if (isDark) PremiumCyan.copy(alpha = 0.8f) else Color(0xFFE2E8F0)
+                                        } else Color.Transparent,
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .border(2.dp, if (isSelected) PremiumCyan else if (ThemeManager.isDarkTheme) Color(0xFF475569) else Color(0xFF94A3B8), CircleShape)
+                                        .padding(4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isSelected) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(PremiumCyan, CircleShape)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column {
+                                    Text(
+                                        text = name,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) {
+                                            if (ThemeManager.isDarkTheme) Color.White else Color(0xFF0F172A)
+                                        } else TextSecondaryColor
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = desc,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = if (ThemeManager.isDarkTheme) Color(0xFF8E8D9F) else Color(0xFF64748B)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
+                        TextButton(
+                            onClick = { showThemeSelectorDialog = false },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                "Done",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PremiumCyan
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 
     if (showFeedbackDialog) {
@@ -840,7 +981,7 @@ fun DashboardScreen(
                         Text(
                             "Help us evolve DepthLens. Share suggestions, feature requests, or performance notes directly.",
                             fontSize = 12.sp,
-                            color = Color.White,
+                            color = TextPrimaryColor,
                             lineHeight = 16.sp
                         )
 
@@ -866,7 +1007,7 @@ fun DashboardScreen(
                                         text = cat,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White,
+                                        color = if (isSelected) Color.White else TextPrimaryColor,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
                                     )
                                 }
@@ -883,8 +1024,8 @@ fun DashboardScreen(
                                 .height(100.dp),
                             shape = RoundedCornerShape(8.dp),
                             colors = TextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
+                                focusedTextColor = TextPrimaryColor,
+                                unfocusedTextColor = TextPrimaryColor,
                                 focusedContainerColor = RichNavy,
                                 unfocusedContainerColor = RichNavy,
                                 cursorColor = PremiumCyan,
@@ -902,8 +1043,8 @@ fun DashboardScreen(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp),
                             colors = TextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
+                                focusedTextColor = TextPrimaryColor,
+                                unfocusedTextColor = TextPrimaryColor,
                                 focusedContainerColor = RichNavy,
                                 unfocusedContainerColor = RichNavy,
                                 cursorColor = PremiumCyan,
@@ -929,7 +1070,7 @@ fun DashboardScreen(
                             text = "Thank You!",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = TextPrimaryColor,
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(6.dp))
@@ -1024,7 +1165,7 @@ fun DashboardScreen(
                         Text(
                             "DepthLens automatically registers local systems diagnostic data to trace core issues. No conversation context is shared.",
                             fontSize = 12.sp,
-                            color = Color.White,
+                            color = TextPrimaryColor,
                             lineHeight = 16.sp
                         )
 
@@ -1052,8 +1193,8 @@ fun DashboardScreen(
                                 .height(100.dp),
                             shape = RoundedCornerShape(8.dp),
                             colors = TextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
+                                focusedTextColor = TextPrimaryColor,
+                                unfocusedTextColor = TextPrimaryColor,
                                 focusedContainerColor = RichNavy,
                                 unfocusedContainerColor = RichNavy,
                                 cursorColor = PremiumCyan,
@@ -1064,12 +1205,12 @@ fun DashboardScreen(
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             androidx.compose.material3.Checkbox(
-                                checked = reportBugUserConsented,
-                                onCheckedChange = { reportBugUserConsented = it },
-                                colors = androidx.compose.material3.CheckboxDefaults.colors(
-                                    checkedColor = ElectricViolet,
-                                    uncheckedColor = Color.Gray
-                                )
+                                  checked = reportBugUserConsented,
+                                  onCheckedChange = { reportBugUserConsented = it },
+                                  colors = androidx.compose.material3.CheckboxDefaults.colors(
+                                      checkedColor = ElectricViolet,
+                                      uncheckedColor = Color.Gray
+                                  )
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
@@ -1096,7 +1237,7 @@ fun DashboardScreen(
                             text = "Thank You",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = TextPrimaryColor,
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(6.dp))
@@ -1142,7 +1283,7 @@ fun DashboardScreen(
             dismissButton = {
                 if (!reportBugSubmitted) {
                     TextButton(onClick = { showReportBugDialog = false }) {
-                        Text("Cancel", color = Color.White, fontSize = 12.sp)
+                        Text("Cancel", color = TextSecondaryColor, fontSize = 12.sp)
                     }
                 }
             },
@@ -1169,7 +1310,7 @@ fun DashboardScreen(
                 Column {
                     Text(
                         showPermissionExplanationDialog!!,
-                        color = Color.White,
+                        color = TextPrimaryColor,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
                     )
@@ -1247,7 +1388,7 @@ fun DashboardScreen(
                                     text = "DEPTHLENS",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White,
+                                    color = TextPrimaryColor,
                                     letterSpacing = 1.2.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
@@ -1331,7 +1472,7 @@ fun DashboardScreen(
                                 Text(
                                     text = title,
                                     fontSize = 12.sp,
-                                    color = Color.White.copy(alpha = 0.9f)
+                                    color = SidebarTextColor.copy(alpha = 0.9f)
                                 )
                             },
                             selected = false,
@@ -1353,7 +1494,7 @@ fun DashboardScreen(
                         value = sidebarSearchQuery,
                         onValueChange = { sidebarSearchQuery = it },
                         textStyle = androidx.compose.ui.text.TextStyle(
-                            color = Color.White,
+                            color = SidebarTextColor,
                             fontSize = 13.sp,
                             fontFamily = FontFamily.SansSerif
                         ),
@@ -1382,7 +1523,7 @@ fun DashboardScreen(
                                         Text(
                                             text = "Search conversations...",
                                             fontSize = 13.sp,
-                                            color = TextSecondaryColor.copy(alpha = 0.7f)
+                                            color = PlaceholderColor
                                         )
                                     }
                                     innerTextField()
@@ -1565,7 +1706,7 @@ fun DashboardScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.Settings, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("💡 SYSTEM CONTROLS", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                Text("💡 SYSTEM CONTROLS", fontSize = 11.sp, color = TextPrimaryColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                             }
 
                             Icon(
@@ -1606,7 +1747,7 @@ fun DashboardScreen(
                                                 text = "Collective Learning",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = Color.White
+                                                color = TextPrimaryColor
                                             )
                                         }
                                         
@@ -1656,7 +1797,7 @@ fun DashboardScreen(
                                                 text = "Notifications",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = Color.White
+                                                color = TextPrimaryColor
                                             )
                                         }
                                         
@@ -1689,7 +1830,13 @@ fun DashboardScreen(
                                 Card(
                                     colors = CardDefaults.cardColors(containerColor = SurfaceCardColor),
                                     shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.fillMaxWidth().height(40.dp)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(40.dp)
+                                        .clickable {
+                                            coroutineScope.launch { drawerState.close() }
+                                            showThemeSelectorDialog = true
+                                        }
                                 ) {
                                     Row(
                                         modifier = Modifier
@@ -1700,20 +1847,20 @@ fun DashboardScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Star, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(14.dp))
+                                            Icon(Icons.Default.Star, contentDescription = null, tint = SidebarIconColor, modifier = Modifier.size(14.dp))
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(
                                                 text = "Appearance",
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.SemiBold,
-                                                color = Color.White
+                                                color = SidebarTextColor
                                             )
                                         }
                                         Text(
-                                            text = "Deep Midnight",
+                                            text = if (com.example.ui.theme.ThemeManager.isDarkTheme) "Deep Midnight" else "Polar Dawn",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = PremiumCyan,
+                                            color = ThemeNameColor,
                                             fontFamily = FontFamily.Monospace,
                                             modifier = Modifier.padding(end = 4.dp)
                                         )
@@ -1733,13 +1880,13 @@ fun DashboardScreen(
                                         .height(40.dp),
                                     contentPadding = PaddingValues(10.dp, 4.dp)
                                 ) {
-                                    Icon(Icons.Default.Email, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Default.Email, contentDescription = null, tint = SidebarIconColor, modifier = Modifier.size(14.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "Feedback",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color.White
+                                        color = SidebarTextColor
                                     )
                                 }
 
@@ -1756,13 +1903,13 @@ fun DashboardScreen(
                                         .height(40.dp),
                                     contentPadding = PaddingValues(10.dp, 4.dp)
                                 ) {
-                                    Icon(Icons.Default.Warning, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Default.Warning, contentDescription = null, tint = SidebarIconColor, modifier = Modifier.size(14.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "Report Bug",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color.White
+                                        color = SidebarTextColor
                                     )
                                 }
 
@@ -1779,14 +1926,24 @@ fun DashboardScreen(
                                         .height(40.dp),
                                     contentPadding = PaddingValues(10.dp, 4.dp)
                                 ) {
-                                    Icon(Icons.Default.Lock, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Default.Lock, contentDescription = null, tint = SidebarIconColor, modifier = Modifier.size(14.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "Manage Memory & Privacy",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color.White
+                                        color = SidebarTextColor
                                     )
+                                }
+
+                                val updateStatusText = remember(latestRelease) {
+                                    val curInst = GithubUpdateManager.getInstalledVersion(context)
+                                    val rel = latestRelease
+                                    if (rel != null && GithubUpdateManager.isNewerVersion(rel.tagName, curInst)) {
+                                        "Version $curInst\nUpdate available → ${rel.tagName}"
+                                    } else {
+                                        "Version $curInst\nLatest version installed"
+                                    }
                                 }
 
                                 // Check For Updates button
@@ -1799,16 +1956,18 @@ fun DashboardScreen(
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(40.dp),
-                                    contentPadding = PaddingValues(10.dp, 4.dp)
+                                        .heightIn(min = 40.dp),
+                                    contentPadding = PaddingValues(10.dp, 6.dp)
                                 ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Default.Refresh, contentDescription = null, tint = SidebarIconColor, modifier = Modifier.size(14.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Check For Updates",
-                                        fontSize = 12.sp,
+                                        text = updateStatusText,
+                                        fontSize = 11.sp,
+                                        lineHeight = 14.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color.White
+                                        color = SidebarTextColor,
+                                        modifier = Modifier.weight(1f)
                                     )
                                 }
 
@@ -1825,13 +1984,13 @@ fun DashboardScreen(
                                         .height(40.dp),
                                     contentPadding = PaddingValues(10.dp, 4.dp)
                                 ) {
-                                    Icon(Icons.Default.Info, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Default.Info, contentDescription = null, tint = SidebarIconColor, modifier = Modifier.size(14.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "About DepthLens",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color.White
+                                        color = SidebarTextColor
                                     )
                                 }
                             }
@@ -1851,7 +2010,7 @@ fun DashboardScreen(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 2.sp,
-                                color = Color.White,
+                                color = TextPrimaryColor,
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
@@ -1875,7 +2034,7 @@ fun DashboardScreen(
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                         containerColor = DeepMidnight,
-                        titleContentColor = Color.White,
+                        titleContentColor = TextPrimaryColor,
                         navigationIconContentColor = ElectricViolet,
                         actionIconContentColor = PremiumCyan
                     )
@@ -2011,7 +2170,7 @@ fun DashboardScreen(
                                 ) {
                                     Icon(Icons.Default.Share, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Photo / Image Asset", color = Color.White, fontSize = 12.sp)
+                                    Text("Photo / Image Asset", color = TextPrimaryColor, fontSize = 12.sp)
                                 }
 
                                 Button(
@@ -2027,7 +2186,7 @@ fun DashboardScreen(
                                 ) {
                                     Icon(Icons.Default.List, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("PDF, Video or Data Document", color = Color.White, fontSize = 12.sp)
+                                    Text("PDF, Video or Data Document", color = TextPrimaryColor, fontSize = 12.sp)
                                 }
 
                                 Button(
@@ -2041,7 +2200,7 @@ fun DashboardScreen(
                                 ) {
                                     Icon(Icons.Default.Place, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Live Voice Recording Input", color = Color.White, fontSize = 12.sp)
+                                    Text("Live Voice Recording Input", color = TextPrimaryColor, fontSize = 12.sp)
                                 }
                             }
                         }
@@ -2137,7 +2296,7 @@ fun LandingScreen(
             text = greeting,
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.ExtraBold,
-            color = Color.White,
+            color = TextPrimaryColor,
             textAlign = TextAlign.Center
         )
 
@@ -2146,7 +2305,7 @@ fun LandingScreen(
         Text(
             text = subtitleText,
             style = MaterialTheme.typography.titleMedium,
-            color = PremiumCyan,
+            color = HeroSubtitleColor,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.5.sp,
             textAlign = TextAlign.Center
@@ -2178,19 +2337,19 @@ fun LandingScreen(
                     value = rawText,
                     onValueChange = { rawText = it },
                     placeholder = {
-                        Text(
-                            text = "Describe a situation, relationship tension, or system risk you want to dissect...",
-                            fontSize = 13.sp,
-                            color = TextSecondaryColor,
-                            lineHeight = 18.sp
-                        )
-                    },
+                                                Text(
+                                                    text = "Describe a situation, relationship tension, or system risk you want to dissect...",
+                                                    fontSize = 13.sp,
+                                                    color = PlaceholderColor,
+                                                    lineHeight = 18.sp
+                                                )
+                                            },
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 60.dp, max = 130.dp),
                     colors = TextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
+                        focusedTextColor = TextPrimaryColor,
+                        unfocusedTextColor = TextPrimaryColor,
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,
                         disabledContainerColor = Color.Transparent,
@@ -2233,13 +2392,15 @@ fun LandingScreen(
                         enabled = !isLoading && (rawText.trim().isNotBlank() || attachedImageUri != null),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ElectricViolet,
-                            disabledContainerColor = RichNavy
+                            contentColor = Color.White,
+                            disabledContainerColor = RichNavy,
+                            disabledContentColor = TextSecondaryColor
                         ),
                         shape = RoundedCornerShape(30.dp)
                     ) {
-                        Text("Analyze", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("Analyze", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.White)
+                        Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(12.dp))
                     }
                 }
             }
@@ -2300,7 +2461,7 @@ fun LandingScreen(
                             text = label,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = TextPrimaryColor
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
@@ -2407,7 +2568,7 @@ fun DepthLensDiagnosticCard(
             Text(
                 text = parsed.introduction,
                 fontSize = 13.sp,
-                color = Color.White,
+                color = TextPrimaryColor,
                 lineHeight = 20.sp,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
@@ -2473,7 +2634,7 @@ fun DepthLensDiagnosticCard(
                     Text(
                         text = summary,
                         fontSize = 12.sp,
-                        color = Color.White,
+                        color = TextPrimaryColor,
                         lineHeight = 18.sp
                     )
                 }
@@ -2603,7 +2764,7 @@ fun DepthLensDiagnosticCard(
                                 text = rc.rootCauseEstimate,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color.White,
+                                color = TextPrimaryColor,
                                 lineHeight = 16.sp
                             )
                         }
@@ -2677,7 +2838,7 @@ fun DepthLensDiagnosticCard(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("${sc.codeName} - ${sc.displayName}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("${sc.codeName} - ${sc.displayName}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimaryColor)
                                 Text("${sc.probability}%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = barColor)
                             }
                             Spacer(modifier = Modifier.height(3.dp))
@@ -2905,7 +3066,7 @@ fun DiagnosticIndicatorBlock(label: String, content: String) {
             Text(
                 text = content,
                 fontSize = 11.sp,
-                color = Color.White,
+                color = TextPrimaryColor,
                 lineHeight = 15.sp
             )
         }
@@ -2978,8 +3139,8 @@ fun BottomInputPanel(
                     .heightIn(min = 40.dp, max = 110.dp),
                 maxLines = 4,
                 colors = TextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
+                    focusedTextColor = TextPrimaryColor,
+                    unfocusedTextColor = TextPrimaryColor,
                     focusedContainerColor = RichNavy,
                     unfocusedContainerColor = RichNavy,
                     disabledContainerColor = RichNavy,
@@ -3158,7 +3319,7 @@ fun FileDocumentBubble(uriString: String, mimeType: String) {
         Spacer(modifier = Modifier.width(12.dp))
         
         Column {
-            Text(typeName, fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+            Text(typeName, fontSize = 11.sp, color = TextPrimaryColor, fontWeight = FontWeight.Bold)
             Text("First-class semantic token active", fontSize = 9.sp, color = TextSecondaryColor)
         }
     }
@@ -3229,7 +3390,7 @@ fun AttachmentPreviewItem(
                 text = typeName,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = TextPrimaryColor
             )
             Text(
                 text = "First-class source: Ready for contextual reasoning",
@@ -3291,7 +3452,7 @@ fun RecordingVoiceHud(
         
         Text(
             text = String.format("%02d:%02d", durationSeconds / 60, durationSeconds % 60),
-            color = Color.White,
+            color = TextPrimaryColor,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold
         )
@@ -3356,7 +3517,7 @@ fun ConversationContinuityDashboard(
                         text = "CONVERSATION CONTINUITY ACTIVE",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = TextPrimaryColor,
                         letterSpacing = 1.sp
                     )
                 }
@@ -3566,10 +3727,10 @@ fun DepthLensUpdateAvailableDialog(
                     modifier = Modifier.size(24.dp)
                 )
                 Text(
-                    text = "DepthLens Update Available",
+                    text = "New Version Available",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = TextPrimaryColor,
                     fontFamily = FontFamily.Monospace
                 )
             }
@@ -3695,7 +3856,7 @@ fun DepthLensUpdateAvailableDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Update Now", color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Download", color = Color.White, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
@@ -3741,7 +3902,7 @@ fun SoftwareUpdatesDialog(
                     text = "Software Updates",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = TextPrimaryColor,
                     fontFamily = FontFamily.Monospace
                 )
             }
@@ -3789,7 +3950,7 @@ fun SoftwareUpdatesDialog(
                             Text(
                                 checkStr,
                                 fontSize = 11.sp,
-                                color = Color.White,
+                                color = TextPrimaryColor,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
@@ -3810,7 +3971,7 @@ fun SoftwareUpdatesDialog(
                             text = "Auto Check for Updates",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = TextPrimaryColor
                         )
                         Text(
                             text = "Verify security release updates silently on startup (every 24h).",
@@ -3834,7 +3995,7 @@ fun SoftwareUpdatesDialog(
                 Button(
                     onClick = onManualCheck,
                     enabled = !isChecking,
-                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceCardColor),
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth().height(40.dp),
                     contentPadding = PaddingValues(0.dp)
@@ -3880,7 +4041,7 @@ fun SoftwareUpdatesDialog(
                             Text(
                                 text = "Tag: ${latestRelease.tagName} • ${latestRelease.name}",
                                 fontSize = 11.sp,
-                                color = Color.White,
+                                color = TextPrimaryColor,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
@@ -4013,7 +4174,7 @@ fun SoftwareDownloadProgressBarCard(
                 Text(
                     text = "$percentageStr ($progressMbStr)",
                     fontSize = 11.sp,
-                    color = Color.White,
+                    color = TextPrimaryColor,
                     fontWeight = FontWeight.Bold
                 )
 
@@ -4078,7 +4239,7 @@ fun AnalysisFailureErrorCard(
                     text = "Analysis Couldn't Be Completed",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = TextPrimaryColor
                 )
             }
             
@@ -4173,7 +4334,7 @@ fun InlineLoadingIndicator() {
                 Text(
                     text = "RUNNING RECONSTRUCTION...",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
+                    color = TextPrimaryColor,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     letterSpacing = 1.2.sp

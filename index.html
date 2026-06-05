@@ -463,23 +463,37 @@
     }
 
     #scene-nav {
-      position: absolute; top: 50%; transform: translateY(-50%);
-      width: 100%; display: flex; justify-content: space-between;
-      padding: 0 16px; z-index: 10; pointer-events: none;
+      position: absolute; inset: 0; pointer-events: none; z-index: 100;
     }
     .scene-btn {
-      background: rgba(13, 12, 34, 0.7);
-      border: 1px solid rgba(123, 92, 245, 0.25);
-      color: #fff; border-radius: 50%;
-      width: 32px; height: 32px;
+      width: clamp(42px, 5vw, 56px);
+      height: clamp(42px, 5vw, 56px);
+      border-radius: 50%;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(6,182,212,.25);
+      color: #fff;
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; pointer-events: all;
-      font-size: 16px; transition: all 0.2s;
+      font-size: clamp(20px, 2.5vw, 24px); transition: all 0.25s ease;
+      z-index: 100;
+      box-sizing: border-box;
+      padding: 0;
+      position: absolute;
+      top: 45%;
+      transform: translateY(-50%);
     }
     .scene-btn:hover {
-      background: var(--violet);
-      border-color: var(--violet-bright);
-      box-shadow: 0 0 12px rgba(123, 92, 245, 0.4);
+      transform: translateY(-50%) scale(1.08);
+      border-color: #06B6D4;
+      box-shadow: 0 0 20px rgba(6,182,212,.35);
+    }
+    #btn-prev {
+      left: max(16px, 6%);
+    }
+    #btn-next {
+      right: max(16px, 6%);
     }
 
     #progress-bar {
@@ -607,12 +621,12 @@
       width: 140px; position: relative;
     }
     .step-circle {
-      width: 48px; height: 48px; border-radius: 50%;
+      width: 90px; height: 90px; border-radius: 50%;
       background: var(--deep);
-      border: 1px solid var(--violet);
+      border: 1.5px solid var(--violet);
       display: flex; align-items: center; justify-content: center;
       font-family: 'Space Mono', monospace;
-      font-weight: 700; font-size: 14px;
+      font-weight: 700; font-size: 28px; line-height: 1;
       color: var(--cyan); margin-bottom: 1rem;
       box-shadow: 0 0 16px rgba(123, 92, 245, 0.2);
       transition: all 0.3s;
@@ -620,7 +634,7 @@
     .flow-step:hover .step-circle {
       border-color: var(--cyan);
       box-shadow: 0 0 20px var(--cyan);
-      transform: scale(1.1);
+      transform: scale(1.08);
     }
     .step-name {
       font-size: 13px; font-weight: 700; color: #fff;
@@ -631,7 +645,7 @@
       background: linear-gradient(90deg, rgba(123, 92, 245, 0.4), rgba(0, 229, 255, 0.4));
       position: relative;
       margin: 0 -20px;
-      margin-bottom: 24px;
+      margin-bottom: 45px;
       overflow: hidden;
     }
     .flow-connector::after {
@@ -810,15 +824,304 @@
       font-weight: 300;
     }
 
+    /* Smooth Scrolling */
+    html {
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Scroll Reveal Animations */
+    .reveal {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity 350ms cubic-bezier(0.25, 0.8, 0.25, 1), transform 350ms cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Staggered Cards Scroll Animation */
+    .features-grid .feature-card {
+      opacity: 0;
+      transform: translateY(25px);
+      transition: opacity 400ms cubic-bezier(0.25, 0.8, 0.25, 1), transform 400ms cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    .features-grid.visible .feature-card {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .features-grid.visible .feature-card:nth-child(1) { transition-delay: 0ms; }
+    .features-grid.visible .feature-card:nth-child(2) { transition-delay: 100ms; }
+    .features-grid.visible .feature-card:nth-child(3) { transition-delay: 200ms; }
+    .features-grid.visible .feature-card:nth-child(4) { transition-delay: 300ms; }
+    .features-grid.visible .feature-card:nth-child(5) { transition-delay: 400ms; }
+    .features-grid.visible .feature-card:nth-child(6) { transition-delay: 500ms; }
+
+    /* Button and Tap option Interaction scale feedback */
+    .cta-btn:active, .scene-btn:active, .btn-outline:active, .nav-links a:active, .nav-dot:active {
+      transform: scale(0.97) !important;
+      transition: transform 150ms cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+
+    /* Premium Toggle Switches Styling */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 48px;
+      height: 26px;
+    }
+    .toggle-switch input {
+      opacity: 0; width: 0; height: 0;
+    }
+    .toggle-slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background-color: rgba(255,255,255,0.1);
+      border: 1px solid var(--glass-border);
+      border-radius: 34px;
+      transition: all 300ms cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    .toggle-slider:before {
+      position: absolute; content: "";
+      height: 18px; width: 18px; left: 3px; bottom: 3px;
+      background-color: var(--white);
+      border-radius: 50%;
+      transition: all 300ms cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    input:checked + .toggle-slider {
+      background-color: rgba(123, 92, 245, 0.3);
+      border-color: var(--violet);
+      box-shadow: 0 0 10px rgba(123, 92, 245, 0.4);
+    }
+    input:checked + .toggle-slider:before {
+      transform: translateX(22px);
+      background-color: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    /* Modern Page Transitions utilities */
+    .fade-slide-transition {
+      opacity: 0;
+      transform: translateX(20px);
+      transition: opacity 250ms cubic-bezier(0.25, 0.8, 0.25, 1), transform 250ms cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    .fade-slide-transition.active {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    /* Fluid scaling classes for hero-preview as requested */
+    .preview-container {
+      width: min(95vw, 1400px);
+      max-width: clamp(580px, 60vw, 850px);
+      min-height: clamp(500px, 75vh, 850px);
+      margin: 0 auto;
+    }
+
+    .preview-title {
+      font-size: clamp(2.5rem, 6vw, 6rem);
+    }
+
+    .preview-subtitle {
+      font-size: clamp(1.1rem, 2vw, 1.8rem);
+    }
+
+    .preview-orb {
+      width: clamp(70px, 8vw, 110px);
+      height: clamp(70px, 8vw, 110px);
+    }
+
+
+
+    .preview-content {
+      padding: clamp(1rem, 3vw, 3rem) !important;
+      gap: clamp(1rem, 2vw, 2rem) !important;
+    }
+
+    /* Hamburger Menu Toggle Styles */
+    .btn-hamburger {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      flex-direction: column;
+      gap: 5px;
+      width: 32px;
+      height: 20px;
+      justify-content: space-between;
+      z-index: 101;
+      padding: 0;
+    }
+    .btn-hamburger span {
+      display: block;
+      width: 100%;
+      height: 2px;
+      background: var(--white);
+      border-radius: 2px;
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+
+    .btn-hamburger.active span:nth-child(1) {
+      transform: translateY(7px) rotate(45deg);
+    }
+    .btn-hamburger.active span:nth-child(2) {
+      opacity: 0;
+      transform: translateX(-10px);
+    }
+    .btn-hamburger.active span:nth-child(3) {
+      transform: translateY(-8px) rotate(-45deg);
+    }
+
     /* RESPOND TO MOBILE / MULTIPLE DEVICES */
     @media(max-width: 768px) {
+      .btn-hamburger {
+        display: flex !important;
+      }
+      .nav-links {
+        display: none !important;
+        position: absolute;
+        top: calc(100% + 10px);
+        left: 1.5rem;
+        right: 1.5rem;
+        background: rgba(8, 6, 24, 0.98);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 16px 36px rgba(4, 3, 15, 0.95);
+        flex-direction: column;
+        z-index: 100;
+        opacity: 0;
+        transform: translateY(-10px);
+        transition: opacity 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+      }
+      .nav-links.active {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 12px;
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .nav-links a {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(123, 92, 245, 0.08);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        padding: 14px 10px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--white);
+        text-align: center;
+        transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+        height: 52px; /* Touch target minimum */
+      }
+      .nav-links a:hover, .nav-links a:active {
+        background: var(--violet);
+        border-color: var(--cyan);
+        transform: scale(0.97);
+      }
+
+      /* Compact mobile navigation 2-2-1 grid layout rule */
+      .nav-links a:nth-child(5) {
+        grid-column: span 2;
+        justify-self: center;
+        width: 100%;
+      }
+
       .hero-title { font-size: 30px; letter-spacing: 0.12em; }
       .hero-description { font-size: 15px; }
       .desc-heavy { font-size: 24px; }
       .desc-body { font-size: 15px; }
-      .philosophy-flow { flex-direction: column; gap: 1.5rem; }
-      .flow-connector { width: 1.5px; height: 35px; margin: 0 auto; }
-      .flow-connector::after { animation: lightPulseVertical 3.5s linear infinite; }
+
+      /* Philosophy Section & Container Responsive Fixes */
+      .philosophy-section {
+        width: 100% !important;
+        padding: 4rem 1rem !important;
+      }
+      .philosophy-container {
+        padding: 32px 24px !important;
+        border-radius: 24px !important;
+        width: 100% !important;
+        background: #020108 !important; /* Solid container background instead of glass */
+        border: 1px solid rgba(123, 92, 245, 0.2) !important;
+      }
+
+      /* Philosophy Flow Vertical Journey on Mobile */
+      .philosophy-flow {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        max-width: 250px !important;
+        margin: 0 auto !important;
+        gap: 0 !important;
+        width: 100% !important;
+      }
+      .philosophy-flow .flow-connector {
+        display: block !important;
+        width: 2px !important;
+        height: 28px !important;
+        background: linear-gradient(to bottom, rgba(123, 92, 245, 0.6), rgba(0, 229, 255, 0.6)) !important;
+        margin: 2px 0 2px 25px !important; /* Position center-to-center inline with 52px circles */
+        position: relative !important;
+        overflow: hidden !important;
+        float: none !important;
+      }
+      .philosophy-flow .flow-connector::after {
+        content: '' !important;
+        position: absolute !important;
+        left: 0 !important;
+        top: -100% !important;
+        width: 100% !important;
+        height: 100% !important;
+        background: linear-gradient(to bottom, transparent, #FFF, transparent) !important;
+        animation: lightPulseVertical 2.5s linear infinite !important;
+      }
+      .philosophy-flow .flow-step {
+        width: 100% !important;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        gap: 16px !important;
+        margin: 6px 0 !important;
+      }
+      .philosophy-flow .flow-step .step-circle {
+        width: 52px !important;
+        height: 52px !important;
+        min-width: 52px !important;
+        min-height: 52px !important;
+        border-radius: 50% !important;
+        font-size: 16px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        line-height: 1 !important;
+        margin-bottom: 0 !important;
+      }
+      .philosophy-flow .flow-step .step-name {
+        color: #FFF !important;
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.05em !important;
+        text-transform: uppercase !important;
+        text-align: left !important;
+      }
+
+      /* Preview Frame Resizing for Fluid Mobile Layout */
+      .preview-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-height: auto !important;
+      }
+      #dl-root {
+        min-height: auto !important;
+        height: auto !important;
+        padding: 2.5rem 1rem !important;
+      }
+
       .footer-links { flex-direction: column; gap: 1rem; }
     }
 
@@ -852,11 +1155,20 @@
         </svg>
         <span class="nav-logo-text">DEPTHLENS</span>
       </a>
-      <nav class="nav-links">
+
+      <!-- Hamburger Menu Toggle -->
+      <button class="btn-hamburger" id="menu-toggle" aria-label="Toggle navigation menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav class="nav-links" id="nav-links">
         <a href="#experience">Experience</a>
         <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#about">About</a>
         <a href="#download">Download</a>
-        <a href="https://github.com/madfordiamonds/DEPTHLENS" target="_blank">GitHub</a>
       </nav>
     </div>
   </header>
@@ -890,7 +1202,7 @@
       <p class="section-subtitle">Explore how DepthLens transforms raw information into actionable systems understanding.</p>
 
       <!-- Terminal Emulator Preview Frame -->
-      <div class="device-container">
+      <div class="device-container preview-container">
         <div class="device-header">
           <div class="header-dots">
             <span class="header-dot dot-red"></span>
@@ -901,13 +1213,13 @@
           <span style="opacity:0; width:30px"></span>
         </div>
 
-        <div id="dl-root">
+        <div id="dl-root" class="preview-content">
           <div id="progress-bar" style="width:0%"></div>
           <div class="scene-label" id="scene-lbl">01 / 05 — Intro</div>
 
           <!-- SCENE 0: Lens -->
           <div class="scene active" id="scene-0">
-            <div class="lens-wrap">
+            <div class="lens-wrap preview-orb">
               <div class="ring"></div><div class="ring"></div>
               <div class="ring"></div><div class="ring"></div>
               <div class="lens-core"></div>
@@ -969,7 +1281,7 @@
 
           <!-- SCENE 4: CTA -->
           <div class="scene" id="scene-4">
-            <div class="lens-wrap" style="width:70px;height:70px;margin-bottom:0.25rem">
+            <div class="lens-wrap preview-orb" style="margin-bottom:0.25rem">
               <div class="ring" style="width:70px;height:70px"></div>
               <div class="ring" style="width:54px;height:54px"></div>
               <div class="ring" style="width:38px;height:38px"></div>
@@ -978,16 +1290,16 @@
             <div class="transform-pair">
               <div class="from-word">Confusion</div>
               <div class="arrow-down">↓</div>
-              <div class="to-word">Clarity</div>
+              <div class="to-word preview-title">Clarity</div>
             </div>
-            <div class="cta-word">See What Lies Beneath Reality</div>
+            <div class="cta-word preview-subtitle">See What Lies Beneath Reality</div>
             <div class="dl-logo" style="font-size:18px; margin-top: 0.25rem;">DEPTHLENS</div>
           </div>
 
           <!-- Nav controllers -->
           <div id="scene-nav">
-            <button class="scene-btn" id="btn-prev">‹</button>
-            <button class="scene-btn" id="btn-next">›</button>
+            <button class="scene-btn nav-arrow" id="btn-prev">‹</button>
+            <button class="scene-btn nav-arrow" id="btn-next">›</button>
           </div>
           <div id="nav-dots">
             <div class="nav-dot active" onclick="goScene(0)"></div>
@@ -1003,7 +1315,7 @@
 
   <!-- DESCRIPTION SECTION -->
   <section class="description-section">
-    <div class="container desc-box">
+    <div class="container desc-box reveal">
       <p class="desc-accent">Cognitive Breakthrough</p>
       <h2 class="desc-heavy">
         Most people see the symptoms.<br>
@@ -1019,7 +1331,7 @@
   <section class="features-section" id="features">
     <div class="container">
       <h2 class="section-title" style="margin-left: auto; margin-right: auto; display: block; text-align: center; margin-bottom: 3.5rem;">Core Intelligence Capabilities</h2>
-      <div class="features-grid">
+      <div class="features-grid reveal">
         <!-- Card 1 -->
         <div class="feature-card">
           <div class="card-icon-wrap">🔍</div>
@@ -1064,7 +1376,7 @@
   <section class="philosophy-section">
     <div class="container">
       <h2 class="section-title" style="margin-bottom: 3.5rem;">Intelligence Philosophy</h2>
-      <div class="philosophy-container">
+      <div class="philosophy-container reveal">
         <div class="philosophy-flow">
           <!-- Item 1 -->
           <div class="flow-step">
@@ -1104,6 +1416,46 @@
     </div>
   </section>
 
+  <!-- PRICING SECTION -->
+  <section class="pricing-section reveal" id="pricing" style="padding: 5rem 0; border-top: 1px solid rgba(123, 92, 245, 0.1);">
+    <div class="container" style="text-align: center;">
+      <h2 class="section-title" style="margin-bottom: 3.5rem;">Transparent Pricing</h2>
+      <div style="max-width: 450px; margin: 0 auto; background: var(--glass); backdrop-filter: blur(12px); border: 1px solid rgba(0, 229, 255, 0.3); border-radius: 20px; padding: 3rem 2rem; box-shadow: 0 16px 36px rgba(4, 3, 15, 0.6), 0 0 24px rgba(0, 229, 255, 0.1);">
+        <p class="desc-accent" style="margin-bottom: 0.5rem;">Open Source</p>
+        <h3 style="font-size: 32px; font-weight: 800; color: #fff; margin-bottom: 1rem;">Community Edition</h3>
+        <div style="font-size: 48px; font-weight: 800; color: var(--cyan); margin-bottom: 1.5rem;">$0 <span style="font-size: 16px; color: var(--muted); font-weight: 400;">/ forever</span></div>
+        <ul style="list-style: none; display: flex; flex-direction: column; gap: 0.8rem; text-align: left; margin-bottom: 2.2rem; color: var(--muted); font-size: 14px; padding: 0;">
+          <li style="display: flex; gap: 10px; align-items: center;">✓ 100% Client-Side Data Privacy</li>
+          <li style="display: flex; gap: 10px; align-items: center;">✓ Offline-First Intelligence Engine</li>
+          <li style="display: flex; gap: 10px; align-items: center;">✓ Full SQLite local backup verification</li>
+          <li style="display: flex; gap: 10px; align-items: center;">✓ Unlimited custom scenario analyses</li>
+        </ul>
+        <a href="#download" class="cta-btn" style="width: 100%; justify-content: center;">Get Started Now</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ABOUT SECTION -->
+  <section class="about-section reveal" id="about" style="padding: 6rem 0; border-top: 1px solid rgba(123, 92, 245, 0.1); background: linear-gradient(to bottom, transparent, rgba(8, 6, 24, 0.3), transparent);">
+    <div class="container desc-box">
+      <p class="desc-accent" style="color: var(--violet-bright);">Our Mission</p>
+      <h2 class="desc-heavy">Built for <em>uncompromised</em> systemic clarity.</h2>
+      <p class="desc-body" style="margin-bottom: 2.5rem;">
+        DepthLens began as an engineering effort to bypass cognitive noise, logical fallacies, and surface-level system behavior. We believe that critical reasoning, systemic analysis, and deep self-reflection belong completely to the individual. Our technology operates fully offline, protecting your intellectual processes on your device.
+      </p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; max-width: 600px; margin: 0 auto; text-align: center;">
+        <div style="background: rgba(255,255,255,0.02); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+          <div style="font-size: 32px; font-weight: 800; color: var(--cyan);">100%</div>
+          <div style="font-size: 12px; color: var(--muted); margin-top: 5px;">Offline-First</div>
+        </div>
+        <div style="background: rgba(255,255,255,0.02); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+          <div style="font-size: 32px; font-weight: 800; color: var(--violet-bright);">Zero</div>
+          <div style="font-size: 12px; color: var(--muted); margin-top: 5px;">Server Telemetry</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- DOWNLOAD SECTION -->
   <section class="download-section" id="download">
     <div class="container">
@@ -1120,17 +1472,26 @@
   <!-- CHANGELOG SECTION -->
   <section class="changelog-section">
     <div class="container">
-      <div class="changelog-box">
+      <div class="changelog-box reveal">
         <div class="changelog-header-row">
-          <span class="changelog-title">Latest Version</span>
-          <span class="changelog-tag" id="changelog-version">v1.1</span>
+          <span class="changelog-title">LATEST VERSION</span>
+          <span class="changelog-tag" id="changelog-version">v3.0 — Polished Clarity</span>
         </div>
+        <p style="font-size: 14px; line-height: 1.5; color: var(--cyan); font-weight: 500; margin-bottom: 1.5rem;">
+          Better readability, smarter updates, improved mobile experience, and a cleaner UI.
+        </p>
         <h4 class="changelog-notes-title">What's New</h4>
         <ul class="changelog-list" id="changelog-notes">
-          <li>✓ 🛡️ Complete SQLite verification & automatic pre-upgrade diagnostics backups (Minor & Major update preservation).</li>
-          <li>✓ 🔗 Streamlined single-action share flows and report content clipboard compilation.</li>
-          <li>✓ 📈 Optimized Future Probability model metrics layout.</li>
-          <li>✓ 🔄 Quick Regenerate indicators directly on primary insights feeds.</li>
+          <li>✓ Fixed readability and contrast issues in Polar Dawn theme</li>
+          <li>✓ Redesigned theme selector into a compact popup</li>
+          <li>✓ Themes now apply instantly when selected</li>
+          <li>✓ Added smarter update detection and version validation</li>
+          <li>✓ Automatic update checks on app startup</li>
+          <li>✓ Prevented repeated update prompts after installation</li>
+          <li>✓ Added "Latest Version Installed" status</li>
+          <li>✓ Improved mobile responsiveness and navigation layout</li>
+          <li>✓ Enhanced settings, spacing, and accessibility</li>
+          <li>✓ Performance improvements, stability updates, and bug fixes</li>
         </ul>
         <a href="https://github.com/madfordiamonds/DEPTHLENS/releases" class="btn-outline" target="_blank">
           <span>View Full Changelog</span>
@@ -1310,8 +1671,53 @@
       }
     }
     
-    // Trigger on load
-    window.addEventListener('DOMContentLoaded', fetchChangelog);
+    // Mobile navigation toggle
+    const menuToggle = document.getElementById('menu-toggle');
+    const navLinks = document.getElementById('nav-links');
+    if (menuToggle && navLinks) {
+      menuToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        menuToggle.classList.toggle('active');
+        navLinks.classList.toggle('active');
+      });
+      document.addEventListener('click', (e) => {
+        if (!navLinks.contains(e.target) && !menuToggle.contains(e.target)) {
+          menuToggle.classList.remove('active');
+          navLinks.classList.remove('active');
+        }
+      });
+      navLinks.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', () => {
+          menuToggle.classList.remove('active');
+          navLinks.classList.remove('active');
+        });
+      });
+    }
+
+    // Scroll Reveal & Stagger Animation with Intersection Observer
+    document.addEventListener('DOMContentLoaded', () => {
+      const observerOptions = {
+        root: null,
+        rootMargin: '0px',
+        threshold: 0.12
+      };
+
+      const revealObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, observerOptions);
+
+      // Register elements to reveal
+      const revealElements = document.querySelectorAll('.reveal, .features-grid, .philosophy-flow');
+      revealElements.forEach(el => revealObserver.observe(el));
+    });
+
+    // Fallback getter commented out to preserve curated, beautiful v3.0 release records
+    // window.addEventListener('DOMContentLoaded', fetchChangelog);
   </script>
 </body>
 </html>
