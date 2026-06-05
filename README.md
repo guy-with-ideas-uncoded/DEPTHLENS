@@ -4,7 +4,7 @@
 
 🚀 Live Website
 
-https://madfordiamonds.github.io/DEPTHLENS/
+https://shorturl.at/TDOZi
 
 ---
 
