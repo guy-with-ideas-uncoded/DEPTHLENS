@@ -1,477 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DepthLens — See Beyond The Surface</title>
+  <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/madfordiamonds/DEPTHLENS/main/app/src/main/res/drawable/ic_depthlens_logo.xml">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
 
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=Space+Mono:wght@400;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --void: #04030F;
+      --deep: #080618;
+      --mid: #0D0C22;
+      --violet: #7B5CF5;
+      --violet-bright: #9D7FFF;
+      --cyan: #00E5FF;
+      --cyan-dim: #00B8CC;
+      --white: #F0EEFF;
+      --muted: rgba(240, 238, 255, 0.45);
+      --glass: rgba(13, 12, 34, 0.65);
+      --glass-border: rgba(123, 92, 245, 0.15);
+      --glass-hover: rgba(123, 92, 245, 0.25);
+    }
 
-  :root {
-    --void: #04030F;
-    --deep: #080618;
-    --mid: #0D0C22;
-    --violet: #7B5CF5;
-    --violet-bright: #9D7FFF;
-    --cyan: #00E5FF;
-    --cyan-dim: #00B8CC;
-    --white: #F0EEFF;
-    --muted: rgba(240,238,255,0.45);
-    --ring: rgba(123,92,245,0.25);
-  }
+    body {
+      background: var(--void);
+      color: var(--white);
+      font-family: 'Sora', sans-serif;
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
 
-  #dl-root {
-    font-family: 'Sora', sans-serif;
-    background: var(--void);
-    color: var(--white);
-    min-height: 600px;
-    overflow: hidden;
-    position: relative;
-    border-radius: 12px;
-  }
+    /* Ambient background glows */
+    .ambient-glow-1 {
+      position: absolute; width: 450px; height: 450px; top: -150px; left: -15%,;
+      background: radial-gradient(circle, rgba(123, 92, 245, 0.15) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
+    .ambient-glow-2 {
+      position: absolute; width: 500px; height: 500px; top: 40%; right: -10%;
+      background: radial-gradient(circle, rgba(0, 229, 255, 0.08) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
+    .ambient-glow-3 {
+      position: absolute; width: 600px; height: 600px; bottom: 10%; left: -10%;
+      background: radial-gradient(circle, rgba(123, 92, 245, 0.08) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
 
-  canvas#stars {
-    position: absolute; inset: 0;
-    pointer-events: none;
-    z-index: 0;
-  }
+    /* Canvas background */
+    canvas#stars {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
 
-  .scene {
-    position: absolute; inset: 0;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    padding: 2rem;
-    text-align: center;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.7s ease;
-    z-index: 2;
-  }
-  .scene.active {
-    opacity: 1;
-    pointer-events: all;
-  }
+    /* Layout helper wrappers */
+    .container {
+      width: 100%;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+      position: relative;
+      z-index: 1;
+    }
 
-  /* SCENE 0 — Lens + tagline */
-  #scene-0 { gap: 2rem; }
+    /* Header Nav */
+    header {
+      position: absolute;
+      top: 0; left: 0; width: 100%;
+      padding: 1.5rem 0;
+      z-index: 10;
+    }
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+    .nav-logo svg {
+      width: 32px; height: 32px;
+    }
+    .nav-logo-text {
+      font-family: 'Space Mono', monospace;
+      font-size: 16px; font-weight: 700;
+      letter-spacing: 0.15em;
+      color: #fff;
+    }
+    .nav-links {
+      display: flex; gap: 1.5rem;
+    }
+    .nav-links a {
+      color: var(--muted); text-decoration: none; font-size: 13px;
+      transition: color 0.3s; font-weight: 500;
+    }
+    .nav-links a:hover {
+      color: var(--cyan);
+    }
 
-  .lens-wrap {
-    position: relative;
-    width: 160px; height: 160px;
-    display: flex; align-items: center; justify-content: center;
-  }
+    /* SECTION 1: HERO */
+    .hero-section {
+      padding-top: 8rem;
+      padding-bottom: 4rem;
+      text-align: center;
+      position: relative;
+    }
 
-  .ring {
-    position: absolute;
-    border-radius: 50%;
-    border: 1px solid;
-    animation: spin linear infinite;
-  }
-  .ring:nth-child(1){ width:160px;height:160px;border-color:rgba(123,92,245,0.5);animation-duration:14s; }
-  .ring:nth-child(2){ width:128px;height:128px;border-color:rgba(0,229,255,0.4);animation-duration:10s;animation-direction:reverse; }
-  .ring:nth-child(3){ width:96px;height:96px;border-color:rgba(123,92,245,0.35);animation-duration:7s; }
-  .ring:nth-child(4){ width:64px;height:64px;border-color:rgba(0,229,255,0.5);animation-duration:5s;animation-direction:reverse; }
+    /* Modern Logo Pulsing Animation */
+    .logo-container {
+      position: relative;
+      display: inline-block;
+      margin-bottom: 1.5rem;
+      width: 110px; height: 110px;
+    }
+    .logo-glow {
+      position: absolute; inset: -15px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(0, 225, 255, 0.4) 0%, rgba(123, 92, 245, 0.2) 60%, transparent 100%);
+      filter: blur(14px);
+      z-index: 1;
+      animation: logoGlowBreathing 4s ease-in-out infinite;
+    }
+    .main-logo-svg {
+      width: 110px; height: 110px;
+      position: relative; z-index: 2;
+      filter: drop-shadow(0 0 16px rgba(123, 92, 245, 0.6));
+      animation: mainLogoFloat 6s ease-in-out infinite;
+    }
+    .main-logo-svg .eye-outer {
+      stroke-dasharray: 400;
+      animation: drawOuterEye 3s ease-out forwards;
+    }
+    .main-logo-svg .iris-circle {
+      animation: irisBreathing 4s ease-in-out infinite;
+      transform-origin: 54px 54px;
+    }
 
-  .lens-core {
-    width: 40px; height: 40px; border-radius: 50%;
-    background: radial-gradient(circle, var(--cyan) 0%, var(--violet) 70%);
-    box-shadow: 0 0 24px var(--violet), 0 0 48px rgba(0,229,255,0.3);
-    z-index: 1;
-    animation: pulse 2.4s ease-in-out infinite;
-  }
+    @keyframes logoGlowBreathing {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.25); opacity: 1; filter: blur(20px); }
+    }
+    @keyframes mainLogoFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-7px); }
+    }
+    @keyframes irisBreathing {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.15); opacity: 1; stroke-width: 4px; }
+    }
+    @keyframes drawOuterEye {
+      from { stroke-dashoffset: 400; }
+      to { stroke-dashoffset: 0; }
+    }
 
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes pulse {
-    0%,100%{ box-shadow:0 0 20px var(--violet),0 0 40px rgba(0,229,255,0.2); }
-    50%{ box-shadow:0 0 36px var(--violet-bright),0 0 70px rgba(0,229,255,0.5); }
-  }
+    /* Hero Headline & Subtitles */
+    .hero-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 42px; font-weight: 800;
+      letter-spacing: 0.18em;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(90deg, #F0EEFF 20%, var(--violet-bright) 50%, var(--cyan) 80%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      animation: fadeInHero 1s ease-out;
+    }
+    .hero-tagline {
+      font-size: 15px; color: var(--cyan); letter-spacing: 0.18em;
+      text-transform: uppercase; font-weight: 700;
+      margin-bottom: 1.5rem;
+      animation: fadeInHero 1.3s ease-out;
+    }
+    .hero-description {
+      font-size: 18px; color: var(--muted); font-weight: 300;
+      max-width: 680px; margin: 0 auto;
+      line-height: 1.6;
+      margin-bottom: 2.5rem;
+      animation: fadeInHero 1.5s ease-out;
+    }
+    .hero-description em {
+      color: #fff; font-style: normal; font-weight: 600;
+    }
 
-  .dl-logo {
-    font-family: 'Space Mono', monospace;
-    font-size: 28px; font-weight: 700;
-    letter-spacing: 0.18em;
-    background: linear-gradient(90deg, var(--violet-bright), var(--cyan));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  .dl-tagline {
-    font-size: 13px; color: var(--muted); letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
+    @keyframes fadeInHero {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
 
-  /* SCENE 1 — Problem */
-  #scene-1 { gap: 1.4rem; }
+    /* SECTION 2: INTERACTIVE EXPERIENCE CONTAINER */
+    .experience-section {
+      padding: 4rem 0;
+      text-align: center;
+    }
+    .section-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 24px; font-weight: 700;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.5rem;
+      color: #fff;
+      display: inline-block;
+      text-transform: uppercase;
+      position: relative;
+    }
+    .section-title::after {
+      content: '';
+      position: absolute; bottom: -8px; left: 25%; width: 50%; height: 2px;
+      background: linear-gradient(90deg, var(--violet), var(--cyan));
+    }
+    .section-subtitle {
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 1rem;
+      margin-bottom: 2.5rem;
+    }
 
-  .noise-grid {
-    display: grid; grid-template-columns: repeat(3,1fr); gap: 8px;
-    width: 100%; max-width: 340px;
-  }
-  .noise-card {
-    background: rgba(255,255,255,0.04);
-    border: 0.5px solid rgba(255,255,255,0.1);
-    border-radius: 8px; padding: 12px 10px;
-    font-size: 11px; color: var(--muted);
-    animation: flicker 3s ease-in-out infinite;
-    text-align: left;
-  }
-  .noise-card:nth-child(odd){ animation-delay: 0.5s; }
-  .noise-card:nth-child(3n){ animation-delay: 1s; }
-  .noise-card .nc-label{ font-size: 9px; color: rgba(255,255,255,0.3); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.08em; }
+    /* Device frame wrapper for demo presentation */
+    .device-container {
+      width: 100%;
+      max-width: 580px;
+      margin: 0 auto;
+      background: rgba(8, 6, 24, 0.85);
+      border: 1px solid rgba(123, 92, 245, 0.25);
+      border-radius: 16px;
+      box-shadow: 0 24px 64px rgba(4, 3, 15, 0.9), 0 0 40px rgba(123, 92, 245, 0.1);
+      overflow: hidden;
+    }
+    .device-header {
+      background: rgba(13, 12, 34, 0.95);
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(123, 92, 245, 0.15);
+    }
+    .header-dots {
+      display: flex; gap: 6px;
+    }
+    .header-dot {
+      width: 8.5px; height: 8.5px; border-radius: 50%;
+    }
+    .dot-red { background: #FF5F56; }
+    .dot-yellow { background: #FFBD2E; }
+    .dot-green { background: #27C93F; }
+    .header-title-indicator {
+      font-family: 'Space Mono', monospace;
+      font-size: 10.5px; color: var(--muted);
+      letter-spacing: 0.1em;
+    }
 
-  @keyframes flicker {
-    0%,100%{ opacity:1; } 45%{ opacity:0.6; } 50%{ opacity:1; } 70%{ opacity:0.8; }
-  }
+    #dl-root {
+      font-family: 'Sora', sans-serif;
+      background: #020108;
+      color: var(--white);
+      min-height: 480px;
+      overflow: hidden;
+      position: relative;
+      padding: 2.5rem 1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
 
-  .big-statement {
-    font-size: 20px; font-weight: 300; line-height: 1.5;
-    max-width: 380px;
-  }
-  .big-statement strong { font-weight: 700; color: var(--white); }
-  em { font-style: normal; color: var(--cyan); }
+    .scene {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 1.5rem;
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+      z-index: 2;
+    }
+    .scene.active {
+      opacity: 1;
+      pointer-events: all;
+    }
 
-  /* SCENE 2 — Layers */
-  #scene-2 { gap: 1.2rem; }
+    /* SCENE 0 — Lens + tagline */
+    #scene-0 { gap: 1.22rem; }
 
-  .layers-stack {
-    display: flex; flex-direction: column; gap: 7px;
-    width: 100%; max-width: 360px;
-  }
+    .lens-wrap {
+      position: relative;
+      width: 140px; height: 140px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 0.5rem;
+    }
 
-  .layer-card {
-    display: flex; align-items: center; gap: 12px;
-    background: rgba(123,92,245,0.07);
-    border: 0.5px solid rgba(123,92,245,0.25);
-    border-radius: 8px; padding: 10px 14px;
-    transform: translateX(-30px);
-    opacity: 0;
-    transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-    font-size: 13px; font-weight: 400;
-  }
-  .layer-card.shown {
-    transform: translateX(0);
-    opacity: 1;
-  }
-  .layer-dot {
-    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  }
-  .layer-card:nth-child(1) .layer-dot { background: var(--cyan); }
-  .layer-card:nth-child(2) .layer-dot { background: #7BF5C0; }
-  .layer-card:nth-child(3) .layer-dot { background: var(--violet-bright); }
-  .layer-card:nth-child(4) .layer-dot { background: #F5A07B; }
-  .layer-card:nth-child(5) .layer-dot { background: #F57BE8; }
-  .layer-card:nth-child(6) .layer-dot { background: var(--cyan-dim); }
-  .layer-card:nth-child(7) .layer-dot { background: #F5C87B; }
+    .ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 1px solid;
+      animation: spin linear infinite;
+    }
+    .ring:nth-child(1){ width:140px;height:140px;border-color:rgba(123,92,245,0.45);animation-duration:14s; }
+    .ring:nth-child(2){ width:112px;height:112px;border-color:rgba(0,229,255,0.35);animation-duration:10s;animation-direction:reverse; }
+    .ring:nth-child(3){ width:84px;height:84px;border-color:rgba(123,92,245,0.3);animation-duration:7s; }
+    .ring:nth-child(4){ width:56px;height:56px;border-color:rgba(0,229,255,0.45);animation-duration:5s;animation-direction:reverse; }
 
-  /* SCENE 3 — Probability */
-  #scene-3 { gap: 1.4rem; }
+    .lens-core {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: radial-gradient(circle, var(--cyan) 0%, var(--violet) 70%);
+      box-shadow: 0 0 20px var(--violet), 0 0 40px rgba(0,229,255,0.3);
+      z-index: 1;
+      animation: pulse 2.4s ease-in-out infinite;
+    }
 
-  .prob-canvas-wrap {
-    width: 100%; max-width: 380px;
-    position: relative;
-  }
-  .prob-canvas-wrap canvas { display: block; width: 100%; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse {
+      0%,100%{ box-shadow:0 0 20px var(--violet),0 0 40px rgba(0,229,255,0.2); }
+      50%{ box-shadow:0 0 36px var(--violet-bright),0 0 70px rgba(0,229,255,0.5); }
+    }
 
-  .prob-labels {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 8px; width: 100%; max-width: 380px;
-    margin-top: 4px;
-  }
-  .prob-label {
-    font-size: 11px; display: flex; align-items: center; gap: 6px;
-  }
-  .prob-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink:0; }
+    .dl-logo {
+      font-family: 'Space Mono', monospace;
+      font-size: 24px; font-weight: 700;
+      letter-spacing: 0.2em;
+      background: linear-gradient(90deg, var(--violet-bright), var(--cyan));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .dl-tagline {
+      font-size: 11px; color: var(--muted); letter-spacing: 0.15em;
+      text-transform: uppercase; font-weight: 600;
+    }
 
-  /* SCENE 4 — CTA */
-  #scene-4 { gap: 2rem; }
+    /* SCENE 1 — Problem */
+    #scene-1 { gap: 1.2rem; }
 
-  .cta-word {
-    font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase;
-    color: var(--muted);
-    display: flex; align-items: center; gap: 10px;
-  }
-  .cta-word:before,.cta-word:after{
-    content:''; flex:1; height:0.5px;
-    background: linear-gradient(90deg, transparent, rgba(123,92,245,0.5));
-  }
-  .cta-word:after{ background: linear-gradient(90deg, rgba(123,92,245,0.5), transparent); }
+    .noise-grid {
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 8px;
+      width: 100%; max-width: 380px;
+      margin-bottom: 0.5rem;
+    }
+    .noise-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px; padding: 10px 8px;
+      font-size: 11px; color: var(--muted);
+      animation: flicker 4s ease-in-out infinite;
+      text-align: left;
+    }
+    .noise-card:nth-child(odd){ animation-delay: 0.5s; }
+    .noise-card:nth-child(3n){ animation-delay: 1.2s; }
+    .noise-card .nc-label{ font-size: 8px; color: var(--cyan); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.08em; font-weight:700; }
 
-  .transform-pair {
-    display: flex; flex-direction: column; gap: 4px;
-    align-items: center;
-  }
-  .from-word {
-    font-size: 34px; font-weight: 700;
-    color: rgba(240,238,255,0.35);
-    text-decoration: line-through;
-    text-decoration-color: rgba(123,92,245,0.5);
-    letter-spacing: -0.02em;
-  }
-  .to-word {
-    font-size: 40px; font-weight: 700;
-    background: linear-gradient(90deg, var(--violet-bright), var(--cyan));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    letter-spacing: -0.02em;
-  }
-  .arrow-down { color: var(--violet); font-size: 20px; }
+    @keyframes flicker {
+      0%,100%{ opacity:1; } 45%{ opacity:0.55; } 50%{ opacity:1; } 75%{ opacity:0.75; }
+    }
 
-  /* Nav dots */
-  #nav-dots {
-    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 8px; z-index: 10;
-  }
-  .nav-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: rgba(255,255,255,0.2);
-    cursor: pointer; transition: all 0.3s;
-  }
-  .nav-dot.active {
-    background: var(--violet-bright);
-    box-shadow: 0 0 8px var(--violet);
-  }
+    .big-statement {
+      font-size: 16px; font-weight: 300; line-height: 1.5;
+      max-width: 440px; color: rgba(240, 238, 255, 0.8);
+    }
+    .big-statement strong { font-weight: 700; color: var(--white); }
+    em { font-style: normal; color: var(--cyan); font-weight: 600; }
 
-  /* Prev/Next */
-  #scene-nav {
-    position: absolute; top: 50%; transform: translateY(-50%);
-    width: 100%; display: flex; justify-content: space-between;
-    padding: 0 12px; z-index: 10; pointer-events: none;
-  }
-  .scene-btn {
-    background: rgba(123,92,245,0.15);
-    border: 0.5px solid rgba(123,92,245,0.35);
-    color: var(--white); border-radius: 50%;
-    width: 32px; height: 32px;
-    display: flex; align-items: center; justify-content: center;
-    cursor: pointer; pointer-events: all;
-    font-size: 14px; transition: all 0.2s;
-  }
-  .scene-btn:hover { background: rgba(123,92,245,0.35); }
+    /* SCENE 2 — Layers */
+    #scene-2 { gap: 1rem; }
 
-  /* Progress bar */
-  #progress-bar {
-    position: absolute; top: 0; left: 0; height: 2px;
-    background: linear-gradient(90deg, var(--violet), var(--cyan));
-    transition: width 0.6s ease;
-    z-index: 10;
-  }
+    .layers-stack {
+      display: flex; flex-direction: column; gap: 6px;
+      width: 100%; max-width: 380px;
+    }
 
-  /* Scene labels */
-  .scene-label {
-    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
-    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
-    color: rgba(240,238,255,0.3);
-    font-family: 'Space Mono', monospace;
-    z-index: 10;
-    white-space: nowrap;
-  }
-</style>
+    .layer-card {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(123,92,245,0.06);
+      border: 1px solid rgba(123,92,245,0.2);
+      border-radius: 8px; padding: 9px 12px;
+      transform: translateX(-20px);
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+      font-size: 12px; font-weight: 500;
+      text-align: left;
+    }
+    .layer-card.shown {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    .layer-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .layer-card:nth-child(1) .layer-dot { background: var(--cyan); }
+    .layer-card:nth-child(2) .layer-dot { background: #7BF5C0; }
+    .layer-card:nth-child(3) .layer-dot { background: var(--violet-bright); }
+    .layer-card:nth-child(4) .layer-dot { background: #F5A07B; }
+    .layer-card:nth-child(5) .layer-dot { background: #F57BE8; }
+    .layer-card:nth-child(6) .layer-dot { background: var(--cyan-dim); }
+    .layer-card:nth-child(7) .layer-dot { background: #F5C87B; }
 
-<div id="dl-root">
+    /* SCENE 3 — Probability */
+    #scene-3 { gap: 1.2rem; }
+
+    .prob-canvas-wrap {
+      width: 100%; max-width: 400px;
+      position: relative;
+    }
+    .prob-canvas-wrap canvas { display: block; width: 100%; }
+
+    .prob-labels {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 6px; width: 100%; max-width: 400px;
+      margin-top: 2px;
+    }
+    .prob-label {
+      font-size: 10px; display: flex; align-items: center; gap: 5px; text-align: left;
+    }
+    .prob-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink:0; }
+
+    /* SCENE 4 — CTA */
+    #scene-4 { gap: 1.4rem; }
+
+    .cta-word {
+      font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--muted); font-weight: 700;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .cta-word:before,.cta-word:after{
+      content:''; flex:1; height:0.5px;
+      background: linear-gradient(90deg, transparent, rgba(123,92,245,0.4));
+    }
+    .cta-word:after{ background: linear-gradient(90deg, rgba(123,92,245,0.4), transparent); }
+
+    .transform-pair {
+      display: flex; flex-direction: column; gap: 2px;
+      align-items: center;
+    }
+    .from-word {
+      font-size: 30px; font-weight: 700;
+      color: rgba(240,238,255,0.25);
+      text-decoration: line-through;
+      text-decoration-color: rgba(123,92,245,0.4);
+      letter-spacing: -0.02em;
+    }
+    .to-word {
+      font-size: 36px; font-weight: 800;
+      background: linear-gradient(90deg, var(--violet-bright), var(--cyan));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+    .arrow-down { color: var(--violet); font-size: 18px; line-height: 1; }
+
+    /* Nav controllers */
+    #nav-dots {
+      position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 8px; z-index: 10;
+    }
+    .nav-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: rgba(255, 255, 255, 0.18);
+      cursor: pointer; transition: all 0.3s;
+    }
+    .nav-dot.active {
+      background: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan);
+      width: 8px; height: 8px;
+    }
+
+    #scene-nav {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      width: 100%; display: flex; justify-content: space-between;
+      padding: 0 16px; z-index: 10; pointer-events: none;
+    }
+    .scene-btn {
+      background: rgba(13, 12, 34, 0.7);
+      border: 1px solid rgba(123, 92, 245, 0.25);
+      color: #fff; border-radius: 50%;
+      width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; pointer-events: all;
+      font-size: 16px; transition: all 0.2s;
+    }
+    .scene-btn:hover {
+      background: var(--violet);
+      border-color: var(--violet-bright);
+      box-shadow: 0 0 12px rgba(123, 92, 245, 0.4);
+    }
+
+    #progress-bar {
+      position: absolute; top: 0; left: 0; height: 3px;
+      background: linear-gradient(90deg, var(--violet), var(--cyan));
+      transition: width 0.6s ease;
+      z-index: 10;
+    }
+
+    .scene-label {
+      position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+      font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      z-index: 10;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+
+
+    /* SECTION 3: BEAUTIFUL DESCRIPTION */
+    .description-section {
+      padding: 6rem 0;
+      text-align: center;
+      border-top: 1px solid rgba(123, 92, 245, 0.1);
+      background: linear-gradient(to bottom, transparent, rgba(8, 6, 24, 0.4), transparent);
+    }
+    .desc-box {
+      max-width: 800px; margin: 0 auto;
+    }
+    .desc-accent {
+      font-family: 'Space Mono', monospace;
+      font-size: 13px; font-weight: 700; color: var(--cyan);
+      text-transform: uppercase; letter-spacing: 0.2em;
+      margin-bottom: 1.5rem;
+    }
+    .desc-heavy {
+      font-size: 32px; font-weight: 800; line-height: 1.4;
+      margin-bottom: 2rem; color: #fff;
+    }
+    .desc-heavy em {
+      background: linear-gradient(120deg, var(--violet-bright), var(--cyan));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      font-style: normal;
+    }
+    .desc-body {
+      font-size: 17px; color: var(--muted);
+      max-width: 660px; margin: 0 auto;
+      line-height: 1.8; font-weight: 300;
+    }
+
+
+    /* SECTION 4: GLASSMORPHISM FEATURE CARDS */
+    .features-section {
+      padding: 5rem 0;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.8rem;
+    }
+    .feature-card {
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 2.2rem 2rem;
+      transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+      position: relative;
+      overflow: hidden;
+    }
+    .feature-card::before {
+      content: '';
+      position: absolute; top:0; left:0; width:100%; height:100%;
+      background: linear-gradient(135deg, rgba(157, 127, 255, 0.05) 0%, transparent 100%);
+      opacity: 0; transition: opacity 0.4s; pointer-events: none;
+    }
+    .feature-card:hover {
+      transform: translateY(-8px) scale(1.03);
+      border-color: rgba(0, 229, 255, 0.4);
+      box-shadow: 0 16px 36px rgba(4, 3, 15, 0.6), 0 0 24px rgba(0, 229, 255, 0.15);
+    }
+    .feature-card:hover::before {
+      opacity: 1;
+    }
+    .card-icon-wrap {
+      font-size: 26px; margin-bottom: 1.25rem;
+      display: inline-block;
+    }
+    .card-title {
+      font-size: 18px; font-weight: 700;
+      color: #fff; margin-bottom: 0.75rem;
+      letter-spacing: 0.02em;
+    }
+    .card-desc {
+      font-size: 13.5px; color: var(--muted);
+      line-height: 1.6; font-weight: 300;
+    }
+
+
+    /* SECTION 5: PHILOSOPHY FLOW */
+    .philosophy-section {
+      padding: 6rem 0;
+      text-align: center;
+      position: relative;
+    }
+    .philosophy-container {
+      max-width: 880px; margin: 0 auto;
+      background: rgba(13, 12, 34, 0.4);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 3.5rem 2rem;
+      position: relative;
+    }
+    .philosophy-flow {
+      display: flex;
+      justify-content: space-evenly;
+      align-items: center;
+      position: relative;
+      z-index: 2;
+    }
+    .flow-step {
+      display: flex; flex-direction: column; align-items: center;
+      width: 140px; position: relative;
+    }
+    .step-circle {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: var(--deep);
+      border: 1px solid var(--violet);
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Space Mono', monospace;
+      font-weight: 700; font-size: 14px;
+      color: var(--cyan); margin-bottom: 1rem;
+      box-shadow: 0 0 16px rgba(123, 92, 245, 0.2);
+      transition: all 0.3s;
+    }
+    .flow-step:hover .step-circle {
+      border-color: var(--cyan);
+      box-shadow: 0 0 20px var(--cyan);
+      transform: scale(1.1);
+    }
+    .step-name {
+      font-size: 13px; font-weight: 700; color: #fff;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .flow-connector {
+      flex: 1; height: 1.5px;
+      background: linear-gradient(90deg, rgba(123, 92, 245, 0.4), rgba(0, 229, 255, 0.4));
+      position: relative;
+      margin: 0 -20px;
+      margin-bottom: 24px;
+      overflow: hidden;
+    }
+    .flow-connector::after {
+      content: '';
+      position: absolute; top:0; left:-100%; width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, #FFF, transparent);
+      animation: lightPulse 3.5s linear infinite;
+    }
+
+    @keyframes lightPulse {
+      0% { left: -100%; }
+      50% { left: 100%; }
+      100% { left: 100%; }
+    }
+
+
+    /* SECTION 6: DOWNLOAD CONTAINER */
+    .download-section {
+      padding: 6rem 0;
+      text-align: center;
+      position: relative;
+    }
+    .download-card {
+      max-width: 720px; margin: 0 auto;
+      background: radial-gradient(circle at top left, rgba(123, 92, 245, 0.15) 0%, rgba(13, 12, 34, 0.8) 70%);
+      border: 1px solid rgba(123, 92, 245, 0.3);
+      border-radius: 24px;
+      padding: 4rem 2rem;
+      box-shadow: 0 32px 80px rgba(4, 3, 15, 0.8), 0 0 40px rgba(0, 229, 255, 0.08);
+    }
+    .download-card h2 {
+      font-size: 28px; font-weight: 800; color: #fff;
+      margin-bottom: 1rem; letter-spacing: 0.02em;
+    }
+    .download-card p {
+      color: var(--muted); margin-bottom: 2.2rem;
+      font-size: 15px; font-weight: 300;
+      max-width: 500px; margin-left: auto; margin-right: auto;
+    }
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: linear-gradient(90deg, var(--violet), var(--violet-bright));
+      color: #fff;
+      font-weight: 700;
+      text-decoration: none;
+      padding: 1.1rem 2.6rem;
+      border-radius: 30px;
+      font-size: 15px;
+      letter-spacing: 0.05em;
+      box-shadow: 0 12px 28px rgba(123, 92, 245, 0.4), 0 0 16px rgba(0, 229, 255, 0.1);
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    .cta-btn:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 16px 36px rgba(123, 92, 245, 0.55), 0 0 24px rgba(0, 229, 255, 0.25);
+      background: linear-gradient(90deg, var(--violet-bright), var(--cyan));
+    }
+
+
+    /* SECTION 7: CHANGELOG SECTION */
+    .changelog-section {
+      padding: 4rem 0;
+    }
+    .changelog-box {
+      max-width: 680px; margin: 0 auto;
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 2.5rem;
+    }
+    .changelog-header-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      border-bottom: 1px solid rgba(240, 238, 255, 0.08);
+      padding-bottom: 1rem; margin-bottom: 1.5rem;
+    }
+    .changelog-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 15px; color: var(--cyan);
+      font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .changelog-tag {
+      background: rgba(0, 229, 255, 0.12);
+      border: 1.5px solid var(--cyan);
+      border-radius: 6px;
+      color: var(--cyan);
+      font-family: 'Space Mono', monospace;
+      font-size: 12.5px; font-weight: 700;
+      padding: 4px 10px;
+    }
+    .changelog-notes-title {
+      font-size: 14px; font-weight: 700; color: #fff;
+      margin-bottom: 1rem; letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .changelog-list {
+      list-style-type: none;
+      display: flex; flex-direction: column; gap: 0.75rem;
+      margin-bottom: 2rem;
+    }
+    .changelog-list li {
+      font-size: 13.5px; color: var(--muted);
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .changelog-list li::before {
+      content: '✓';
+      color: var(--cyan); font-weight: 700;
+    }
+    .btn-outline {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid rgba(240, 238, 255, 0.2);
+      border-radius: 20px;
+      padding: 8px 18px;
+      font-size: 12px; font-weight: 600;
+      text-decoration: none;
+      transition: all 0.3s;
+    }
+    .btn-outline:hover {
+      color: #fff;
+      border-color: #fff;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+
+    /* FOOTER */
+    footer {
+      background: #020108;
+      border-top: 1px solid rgba(123, 92, 245, 0.15);
+      padding: 5rem 0 2.5rem 0;
+      text-align: center;
+    }
+    .footer-logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 8.5px;
+      text-decoration: none;
+      margin-bottom: 1.5rem;
+    }
+    .footer-logo-text {
+      font-family: 'Space Mono', monospace;
+      font-size: 20px; font-weight: 700;
+      letter-spacing: 0.15em; color: #fff;
+    }
+    .footer-motto {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px; color: var(--cyan);
+      text-transform: uppercase; letter-spacing: 0.2em;
+      margin-bottom: 0.75rem; font-weight: 700;
+    }
+    .footer-desc {
+      font-size: 13px; color: var(--muted);
+      max-width: 420px; margin: 0 auto;
+      margin-bottom: 2.2rem; line-height: 1.6;
+    }
+    .footer-links {
+      display: flex; justify-content: center; gap: 2rem;
+      margin-bottom: 3rem;
+    }
+    .footer-links a {
+      color: var(--muted); text-decoration: none; font-size: 13.5px;
+      transition: color 0.3s; font-weight: 500;
+    }
+    .footer-links a:hover {
+      color: var(--cyan);
+    }
+    .footer-copyright {
+      font-size: 12px; color: rgba(240, 238, 255, 0.2);
+      font-weight: 300;
+    }
+
+    /* RESPOND TO MOBILE / MULTIPLE DEVICES */
+    @media(max-width: 768px) {
+      .hero-title { font-size: 30px; letter-spacing: 0.12em; }
+      .hero-description { font-size: 15px; }
+      .desc-heavy { font-size: 24px; }
+      .desc-body { font-size: 15px; }
+      .philosophy-flow { flex-direction: column; gap: 1.5rem; }
+      .flow-connector { width: 1.5px; height: 35px; margin: 0 auto; }
+      .flow-connector::after { animation: lightPulseVertical 3.5s linear infinite; }
+      .footer-links { flex-direction: column; gap: 1rem; }
+    }
+
+    @keyframes lightPulseVertical {
+      0% { top: -100%; }
+      50% { top: 100%; }
+      100% { top: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ambient Glow Effects -->
+  <div class="ambient-glow-1"></div>
+  <div class="ambient-glow-2"></div>
+  <div class="ambient-glow-3"></div>
+
+  <!-- Space field fixed bg -->
   <canvas id="stars"></canvas>
-  <div id="progress-bar" style="width:0%"></div>
-  <div class="scene-label" id="scene-lbl">01 / 05 — Intro</div>
 
-  <!-- SCENE 0: Lens -->
-  <div class="scene active" id="scene-0">
-    <div class="lens-wrap">
-      <div class="ring"></div><div class="ring"></div>
-      <div class="ring"></div><div class="ring"></div>
-      <div class="lens-core"></div>
+  <!-- NAVIGATION HEADER -->
+  <header>
+    <div class="container nav-bar">
+      <a href="#" class="nav-logo">
+        <svg viewBox="0 0 108 108" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M 24,54 C 39,33 69,33 84,54 C 69,75 39,75 24,54 Z" stroke="#8B5CF6" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M 54,54 m -15,0 a 15,15 0 1,1 30,0 a 15,15 0 1,1 -30,0" stroke="#00D9FF" stroke-width="4" />
+          <path d="M 43.4,64.6 L 64.6,43.4" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round" />
+          <path d="M 48.7,59.3 m -4.5,0 a 4.5,4.5 0 1,1 9,0 a 4.5,4.5 0 1,1 -9,0" fill="#071326" stroke="#00D9FF" stroke-width="2.5" />
+          <path d="M 59.3,48.7 m -4.5,0 a 4.5,4.5 0 1,1 9,0 a 4.5,4.5 0 1,1 -9,0" fill="#071326" stroke="#00D9FF" stroke-width="2.5" />
+        </svg>
+        <span class="nav-logo-text">DEPTHLENS</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#experience">Experience</a>
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="https://github.com/madfordiamonds/DEPTHLENS" target="_blank">GitHub</a>
+      </nav>
     </div>
-    <div class="dl-logo">DEPTHLENS</div>
-    <div class="big-statement">Most people see the <em>surface</em>.<br>DepthLens sees what lies <strong>beneath</strong>.</div>
-    <div class="dl-tagline">Reality Intelligence Engine</div>
-  </div>
+  </header>
 
-  <!-- SCENE 1: Problem -->
-  <div class="scene" id="scene-1">
-    <div class="noise-grid">
-      <div class="noise-card"><div class="nc-label">Messages</div>Why does this keep happening?</div>
-      <div class="noise-card"><div class="nc-label">Reports</div>Q4 revenue down 18%…</div>
-      <div class="noise-card"><div class="nc-label">Decisions</div>Should I leave this job?</div>
-      <div class="noise-card"><div class="nc-label">Data</div>Signals unclear…</div>
-      <div class="noise-card"><div class="nc-label">Emotions</div>Can't figure this out</div>
-      <div class="noise-card"><div class="nc-label">Systems</div>Patterns repeating again</div>
+  <!-- HERO SECTION -->
+  <section class="hero-section">
+    <div class="container">
+      <div class="logo-container">
+        <div class="logo-glow"></div>
+        <svg class="main-logo-svg" viewBox="0 0 108 108" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path class="eye-outer" d="M 24,54 C 39,33 69,33 84,54 C 69,75 39,75 24,54 Z" stroke="#8B5CF6" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+          <path class="iris-circle" d="M 54,54 m -15,0 a 15,15 0 1,1 30,0 a 15,15 0 1,1 -30,0" stroke="#00D9FF" stroke-width="4" />
+          <path d="M 43.4,64.6 L 64.6,43.4" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round" />
+          <path d="M 48.7,59.3 m -4.5,0 a 4.5,4.5 0 1,1 9,0 a 4.5,4.5 0 1,1 -9,0" fill="#071326" stroke="#00D9FF" stroke-width="2.5" />
+          <path d="M 59.3,48.7 m -4.5,0 a 4.5,4.5 0 1,1 9,0 a 4.5,4.5 0 1,1 -9,0" fill="#071326" stroke="#00D9FF" stroke-width="2.5" />
+        </svg>
+      </div>
+
+      <h1 class="hero-title">DEPTHLENS</h1>
+      <p class="hero-tagline">See Beyond The Surface</p>
+      <p class="hero-description">
+        A premium <em>Reality Intelligence Platform</em> designed to reveal hidden patterns, root causes, incentives, strategic levers, and the absolute reality beneath complex systems.
+      </p>
     </div>
-    <div class="big-statement">
-      We're surrounded by <em>information</em>.<br>
-      But information is <strong>not</strong> understanding.
+  </section>
+
+  <!-- INTERACTIVE EXPERIENCE -->
+  <section class="experience-section" id="experience">
+    <div class="container">
+      <h2 class="section-title">Experience DepthLens</h2>
+      <p class="section-subtitle">Explore how DepthLens transforms raw information into actionable systems understanding.</p>
+
+      <!-- Terminal Emulator Preview Frame -->
+      <div class="device-container">
+        <div class="device-header">
+          <div class="header-dots">
+            <span class="header-dot dot-red"></span>
+            <span class="header-dot dot-yellow"></span>
+            <span class="header-dot dot-green"></span>
+          </div>
+          <span class="header-title-indicator">depthlens_interactive_preview.sh</span>
+          <span style="opacity:0; width:30px"></span>
+        </div>
+
+        <div id="dl-root">
+          <div id="progress-bar" style="width:0%"></div>
+          <div class="scene-label" id="scene-lbl">01 / 05 — Intro</div>
+
+          <!-- SCENE 0: Lens -->
+          <div class="scene active" id="scene-0">
+            <div class="lens-wrap">
+              <div class="ring"></div><div class="ring"></div>
+              <div class="ring"></div><div class="ring"></div>
+              <div class="lens-core"></div>
+            </div>
+            <div class="dl-logo">DEPTHLENS</div>
+            <div class="big-statement">Most people see the <em>surface</em>.<br>DepthLens sees what lies <strong>beneath</strong>.</div>
+            <div class="dl-tagline">Reality Intelligence Engine</div>
+          </div>
+
+          <!-- SCENE 1: Problem -->
+          <div class="scene" id="scene-1">
+            <div class="noise-grid">
+              <div class="noise-card"><div class="nc-label">Messages</div>Why does this keep happening?</div>
+              <div class="noise-card"><div class="nc-label">Reports</div>Q4 revenue down 18%…</div>
+              <div class="noise-card"><div class="nc-label">Decisions</div>Should I leave this job?</div>
+              <div class="noise-card"><div class="nc-label">Data</div>Signals unclear…</div>
+              <div class="noise-card"><div class="nc-label">Emotions</div>Can't figure this out</div>
+              <div class="noise-card"><div class="nc-label">Systems</div>Patterns repeating again</div>
+            </div>
+            <div class="big-statement">
+              We're surrounded by <em>information</em>.<br>
+              But information is <strong>not</strong> understanding.
+            </div>
+          </div>
+
+          <!-- SCENE 2: Layers -->
+          <div class="scene" id="scene-2">
+            <div style="font-size:12px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;font-weight:700">Reality Intelligence Layers</div>
+            <div class="layers-stack" id="layers-stack">
+              <div class="layer-card"><div class="layer-dot"></div>Observable Reality</div>
+              <div class="layer-card"><div class="layer-dot"></div>Emotional Reality</div>
+              <div class="layer-card"><div class="layer-dot"></div>Psychological Reality</div>
+              <div class="layer-card"><div class="layer-dot"></div>Strategic Reality</div>
+              <div class="layer-card"><div class="layer-dot"></div>Systems Reality</div>
+              <div class="layer-card"><div class="layer-dot"></div>Pattern Recognition</div>
+              <div class="layer-card"><div class="layer-dot"></div>Root Cause</div>
+            </div>
+            <div class="big-statement" style="font-size:13px;margin-top:6px">
+              Every answer becomes a doorway to <em>deeper understanding</em>.
+            </div>
+          </div>
+
+          <!-- SCENE 3: Probability -->
+          <div class="scene" id="scene-3">
+            <div style="font-size:12px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;font-weight:700">Future Probability Engine</div>
+            <div class="prob-canvas-wrap">
+              <canvas id="prob-canvas" height="150"></canvas>
+            </div>
+            <div class="prob-labels">
+              <div class="prob-label"><div class="prob-dot" style="background:#00E5FF"></div><span style="color:var(--muted)">Most Likely Path</span></div>
+              <div class="prob-label"><div class="prob-dot" style="background:#7BF5A0"></div><span style="color:var(--muted)">Positive Shift</span></div>
+              <div class="prob-label"><div class="prob-dot" style="background:#F57B7B"></div><span style="color:var(--muted)">Negative Escalation</span></div>
+              <div class="prob-label"><div class="prob-dot" style="background:#F5C87B"></div><span style="color:var(--muted)">Unexpected Outcome</span></div>
+            </div>
+            <div class="big-statement" style="font-size:13px;margin-top:4px">
+              See where current patterns lead — <em>before they happen</em>.
+            </div>
+          </div>
+
+          <!-- SCENE 4: CTA -->
+          <div class="scene" id="scene-4">
+            <div class="lens-wrap" style="width:70px;height:70px;margin-bottom:0.25rem">
+              <div class="ring" style="width:70px;height:70px"></div>
+              <div class="ring" style="width:54px;height:54px"></div>
+              <div class="ring" style="width:38px;height:38px"></div>
+              <div class="lens-core" style="width:18px;height:18px"></div>
+            </div>
+            <div class="transform-pair">
+              <div class="from-word">Confusion</div>
+              <div class="arrow-down">↓</div>
+              <div class="to-word">Clarity</div>
+            </div>
+            <div class="cta-word">See What Lies Beneath Reality</div>
+            <div class="dl-logo" style="font-size:18px; margin-top: 0.25rem;">DEPTHLENS</div>
+          </div>
+
+          <!-- Nav controllers -->
+          <div id="scene-nav">
+            <button class="scene-btn" id="btn-prev">‹</button>
+            <button class="scene-btn" id="btn-next">›</button>
+          </div>
+          <div id="nav-dots">
+            <div class="nav-dot active" onclick="goScene(0)"></div>
+            <div class="nav-dot" onclick="goScene(1)"></div>
+            <div class="nav-dot" onclick="goScene(2)"></div>
+            <div class="nav-dot" onclick="goScene(3)"></div>
+            <div class="nav-dot" onclick="goScene(4)"></div>
+          </div>
+        </div>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <!-- SCENE 2: Layers -->
-  <div class="scene" id="scene-2">
-    <div style="font-size:13px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:4px">Reality Intelligence Layers</div>
-    <div class="layers-stack" id="layers-stack">
-      <div class="layer-card"><div class="layer-dot"></div>Observable Reality</div>
-      <div class="layer-card"><div class="layer-dot"></div>Emotional Reality</div>
-      <div class="layer-card"><div class="layer-dot"></div>Psychological Reality</div>
-      <div class="layer-card"><div class="layer-dot"></div>Strategic Reality</div>
-      <div class="layer-card"><div class="layer-dot"></div>Systems Reality</div>
-      <div class="layer-card"><div class="layer-dot"></div>Pattern Recognition</div>
-      <div class="layer-card"><div class="layer-dot"></div>Root Cause</div>
+  <!-- DESCRIPTION SECTION -->
+  <section class="description-section">
+    <div class="container desc-box">
+      <p class="desc-accent">Cognitive Breakthrough</p>
+      <h2 class="desc-heavy">
+        Most people see the symptoms.<br>
+        <em>DepthLens reveals the reality.</em>
+      </h2>
+      <p class="desc-body">
+        Whether analyzing a difficult decision, interpersonal relationships, systems engineering, startup strategy, or lifelong repeating patterns—DepthLens bypasses surface-level assumptions. It structures thinking models to uncover truth, reveal incentives, map feedback loops, and output actionable intelligence.
+      </p>
     </div>
-    <div class="big-statement" style="font-size:15px;margin-top:4px">
-      Every answer becomes a doorway to <em>deeper understanding</em>.
+  </section>
+
+  <!-- FEATURE CARDS -->
+  <section class="features-section" id="features">
+    <div class="container">
+      <h2 class="section-title" style="margin-left: auto; margin-right: auto; display: block; text-align: center; margin-bottom: 3.5rem;">Core Intelligence Capabilities</h2>
+      <div class="features-grid">
+        <!-- Card 1 -->
+        <div class="feature-card">
+          <div class="card-icon-wrap">🔍</div>
+          <h3 class="card-title">Root Cause Analysis</h3>
+          <p class="card-desc">Move past surface symptoms. Identify drivers, chain actions, and the exact initial conditions that trigger repeating situations.</p>
+        </div>
+        <!-- Card 2 -->
+        <div class="feature-card">
+          <div class="card-icon-wrap">🧠</div>
+          <h3 class="card-title">Psychology Intelligence</h3>
+          <p class="card-desc">Unpack hidden motives, unconscious behavioral drivers, emotional loops, and relationship dynamics under a scientific lens.</p>
+        </div>
+        <!-- Card 3 -->
+        <div class="feature-card">
+          <div class="card-icon-wrap">📈</div>
+          <h3 class="card-title">Future Probability Engine</h3>
+          <p class="card-desc">Map timeline directions based on current momentum. Predict leaks, risks, favorable events, and unintended consequences early.</p>
+        </div>
+        <!-- Card 4 -->
+        <div class="feature-card">
+          <div class="card-icon-wrap">🌐</div>
+          <h3 class="card-title">Systems Thinking</h3>
+          <p class="card-desc">Understand recursive feedback loops, nested delays, dependencies, and complex incentive models operating around you.</p>
+        </div>
+        <!-- Card 5 -->
+        <div class="feature-card">
+          <div class="card-icon-wrap">⚡</div>
+          <h3 class="card-title">Strategic Reasoning</h3>
+          <p class="card-desc">Evaluate strategic positioning, structural leverage points, and second/third-order effects before making high-stakes decisions.</p>
+        </div>
+        <!-- Card 6 -->
+        <div class="feature-card">
+          <div class="card-icon-wrap">💾</div>
+          <h3 class="card-title">Adaptive Memory</h3>
+          <p class="card-desc">Secure local intelligence cache compiling persistent insights. Learns your contexts completely offline to grow smarter over time.</p>
+        </div>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <!-- SCENE 3: Probability -->
-  <div class="scene" id="scene-3">
-    <div style="font-size:13px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase">Future Probability Engine</div>
-    <div class="prob-canvas-wrap">
-      <canvas id="prob-canvas" height="180"></canvas>
+  <!-- PHILOSOPHY SECTION -->
+  <section class="philosophy-section">
+    <div class="container">
+      <h2 class="section-title" style="margin-bottom: 3.5rem;">Intelligence Philosophy</h2>
+      <div class="philosophy-container">
+        <div class="philosophy-flow">
+          <!-- Item 1 -->
+          <div class="flow-step">
+            <div class="step-circle">01</div>
+            <span class="step-name">Information</span>
+          </div>
+          <!-- Line -->
+          <div class="flow-connector"></div>
+          <!-- Item 2 -->
+          <div class="flow-step">
+            <div class="step-circle">02</div>
+            <span class="step-name">Insight</span>
+          </div>
+          <!-- Line -->
+          <div class="flow-connector"></div>
+          <!-- Item 3 -->
+          <div class="flow-step">
+            <div class="step-circle">03</div>
+            <span class="step-name">Understanding</span>
+          </div>
+          <!-- Line -->
+          <div class="flow-connector"></div>
+          <!-- Item 4 -->
+          <div class="flow-step">
+            <div class="step-circle">04</div>
+            <span class="step-name">Better Decisions</span>
+          </div>
+          <!-- Line -->
+          <div class="flow-connector"></div>
+          <!-- Item 5 -->
+          <div class="flow-step">
+            <div class="step-circle">05</div>
+            <span class="step-name">Better Outcomes</span>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="prob-labels">
-      <div class="prob-label"><div class="prob-dot" style="background:#00E5FF"></div><span style="color:var(--muted)">Most Likely Path</span></div>
-      <div class="prob-label"><div class="prob-dot" style="background:#7BF5A0"></div><span style="color:var(--muted)">Positive Shift</span></div>
-      <div class="prob-label"><div class="prob-dot" style="background:#F57B7B"></div><span style="color:var(--muted)">Negative Escalation</span></div>
-      <div class="prob-label"><div class="prob-dot" style="background:#F5C87B"></div><span style="color:var(--muted)">Unexpected Outcome</span></div>
+  </section>
+
+  <!-- DOWNLOAD SECTION -->
+  <section class="download-section" id="download">
+    <div class="container">
+      <div class="download-card">
+        <h2>Ready to See Beyond the Surface?</h2>
+        <p>Get DepthLens for Android. Secure, private-by-default local database structure ensuring 100% data client-side ownership.</p>
+        <a href="https://github.com/madfordiamonds/DEPTHLENS/releases/latest" class="cta-btn" target="_blank">
+          <span>⬇ Download DepthLens APK</span>
+        </a>
+      </div>
     </div>
-    <div class="big-statement" style="font-size:15px">
-      See where current patterns lead — <em>before they happen</em>.
+  </section>
+
+  <!-- CHANGELOG SECTION -->
+  <section class="changelog-section">
+    <div class="container">
+      <div class="changelog-box">
+        <div class="changelog-header-row">
+          <span class="changelog-title">Latest Version</span>
+          <span class="changelog-tag" id="changelog-version">v1.1</span>
+        </div>
+        <h4 class="changelog-notes-title">What's New</h4>
+        <ul class="changelog-list" id="changelog-notes">
+          <li>✓ 🛡️ Complete SQLite verification & automatic pre-upgrade diagnostics backups (Minor & Major update preservation).</li>
+          <li>✓ 🔗 Streamlined single-action share flows and report content clipboard compilation.</li>
+          <li>✓ 📈 Optimized Future Probability model metrics layout.</li>
+          <li>✓ 🔄 Quick Regenerate indicators directly on primary insights feeds.</li>
+        </ul>
+        <a href="https://github.com/madfordiamonds/DEPTHLENS/releases" class="btn-outline" target="_blank">
+          <span>View Full Changelog</span>
+        </a>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <!-- SCENE 4: CTA -->
-  <div class="scene" id="scene-4">
-    <div class="lens-wrap" style="width:80px;height:80px">
-      <div class="ring" style="width:80px;height:80px"></div>
-      <div class="ring" style="width:60px;height:60px"></div>
-      <div class="ring" style="width:40px;height:40px"></div>
-      <div class="lens-core" style="width:22px;height:22px"></div>
+  <!-- FOOTER -->
+  <footer>
+    <div class="container">
+      <a href="#" class="footer-logo">
+        <svg viewBox="0 0 108 108" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M 24,54 C 39,33 69,33 84,54 C 69,75 39,75 24,54 Z" stroke="#8B5CF6" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M 54,54 m -15,0 a 15,15 0 1,1 30,0 a 15,15 0 1,1 -30,0" stroke="#00D9FF" stroke-width="4" />
+          <path d="M 43.4,64.6 L 64.6,43.4" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round" />
+          <path d="M 48.7,59.3 m -4.5,0 a 4.5,4.5 0 1,1 9,0 a 4.5,4.5 0 1,1 -9,0" fill="#071326" stroke="#00D9FF" stroke-width="2.5" />
+          <path d="M 59.3,48.7 m -4.5,0 a 4.5,4.5 0 1,1 9,0 a 4.5,4.5 0 1,1 -9,0" fill="#071326" stroke="#00D9FF" stroke-width="2.5" />
+        </svg>
+        <span class="footer-logo-text">DEPTHLENS</span>
+      </a>
+      <p class="footer-motto">See Beyond The Surface</p>
+      <p class="footer-desc">Most people see the surface. DepthLens reveals what lies beneath reality.</p>
+      <div class="footer-links">
+        <a href="https://github.com/madfordiamonds/DEPTHLENS" target="_blank">GitHub</a>
+        <a href="https://github.com/madfordiamonds/DEPTHLENS/releases" target="_blank">Releases</a>
+        <a href="#features">Features</a>
+        <a href="https://github.com/madfordiamonds/DEPTHLENS/blob/main/README.md" target="_blank">Documentation</a>
+      </div>
+      <p class="footer-copyright">&copy; 2026 DepthLens. Built on Privacy-First Local-First Architecture.</p>
     </div>
-    <div class="transform-pair">
-      <div class="from-word">Confusion</div>
-      <div class="arrow-down">↓</div>
-      <div class="to-word">Clarity</div>
-    </div>
-    <div class="cta-word">See What Lies Beneath Reality</div>
-    <div class="dl-logo" style="font-size:22px">DEPTHLENS</div>
-  </div>
+  </footer>
 
-  <!-- Nav -->
-  <div id="scene-nav">
-    <button class="scene-btn" id="btn-prev">‹</button>
-    <button class="scene-btn" id="btn-next">›</button>
-  </div>
-  <div id="nav-dots">
-    <div class="nav-dot active" onclick="goScene(0)"></div>
-    <div class="nav-dot" onclick="goScene(1)"></div>
-    <div class="nav-dot" onclick="goScene(2)"></div>
-    <div class="nav-dot" onclick="goScene(3)"></div>
-    <div class="nav-dot" onclick="goScene(4)"></div>
-  </div>
-</div>
+  <script>
+    // PREVIEW PRESENTATION LOGIC
+    const SCENES = 5;
+    let current = 0;
+    let layerTimer = null;
+    let autoTimer = null;
 
-<script>
-const SCENES = 5;
-let current = 0;
-let layerTimer = null;
-let autoTimer = null;
+    const sceneEls = Array.from({length:SCENES},(_,i)=>document.getElementById('scene-'+i));
+    const dots = document.querySelectorAll('.nav-dot');
+    const progress = document.getElementById('progress-bar');
+    const lbl = document.getElementById('scene-lbl');
+    const labels = [
+      '01 / 05 — Intro',
+      '02 / 05 — The Problem',
+      '03 / 05 — Reality Layers',
+      '04 / 05 — Future Probability',
+      '05 / 05 — Clarity'
+    ];
 
-const sceneEls = Array.from({length:SCENES},(_,i)=>document.getElementById('scene-'+i));
-const dots = document.querySelectorAll('.nav-dot');
-const progress = document.getElementById('progress-bar');
-const lbl = document.getElementById('scene-lbl');
-const labels = [
-  '01 / 05 — Intro',
-  '02 / 05 — The Problem',
-  '03 / 05 — Reality Layers',
-  '04 / 05 — Future Probability',
-  '05 / 05 — Clarity'
-];
-
-function goScene(n) {
-  sceneEls[current].classList.remove('active');
-  dots[current].classList.remove('active');
-  current = Math.max(0, Math.min(SCENES-1, n));
-  sceneEls[current].classList.add('active');
-  dots[current].classList.add('active');
-  progress.style.width = ((current/(SCENES-1))*100)+'%';
-  lbl.textContent = labels[current];
-  if(current===2) animateLayers();
-  if(current===3) drawProb();
-  clearTimeout(autoTimer);
-  autoTimer = setTimeout(()=>{ if(current<SCENES-1) goScene(current+1); },5000);
-}
-
-function animateLayers() {
-  clearTimeout(layerTimer);
-  const cards = document.querySelectorAll('.layer-card');
-  cards.forEach(c=>c.classList.remove('shown'));
-  let i=0;
-  function next(){ if(i<cards.length){ cards[i].classList.add('shown'); i++; layerTimer=setTimeout(next,110); } }
-  next();
-}
-
-function drawProb() {
-  const cvs = document.getElementById('prob-canvas');
-  if(!cvs) return;
-  const w = cvs.offsetWidth || 360; cvs.width = w;
-  const h = 180; cvs.height = h;
-  const ctx = cvs.getContext('2d');
-  ctx.clearRect(0,0,w,h);
-
-  const origin = {x:50, y:h/2};
-  const paths = [
-    { color:'#00E5FF', pts:[0,0,0.1,0.05,0.4,0.08,0.7,0.1,1,-0.05] },
-    { color:'#7BF5A0', pts:[0,0,0.15,-0.15,0.4,-0.35,0.7,-0.45,1,-0.52] },
-    { color:'#F57B7B', pts:[0,0,0.1,0.12,0.35,0.28,0.6,0.4,1,0.52] },
-    { color:'#F5C87B', pts:[0,0,0.2,0.22,0.45,-0.1,0.7,0.32,1,-0.38] },
-  ];
-
-  const maxY = 0.55;
-  const xScale = (w-origin.x-20);
-  const yScale = (h/2-20)/maxY;
-
-  paths.forEach(p=>{
-    ctx.beginPath();
-    for(let j=0;j<p.pts.length;j+=2){
-      const x = origin.x + p.pts[j]*xScale;
-      const y = origin.y + p.pts[j+1]*yScale;
-      j===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    function goScene(n) {
+      sceneEls[current].classList.remove('active');
+      dots[current].classList.remove('active');
+      current = Math.max(0, Math.min(SCENES-1, n));
+      sceneEls[current].classList.add('active');
+      dots[current].classList.add('active');
+      progress.style.width = ((current/(SCENES-1))*100)+'%';
+      lbl.textContent = labels[current];
+      if(current===2) animateLayers();
+      if(current===3) drawProb();
+      clearTimeout(autoTimer);
+      autoTimer = setTimeout(()=>{ if(current<SCENES-1) goScene(current+1); else goScene(0); }, 5000);
     }
-    ctx.strokeStyle = p.color;
-    ctx.lineWidth = 1.5;
-    ctx.globalAlpha = 0.85;
-    ctx.stroke();
-    const lx = origin.x + xScale + 10;
-    const ly = origin.y + p.pts[p.pts.length-1]*yScale;
-    ctx.beginPath(); ctx.arc(lx-10, ly, 3,0,Math.PI*2);
-    ctx.fillStyle = p.color; ctx.globalAlpha=1; ctx.fill();
-  });
 
-  ctx.strokeStyle='rgba(240,238,255,0.15)';
-  ctx.lineWidth=0.5;
-  ctx.setLineDash([4,4]);
-  ctx.beginPath(); ctx.moveTo(origin.x,10); ctx.lineTo(origin.x,h-10); ctx.stroke();
-  ctx.setLineDash([]);
-}
-
-document.getElementById('btn-prev').onclick = ()=>goScene(current-1);
-document.getElementById('btn-next').onclick = ()=>goScene(current+1);
-
-// Stars background
-(function(){
-  const cvs = document.getElementById('stars');
-  const root = document.getElementById('dl-root');
-  function resize(){
-    cvs.width=root.offsetWidth; cvs.height=root.offsetHeight;
-    const ctx=cvs.getContext('2d');
-    ctx.clearRect(0,0,cvs.width,cvs.height);
-    for(let i=0;i<120;i++){
-      const x=Math.random()*cvs.width, y=Math.random()*cvs.height;
-      const r=Math.random()*1.2;
-      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
-      ctx.fillStyle=`rgba(200,190,255,${0.1+Math.random()*0.35})`;
-      ctx.fill();
+    function animateLayers() {
+      clearTimeout(layerTimer);
+      const cards = document.querySelectorAll('.layer-card');
+      cards.forEach(c=>c.classList.remove('shown'));
+      let i=0;
+      function next(){ if(i<cards.length){ cards[i].classList.add('shown'); i++; layerTimer=setTimeout(next,120); } }
+      next();
     }
-  }
-  resize();
-})();
 
-// Auto-start
-autoTimer = setTimeout(()=>goScene(1), 5000);
-</script>
+    function drawProb() {
+      const cvs = document.getElementById('prob-canvas');
+      if(!cvs) return;
+      const w = cvs.offsetWidth || 360; cvs.width = w;
+      const h = 150; cvs.height = h;
+      const ctx = cvs.getContext('2d');
+      ctx.clearRect(0,0,w,h);
 
-[ Download APK ]
+      const origin = {x:40, y:h/2};
+      const paths = [
+        { color:'#00E5FF', pts:[0,0,0.1,0.05,0.4,0.08,0.7,0.1,1,-0.05] },
+        { color:'#7BF5A0', pts:[0,0,0.15,-0.15,0.4,-0.35,0.7,-0.45,1,-0.52] },
+        { color:'#F57B7B', pts:[0,0,0.1,0.12,0.35,0.28,0.6,0.4,1,0.52] },
+        { color:'#F5C87B', pts:[0,0,0.2,0.22,0.45,-0.1,0.7,0.32,1,-0.38] },
+      ];
 
-[ View Changelog ]
+      const maxY = 0.55;
+      const xScale = (w-origin.x-25);
+      const yScale = (h/2-15)/maxY;
 
-[ GitHub Repository ]
+      paths.forEach(p=>{
+        ctx.beginPath();
+        for(let j=0;j<p.pts.length;j+=2){
+          const x = origin.x + p.pts[j]*xScale;
+          const y = origin.y + p.pts[j+1]*yScale;
+          j===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+        }
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.85;
+        ctx.stroke();
+        const lx = origin.x + xScale + 10;
+        const ly = origin.y + p.pts[p.pts.length-1]*yScale;
+        ctx.beginPath(); ctx.arc(lx-10, ly, 3.5, 0, Math.PI*2);
+        ctx.fillStyle = p.color; ctx.globalAlpha=1; ctx.fill();
+      });
+
+      ctx.strokeStyle='rgba(240,238,255,0.12)';
+      ctx.lineWidth=0.5;
+      ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(origin.x,10); ctx.lineTo(origin.x,h-10); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    document.getElementById('btn-prev').onclick = ()=>goScene(current-1);
+    document.getElementById('btn-next').onclick = ()=>goScene(current+1);
+
+    // Stars Background Canvas Simulation
+    (function(){
+      const cvs = document.getElementById('stars');
+      function resize(){
+        cvs.width = window.innerWidth;
+        cvs.height = window.innerHeight;
+        const ctx = cvs.getContext('2d');
+        ctx.clearRect(0,0,cvs.width,cvs.height);
+        for(let i=0; i<125; i++) {
+          const x = Math.random() * cvs.width;
+          const y = Math.random() * cvs.height;
+          const r = Math.random() * 1.3;
+          ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+          ctx.fillStyle = `rgba(200,190,255,${0.15 + Math.random()*0.35})`;
+          ctx.fill();
+        }
+      }
+      resize();
+      window.addEventListener('resize', resize);
+    })();
+
+    // Auto-start preview slideshow loop
+    autoTimer = setTimeout(()=>goScene(1), 5000);
+
+    // DYNAMIC GITHUB LATEST CHANGELOG GETTER
+    async function fetchChangelog() {
+      try {
+        const response = await fetch('https://api.github.com/repos/madfordiamonds/DEPTHLENS/releases/latest');
+        if (!response.ok) throw new Error('API Offline / Rate Limited');
+        const data = await response.json();
+        
+        // Update version tag
+        if (data.tag_name) {
+          document.getElementById('changelog-version').textContent = data.tag_name;
+        }
+
+        // Format release body if exists
+        if (data.body) {
+          const rawLines = data.body.split('\n');
+          const formattedNotes = rawLines
+            .map(line => line.trim())
+            .filter(line => line.startsWith('*') || line.startsWith('-') || line.startsWith('✓'))
+            .slice(0, 4)
+            .map(line => {
+              const cleaned = line.replace(/^[\*\-\✓]\s*/, '');
+              return `<li>✓ ${cleaned}</li>`;
+            });
+
+          if (formattedNotes.length > 0) {
+            document.getElementById('changelog-notes').innerHTML = formattedNotes.join('');
+          }
+        }
+      } catch (e) {
+        console.log('GitHub API Limit or Offline fallback loaded correctly: ', e);
+      }
+    }
+    
+    // Trigger on load
+    window.addEventListener('DOMContentLoaded', fetchChangelog);
+  </script>
+</body>
+</html>
