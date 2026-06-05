@@ -1,0 +1,471 @@
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --void: #04030F;
+    --deep: #080618;
+    --mid: #0D0C22;
+    --violet: #7B5CF5;
+    --violet-bright: #9D7FFF;
+    --cyan: #00E5FF;
+    --cyan-dim: #00B8CC;
+    --white: #F0EEFF;
+    --muted: rgba(240,238,255,0.45);
+    --ring: rgba(123,92,245,0.25);
+  }
+
+  #dl-root {
+    font-family: 'Sora', sans-serif;
+    background: var(--void);
+    color: var(--white);
+    min-height: 600px;
+    overflow: hidden;
+    position: relative;
+    border-radius: 12px;
+  }
+
+  canvas#stars {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .scene {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 2rem;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.7s ease;
+    z-index: 2;
+  }
+  .scene.active {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  /* SCENE 0 — Lens + tagline */
+  #scene-0 { gap: 2rem; }
+
+  .lens-wrap {
+    position: relative;
+    width: 160px; height: 160px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid;
+    animation: spin linear infinite;
+  }
+  .ring:nth-child(1){ width:160px;height:160px;border-color:rgba(123,92,245,0.5);animation-duration:14s; }
+  .ring:nth-child(2){ width:128px;height:128px;border-color:rgba(0,229,255,0.4);animation-duration:10s;animation-direction:reverse; }
+  .ring:nth-child(3){ width:96px;height:96px;border-color:rgba(123,92,245,0.35);animation-duration:7s; }
+  .ring:nth-child(4){ width:64px;height:64px;border-color:rgba(0,229,255,0.5);animation-duration:5s;animation-direction:reverse; }
+
+  .lens-core {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: radial-gradient(circle, var(--cyan) 0%, var(--violet) 70%);
+    box-shadow: 0 0 24px var(--violet), 0 0 48px rgba(0,229,255,0.3);
+    z-index: 1;
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse {
+    0%,100%{ box-shadow:0 0 20px var(--violet),0 0 40px rgba(0,229,255,0.2); }
+    50%{ box-shadow:0 0 36px var(--violet-bright),0 0 70px rgba(0,229,255,0.5); }
+  }
+
+  .dl-logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 28px; font-weight: 700;
+    letter-spacing: 0.18em;
+    background: linear-gradient(90deg, var(--violet-bright), var(--cyan));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .dl-tagline {
+    font-size: 13px; color: var(--muted); letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* SCENE 1 — Problem */
+  #scene-1 { gap: 1.4rem; }
+
+  .noise-grid {
+    display: grid; grid-template-columns: repeat(3,1fr); gap: 8px;
+    width: 100%; max-width: 340px;
+  }
+  .noise-card {
+    background: rgba(255,255,255,0.04);
+    border: 0.5px solid rgba(255,255,255,0.1);
+    border-radius: 8px; padding: 12px 10px;
+    font-size: 11px; color: var(--muted);
+    animation: flicker 3s ease-in-out infinite;
+    text-align: left;
+  }
+  .noise-card:nth-child(odd){ animation-delay: 0.5s; }
+  .noise-card:nth-child(3n){ animation-delay: 1s; }
+  .noise-card .nc-label{ font-size: 9px; color: rgba(255,255,255,0.3); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.08em; }
+
+  @keyframes flicker {
+    0%,100%{ opacity:1; } 45%{ opacity:0.6; } 50%{ opacity:1; } 70%{ opacity:0.8; }
+  }
+
+  .big-statement {
+    font-size: 20px; font-weight: 300; line-height: 1.5;
+    max-width: 380px;
+  }
+  .big-statement strong { font-weight: 700; color: var(--white); }
+  em { font-style: normal; color: var(--cyan); }
+
+  /* SCENE 2 — Layers */
+  #scene-2 { gap: 1.2rem; }
+
+  .layers-stack {
+    display: flex; flex-direction: column; gap: 7px;
+    width: 100%; max-width: 360px;
+  }
+
+  .layer-card {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(123,92,245,0.07);
+    border: 0.5px solid rgba(123,92,245,0.25);
+    border-radius: 8px; padding: 10px 14px;
+    transform: translateX(-30px);
+    opacity: 0;
+    transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+    font-size: 13px; font-weight: 400;
+  }
+  .layer-card.shown {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  .layer-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .layer-card:nth-child(1) .layer-dot { background: var(--cyan); }
+  .layer-card:nth-child(2) .layer-dot { background: #7BF5C0; }
+  .layer-card:nth-child(3) .layer-dot { background: var(--violet-bright); }
+  .layer-card:nth-child(4) .layer-dot { background: #F5A07B; }
+  .layer-card:nth-child(5) .layer-dot { background: #F57BE8; }
+  .layer-card:nth-child(6) .layer-dot { background: var(--cyan-dim); }
+  .layer-card:nth-child(7) .layer-dot { background: #F5C87B; }
+
+  /* SCENE 3 — Probability */
+  #scene-3 { gap: 1.4rem; }
+
+  .prob-canvas-wrap {
+    width: 100%; max-width: 380px;
+    position: relative;
+  }
+  .prob-canvas-wrap canvas { display: block; width: 100%; }
+
+  .prob-labels {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px; width: 100%; max-width: 380px;
+    margin-top: 4px;
+  }
+  .prob-label {
+    font-size: 11px; display: flex; align-items: center; gap: 6px;
+  }
+  .prob-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink:0; }
+
+  /* SCENE 4 — CTA */
+  #scene-4 { gap: 2rem; }
+
+  .cta-word {
+    font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .cta-word:before,.cta-word:after{
+    content:''; flex:1; height:0.5px;
+    background: linear-gradient(90deg, transparent, rgba(123,92,245,0.5));
+  }
+  .cta-word:after{ background: linear-gradient(90deg, rgba(123,92,245,0.5), transparent); }
+
+  .transform-pair {
+    display: flex; flex-direction: column; gap: 4px;
+    align-items: center;
+  }
+  .from-word {
+    font-size: 34px; font-weight: 700;
+    color: rgba(240,238,255,0.35);
+    text-decoration: line-through;
+    text-decoration-color: rgba(123,92,245,0.5);
+    letter-spacing: -0.02em;
+  }
+  .to-word {
+    font-size: 40px; font-weight: 700;
+    background: linear-gradient(90deg, var(--violet-bright), var(--cyan));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    letter-spacing: -0.02em;
+  }
+  .arrow-down { color: var(--violet); font-size: 20px; }
+
+  /* Nav dots */
+  #nav-dots {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; z-index: 10;
+  }
+  .nav-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    cursor: pointer; transition: all 0.3s;
+  }
+  .nav-dot.active {
+    background: var(--violet-bright);
+    box-shadow: 0 0 8px var(--violet);
+  }
+
+  /* Prev/Next */
+  #scene-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 100%; display: flex; justify-content: space-between;
+    padding: 0 12px; z-index: 10; pointer-events: none;
+  }
+  .scene-btn {
+    background: rgba(123,92,245,0.15);
+    border: 0.5px solid rgba(123,92,245,0.35);
+    color: var(--white); border-radius: 50%;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; pointer-events: all;
+    font-size: 14px; transition: all 0.2s;
+  }
+  .scene-btn:hover { background: rgba(123,92,245,0.35); }
+
+  /* Progress bar */
+  #progress-bar {
+    position: absolute; top: 0; left: 0; height: 2px;
+    background: linear-gradient(90deg, var(--violet), var(--cyan));
+    transition: width 0.6s ease;
+    z-index: 10;
+  }
+
+  /* Scene labels */
+  .scene-label {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: rgba(240,238,255,0.3);
+    font-family: 'Space Mono', monospace;
+    z-index: 10;
+    white-space: nowrap;
+  }
+</style>
+
+<div id="dl-root">
+  <canvas id="stars"></canvas>
+  <div id="progress-bar" style="width:0%"></div>
+  <div class="scene-label" id="scene-lbl">01 / 05 — Intro</div>
+
+  <!-- SCENE 0: Lens -->
+  <div class="scene active" id="scene-0">
+    <div class="lens-wrap">
+      <div class="ring"></div><div class="ring"></div>
+      <div class="ring"></div><div class="ring"></div>
+      <div class="lens-core"></div>
+    </div>
+    <div class="dl-logo">DEPTHLENS</div>
+    <div class="big-statement">Most people see the <em>surface</em>.<br>DepthLens sees what lies <strong>beneath</strong>.</div>
+    <div class="dl-tagline">Reality Intelligence Engine</div>
+  </div>
+
+  <!-- SCENE 1: Problem -->
+  <div class="scene" id="scene-1">
+    <div class="noise-grid">
+      <div class="noise-card"><div class="nc-label">Messages</div>Why does this keep happening?</div>
+      <div class="noise-card"><div class="nc-label">Reports</div>Q4 revenue down 18%…</div>
+      <div class="noise-card"><div class="nc-label">Decisions</div>Should I leave this job?</div>
+      <div class="noise-card"><div class="nc-label">Data</div>Signals unclear…</div>
+      <div class="noise-card"><div class="nc-label">Emotions</div>Can't figure this out</div>
+      <div class="noise-card"><div class="nc-label">Systems</div>Patterns repeating again</div>
+    </div>
+    <div class="big-statement">
+      We're surrounded by <em>information</em>.<br>
+      But information is <strong>not</strong> understanding.
+    </div>
+  </div>
+
+  <!-- SCENE 2: Layers -->
+  <div class="scene" id="scene-2">
+    <div style="font-size:13px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:4px">Reality Intelligence Layers</div>
+    <div class="layers-stack" id="layers-stack">
+      <div class="layer-card"><div class="layer-dot"></div>Observable Reality</div>
+      <div class="layer-card"><div class="layer-dot"></div>Emotional Reality</div>
+      <div class="layer-card"><div class="layer-dot"></div>Psychological Reality</div>
+      <div class="layer-card"><div class="layer-dot"></div>Strategic Reality</div>
+      <div class="layer-card"><div class="layer-dot"></div>Systems Reality</div>
+      <div class="layer-card"><div class="layer-dot"></div>Pattern Recognition</div>
+      <div class="layer-card"><div class="layer-dot"></div>Root Cause</div>
+    </div>
+    <div class="big-statement" style="font-size:15px;margin-top:4px">
+      Every answer becomes a doorway to <em>deeper understanding</em>.
+    </div>
+  </div>
+
+  <!-- SCENE 3: Probability -->
+  <div class="scene" id="scene-3">
+    <div style="font-size:13px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase">Future Probability Engine</div>
+    <div class="prob-canvas-wrap">
+      <canvas id="prob-canvas" height="180"></canvas>
+    </div>
+    <div class="prob-labels">
+      <div class="prob-label"><div class="prob-dot" style="background:#00E5FF"></div><span style="color:var(--muted)">Most Likely Path</span></div>
+      <div class="prob-label"><div class="prob-dot" style="background:#7BF5A0"></div><span style="color:var(--muted)">Positive Shift</span></div>
+      <div class="prob-label"><div class="prob-dot" style="background:#F57B7B"></div><span style="color:var(--muted)">Negative Escalation</span></div>
+      <div class="prob-label"><div class="prob-dot" style="background:#F5C87B"></div><span style="color:var(--muted)">Unexpected Outcome</span></div>
+    </div>
+    <div class="big-statement" style="font-size:15px">
+      See where current patterns lead — <em>before they happen</em>.
+    </div>
+  </div>
+
+  <!-- SCENE 4: CTA -->
+  <div class="scene" id="scene-4">
+    <div class="lens-wrap" style="width:80px;height:80px">
+      <div class="ring" style="width:80px;height:80px"></div>
+      <div class="ring" style="width:60px;height:60px"></div>
+      <div class="ring" style="width:40px;height:40px"></div>
+      <div class="lens-core" style="width:22px;height:22px"></div>
+    </div>
+    <div class="transform-pair">
+      <div class="from-word">Confusion</div>
+      <div class="arrow-down">↓</div>
+      <div class="to-word">Clarity</div>
+    </div>
+    <div class="cta-word">See What Lies Beneath Reality</div>
+    <div class="dl-logo" style="font-size:22px">DEPTHLENS</div>
+  </div>
+
+  <!-- Nav -->
+  <div id="scene-nav">
+    <button class="scene-btn" id="btn-prev">‹</button>
+    <button class="scene-btn" id="btn-next">›</button>
+  </div>
+  <div id="nav-dots">
+    <div class="nav-dot active" onclick="goScene(0)"></div>
+    <div class="nav-dot" onclick="goScene(1)"></div>
+    <div class="nav-dot" onclick="goScene(2)"></div>
+    <div class="nav-dot" onclick="goScene(3)"></div>
+    <div class="nav-dot" onclick="goScene(4)"></div>
+  </div>
+</div>
+
+<script>
+const SCENES = 5;
+let current = 0;
+let layerTimer = null;
+let autoTimer = null;
+
+const sceneEls = Array.from({length:SCENES},(_,i)=>document.getElementById('scene-'+i));
+const dots = document.querySelectorAll('.nav-dot');
+const progress = document.getElementById('progress-bar');
+const lbl = document.getElementById('scene-lbl');
+const labels = [
+  '01 / 05 — Intro',
+  '02 / 05 — The Problem',
+  '03 / 05 — Reality Layers',
+  '04 / 05 — Future Probability',
+  '05 / 05 — Clarity'
+];
+
+function goScene(n) {
+  sceneEls[current].classList.remove('active');
+  dots[current].classList.remove('active');
+  current = Math.max(0, Math.min(SCENES-1, n));
+  sceneEls[current].classList.add('active');
+  dots[current].classList.add('active');
+  progress.style.width = ((current/(SCENES-1))*100)+'%';
+  lbl.textContent = labels[current];
+  if(current===2) animateLayers();
+  if(current===3) drawProb();
+  clearTimeout(autoTimer);
+  autoTimer = setTimeout(()=>{ if(current<SCENES-1) goScene(current+1); },5000);
+}
+
+function animateLayers() {
+  clearTimeout(layerTimer);
+  const cards = document.querySelectorAll('.layer-card');
+  cards.forEach(c=>c.classList.remove('shown'));
+  let i=0;
+  function next(){ if(i<cards.length){ cards[i].classList.add('shown'); i++; layerTimer=setTimeout(next,110); } }
+  next();
+}
+
+function drawProb() {
+  const cvs = document.getElementById('prob-canvas');
+  if(!cvs) return;
+  const w = cvs.offsetWidth || 360; cvs.width = w;
+  const h = 180; cvs.height = h;
+  const ctx = cvs.getContext('2d');
+  ctx.clearRect(0,0,w,h);
+
+  const origin = {x:50, y:h/2};
+  const paths = [
+    { color:'#00E5FF', pts:[0,0,0.1,0.05,0.4,0.08,0.7,0.1,1,-0.05] },
+    { color:'#7BF5A0', pts:[0,0,0.15,-0.15,0.4,-0.35,0.7,-0.45,1,-0.52] },
+    { color:'#F57B7B', pts:[0,0,0.1,0.12,0.35,0.28,0.6,0.4,1,0.52] },
+    { color:'#F5C87B', pts:[0,0,0.2,0.22,0.45,-0.1,0.7,0.32,1,-0.38] },
+  ];
+
+  const maxY = 0.55;
+  const xScale = (w-origin.x-20);
+  const yScale = (h/2-20)/maxY;
+
+  paths.forEach(p=>{
+    ctx.beginPath();
+    for(let j=0;j<p.pts.length;j+=2){
+      const x = origin.x + p.pts[j]*xScale;
+      const y = origin.y + p.pts[j+1]*yScale;
+      j===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.85;
+    ctx.stroke();
+    const lx = origin.x + xScale + 10;
+    const ly = origin.y + p.pts[p.pts.length-1]*yScale;
+    ctx.beginPath(); ctx.arc(lx-10, ly, 3,0,Math.PI*2);
+    ctx.fillStyle = p.color; ctx.globalAlpha=1; ctx.fill();
+  });
+
+  ctx.strokeStyle='rgba(240,238,255,0.15)';
+  ctx.lineWidth=0.5;
+  ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(origin.x,10); ctx.lineTo(origin.x,h-10); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+document.getElementById('btn-prev').onclick = ()=>goScene(current-1);
+document.getElementById('btn-next').onclick = ()=>goScene(current+1);
+
+// Stars background
+(function(){
+  const cvs = document.getElementById('stars');
+  const root = document.getElementById('dl-root');
+  function resize(){
+    cvs.width=root.offsetWidth; cvs.height=root.offsetHeight;
+    const ctx=cvs.getContext('2d');
+    ctx.clearRect(0,0,cvs.width,cvs.height);
+    for(let i=0;i<120;i++){
+      const x=Math.random()*cvs.width, y=Math.random()*cvs.height;
+      const r=Math.random()*1.2;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(200,190,255,${0.1+Math.random()*0.35})`;
+      ctx.fill();
+    }
+  }
+  resize();
+})();
+
+// Auto-start
+autoTimer = setTimeout(()=>goScene(1), 5000);
+</script>
