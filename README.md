@@ -2,6 +2,20 @@
 
 ### SEE BEYOND THE SURFACE
 
+🚀 Live Website
+
+https://madfordiamonds.github.io/DEPTHLENS/
+
+📱 Download APK
+
+https://github.com/madfordiamonds/DEPTHLENS/releases
+
+---
+
+# DEPTHLENS
+
+### SEE BEYOND THE SURFACE
+
 Most people see symptoms.
 
 DepthLens reveals patterns.
