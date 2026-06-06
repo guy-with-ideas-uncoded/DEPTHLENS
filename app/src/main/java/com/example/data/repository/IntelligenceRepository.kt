@@ -123,7 +123,7 @@ class IntelligenceRepository(private val context: Context) {
             generationConfig = GenerationConfig(temperature = 0.5f)
         )
 
-        val modelsToTry = listOf("gemini-2.0-flash", "gemini-1.5-flash")
+        val modelsToTry = listOf("gemini-2.5-flash", "gemini-3.5-flash")
         var generatedTitle: String? = null
 
         for (modelName in modelsToTry) {
@@ -369,7 +369,7 @@ Follow this format meticulously. Wrap each visual module within its respective t
 
         var modelText: String? = null
         var lastException: Exception? = null
-        val modelsToTry = listOf("gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash")
+        val modelsToTry = listOf("gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-pro-preview")
 
         for (modelName in modelsToTry) {
             try {
@@ -539,7 +539,7 @@ Follow this format meticulously. Wrap each visual module within its respective t
         )
         
         try {
-            val response = apiService.generateContent("gemini-2.0-flash", apiKey, request)
+            val response = apiService.generateContent("gemini-2.5-flash", apiKey, request)
             response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
                 ?: "Unable to sync session context at this moment."
         } catch (e: Exception) {
