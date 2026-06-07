@@ -59,6 +59,7 @@ fun SettingsScreen(
     var showExportToast by remember { mutableStateOf(false) }
     var loginEmail by remember { mutableStateOf("") }
     var loginName by remember { mutableStateOf("") }
+    var showFontSizeDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -339,6 +340,169 @@ fun SettingsScreen(
                     )
                 }
             }
+        }
+
+        // --- SECTION: TYPOGRAPHY ---
+        Text(
+            text = "TYPOGRAPHY",
+            fontSize = 8.sp,
+            letterSpacing = 1.3.sp,
+            fontFamily = DMMonoFontFamily,
+            fontWeight = FontWeight.Bold,
+            color = TextMutedColor,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 20.dp)
+                .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp))
+                .clickable { showFontSizeDialog = true },
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Surface1)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Font Size",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = InstrumentSansFontFamily,
+                        color = TextPrimaryColor
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Adjust text size throughout the app.",
+                        fontSize = 11.sp,
+                        fontFamily = InstrumentSansFontFamily,
+                        color = TextMutedColor
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = TypographyManager.currentFontSizeKey,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        fontFamily = DMMonoFontFamily,
+                        color = PremiumCyan
+                    )
+                    Text(
+                        text = "→",
+                        fontSize = 14.sp,
+                        color = TextMutedColor
+                    )
+                }
+            }
+        }
+
+        if (showFontSizeDialog) {
+            val context = LocalContext.current
+            val fontSizes = listOf("Extra Small", "Small", "Medium", "Large", "Extra Large")
+
+            AlertDialog(
+                onDismissRequest = { showFontSizeDialog = false },
+                title = {
+                    Text(
+                        text = "Choose Font Size",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimaryColor,
+                        fontFamily = DMSerifDisplayFontFamily,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    )
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Live Preview box
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Surface2, RoundedCornerShape(8.dp))
+                                .border(1.dp, BorderSubtle, RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "PREVIEW",
+                                fontSize = 9.sp,
+                                fontFamily = DMMonoFontFamily,
+                                fontWeight = FontWeight.Bold,
+                                color = TextMutedColor,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            Text(
+                                text = "The deeper you look, the more you see.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextPrimaryColor,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        fontSizes.forEach { sizeKey ->
+                            val isSelected = TypographyManager.currentFontSizeKey == sizeKey
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) Surface3 else Color.Transparent)
+                                    .clickable {
+                                        TypographyManager.setFontSize(context, sizeKey)
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = sizeKey,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) PremiumCyan else TextPrimaryColor
+                                )
+
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        TypographyManager.setFontSize(context, sizeKey)
+                                    },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = PremiumCyan,
+                                        unselectedColor = TextMutedColor
+                                    )
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { showFontSizeDialog = false }
+                    ) {
+                        Text(
+                            text = "Done",
+                            color = PremiumCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = InstrumentSansFontFamily
+                        )
+                    }
+                },
+                containerColor = DeepMidnight,
+                tonalElevation = 6.dp,
+                shape = RoundedCornerShape(16.dp)
+            )
         }
 
         // --- SECTION: PREFERENCES ---
@@ -724,7 +888,7 @@ fun SettingsScreen(
         InteractiveSettingsCard(
             icon = "✕",
             title = "About DepthLens",
-            subtitle = "View software license details and dynamic credits · v4.1.0",
+            subtitle = "View software license details and dynamic credits · v4.1.1",
             onClick = onShowAbout
         )
 

@@ -25,6 +25,35 @@ object ThemeManager {
     }
 }
 
+// DepthLens Typography Scale Controller
+object TypographyManager {
+    private var isInitialized = false
+    var currentFontSizeKey by mutableStateOf("Medium")
+
+    val currentScale: Float
+        get() = when (currentFontSizeKey) {
+            "Extra Small" -> 0.85f
+            "Small" -> 0.95f
+            "Medium" -> 1.00f
+            "Large" -> 1.15f
+            "Extra Large" -> 1.30f
+            else -> 1.00f
+        }
+
+    fun init(context: Context) {
+        if (isInitialized) return
+        val prefs = context.applicationContext.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+        currentFontSizeKey = prefs.getString("font_size_key", "Medium") ?: "Medium"
+        isInitialized = true
+    }
+
+    fun setFontSize(context: Context, sizeKey: String) {
+        currentFontSizeKey = sizeKey
+        val prefs = context.applicationContext.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("font_size_key", sizeKey).apply()
+    }
+}
+
 // DepthLens Dynamic Premium Visual Palette from bash.html design tokens
 val DeepMidnight: Color get() = if (ThemeManager.isDarkTheme) Color(0xFF060609) else Color(0xFFFFFFFF)
 val RichNavy: Color get() = if (ThemeManager.isDarkTheme) Color(0xFF0D0D14) else Color(0xFFF8FAFC)

@@ -202,9 +202,8 @@ fun HomeScreen(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 20.dp)
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
         ) {
-            Spacer(modifier = Modifier.height(24.dp))
 
             // Symmetrical Sized Header Row
             Box(
@@ -296,7 +295,7 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 40.dp)
+                        .padding(vertical = 12.dp)
                         .offset(y = slideOffset)
                         .alpha(opacity),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -306,38 +305,55 @@ fun HomeScreen(
                         text = greeting,
                         style = TextStyle(
                             fontFamily = DMMonoFontFamily,
-                            fontSize = 48.sp,
-                            lineHeight = 54.sp,
+                            fontSize = 32.sp,
+                            lineHeight = 38.sp,
                             fontWeight = FontWeight.ExtraBold,
                             letterSpacing = 4.sp,
                             color = Color.White,
                             shadow = androidx.compose.ui.graphics.Shadow(
-                                color = ElectricViolet.copy(alpha = 0.75f),
+                                color = ElectricViolet.copy(alpha = 0.45f),
                                 offset = androidx.compose.ui.geometry.Offset(0f, 0f),
-                                blurRadius = 24f
+                                blurRadius = 12f
                             )
                         ),
                         textAlign = TextAlign.Center
                     )
                     
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     
                     Text(
-                        text = "Choose a mode or start typing — DepthLens will reveal what lies beneath.",
+                        text = "DepthLens will reveal what lies beneath",
                         fontFamily = InstrumentSansFontFamily,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Medium,
-                        lineHeight = 30.sp,
-                        color = TextSecondaryColor.copy(alpha = 0.72f),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 20.sp,
+                        color = PremiumCyan.copy(alpha = 0.9f),
                         textAlign = TextAlign.Center,
+                        maxLines = 1,
                         modifier = Modifier
-                            .fillMaxWidth(0.9f)
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    Text(
+                        text = "Choose a mode or start typing",
+                        fontFamily = InstrumentSansFontFamily,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        lineHeight = 18.sp,
+                        color = TextMutedColor,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .fillMaxWidth()
                             .padding(horizontal = 8.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Mode grid header row: label + Multi-Layer button + collapse toggle
             var modesExpanded by remember { mutableStateOf(false) }

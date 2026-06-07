@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
 
     // Initialize the DepthLens Theme and Software Update Systems
     com.example.ui.theme.ThemeManager.init(applicationContext)
+    com.example.ui.theme.TypographyManager.init(applicationContext)
     GithubUpdateManager.init(applicationContext)
     GithubUpdateManager.checkForUpdates(applicationContext, force = false)
 
