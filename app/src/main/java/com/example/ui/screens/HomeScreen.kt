@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +18,9 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.Download
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Menu
@@ -59,6 +63,8 @@ import androidx.compose.ui.res.painterResource
 import com.example.R
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.graphics.SolidColor
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -197,20 +203,32 @@ fun HomeScreen(
             .fillMaxSize()
             .background(DeepMidnight)
             .statusBarsPadding()
+            .imePadding()
     ) {
+        val scrollState = rememberScrollState()
+        val isKeyboardVisible = WindowInsets.isImeVisible
+
+        LaunchedEffect(activeMessages.size, isKeyboardVisible, isLoading) {
+            if (activeMessages.isNotEmpty()) {
+                kotlinx.coroutines.delay(100)
+                scrollState.animateScrollTo(scrollState.maxValue)
+            }
+        }
+
         // Main scrollable content
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
+                .verticalScroll(scrollState)
+                .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.Top
         ) {
 
-            // Symmetrical Sized Header Row
+            // Symmetrical Sized Header Row (v4.1.4 Sleek Design)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 20.dp),
+                    .padding(bottom = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
                 // Left aligned: Menu/Hamburger Button
@@ -220,7 +238,7 @@ fun HomeScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(38.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(Surface2)
                             .border(1.dp, BorderSubtle, RoundedCornerShape(10.dp))
@@ -236,55 +254,34 @@ fun HomeScreen(
                     }
                 }
 
-                // Center aligned: Mini Symmetrical DepthLens Logo (Increased and prominent - 250% larger)
+                // Center aligned: Sleek Symmetrical DepthLens Logo (Compact & aligned v4.1.4)
                 Image(
                     painter = painterResource(id = R.drawable.ic_depthlens_logo),
                     contentDescription = "DepthLens",
                     modifier = Modifier
-                        .height(90.dp)
-                        .padding(vertical = 4.dp),
+                        .height(34.dp)
+                        .padding(vertical = 2.dp),
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit
                 )
 
-                // Right aligned: Upgraded Glassmorphism New Chat button with soft Purple-Blue glow
+                // Right aligned: Upgraded Glassmorphism New Chat button
                 Row(
                     modifier = Modifier.align(Alignment.CenterEnd),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(
-                                        ElectricViolet.copy(alpha = 0.22f),
-                                        PremiumCyan.copy(alpha = 0.12f)
-                                    )
-                                )
-                            )
-                            .border(
-                                width = 1.5.dp,
-                                brush = Brush.linearGradient(
-                                    colors = listOf(ElectricViolet, PremiumCyan.copy(alpha = 0.8f))
-                                ),
-                                shape = RoundedCornerShape(20.dp)
-                            )
-                            .drawBehind {
-                                // Dynamic soft backing glow
-                                drawCircle(
-                                    color = ElectricViolet.copy(alpha = 0.25f),
-                                    radius = this.size.maxDimension * 0.7f,
-                                    center = Offset(this.size.width / 2, this.size.height / 2)
-                                )
-                            }
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Surface2)
+                            .border(1.dp, BorderSubtle, RoundedCornerShape(10.dp))
                             .clickable { onCreateNewSession() },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Edit,
                             contentDescription = "New chat",
-                            tint = PremiumCyan,
+                            tint = TextSecondaryColor,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -792,112 +789,192 @@ fun HomeScreen(
                                                 )
                                             }
 
-                                            // ── Suggested Questions (after analysis) ──────
-                                                }
-                                            }
-
-                                            // ── Action Row (Copy and Share) ────────────────
-                                            val clipboardManager = LocalClipboardManager.current
-                                            var copied by remember { mutableStateOf(false) }
-
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 12.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                // Copy Button with glass style and violet borders
-                                                Box(
-                                                    modifier = Modifier
-                                                        .height(38.dp)
-                                                        .weight(1f)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(Surface2)
-                                                        .border(1.dp, ElectricViolet.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                                                        .clickable {
-                                                            val cleanText = ResponseParser.getCopyableText(message.text)
-                                                            clipboardManager.setText(AnnotatedString(cleanText))
-                                                            copied = true
-                                                        },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.ContentCopy,
-                                                            contentDescription = "Copy text",
-                                                            tint = if (copied) ElectricViolet else TextPrimaryColor,
-                                                            modifier = Modifier.size(16.dp)
-                                                        )
-                                                        Text(
-                                                            text = if (copied) "Copied!" else "Copy",
-                                                            fontFamily = InstrumentSansFontFamily,
-                                                            fontWeight = FontWeight.Medium,
-                                                            fontSize = 14.sp,
-                                                            color = if (copied) ElectricViolet else TextPrimaryColor
-                                                        )
-                                                    }
-                                                }
-
-                                                // Share Button
-                                                Box(
-                                                    modifier = Modifier
-                                                        .height(38.dp)
-                                                        .weight(1f)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(Surface2)
-                                                        .border(1.dp, ElectricViolet.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                                                        .clickable {
-                                                            val cleanText = ResponseParser.getCopyableText(message.text)
-                                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                                type = "text/plain"
-                                                                putExtra(Intent.EXTRA_TEXT, cleanText)
-                                                            }
-                                                            context.startActivity(Intent.createChooser(shareIntent, "Share Analysis"))
-                                                        },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Share,
-                                                            contentDescription = "Share",
-                                                            tint = TextPrimaryColor,
-                                                            modifier = Modifier.size(16.dp)
-                                                        )
-                                                        Text(
-                                                            text = "Share",
-                                                            fontFamily = InstrumentSansFontFamily,
-                                                            fontWeight = FontWeight.Medium,
-                                                            fontSize = 14.sp,
-                                                            color = TextPrimaryColor
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                             // ── Dig Deeper Section ────────────────────────
+                                            // ── Suggested Questions (after an                                             // ── Dig Deeper Section ────────────────────────
                                              val associatedUserQuery = remember(message.id, activeMessages) {
                                                  activeMessages
                                                      .subList(0, activeMessages.indexOfFirst { it.id == message.id }.coerceAtLeast(0))
                                                      .findLast { it.role == "user" }?.text ?: ""
                                              }
 
-                                             Spacer(modifier = Modifier.height(6.dp))
-                                             Text(
-                                                 text = "DIG DEEPER",
-                                                 fontSize = 11.sp,
-                                                 letterSpacing = 1.sp,
-                                                 fontFamily = DMMonoFontFamily,
-                                                 fontWeight = FontWeight.Bold,
-                                                 color = PremiumCyan,
-                                                 modifier = Modifier.padding(bottom = 6.dp)
-                                             )
+                                             // ── Action Row (Copy, Deeper, Share, Export) ──
+                                             val clipboardManager = LocalClipboardManager.current
+                                             var copied by remember { mutableStateOf(false) }
+
+                                             Row(
+                                                 modifier = Modifier
+                                                     .fillMaxWidth()
+                                                     .padding(vertical = 12.dp),
+                                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                 verticalAlignment = Alignment.CenterVertically
+                                             ) {
+                                                 // Copy Button with glass style and violet borders
+                                                 Box(
+                                                     modifier = Modifier
+                                                         .height(34.dp)
+                                                         .weight(1f)
+                                                         .clip(RoundedCornerShape(8.dp))
+                                                         .background(Surface2)
+                                                         .border(1.dp, ElectricViolet.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                                         .clickable {
+                                                             val cleanText = ResponseParser.getCopyableText(message.text)
+                                                             clipboardManager.setText(AnnotatedString(cleanText))
+                                                             copied = true
+                                                         },
+                                                     contentAlignment = Alignment.Center
+                                                 ) {
+                                                     Row(
+                                                         verticalAlignment = Alignment.CenterVertically,
+                                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                     ) {
+                                                         Icon(
+                                                             imageVector = Icons.Default.ContentCopy,
+                                                             contentDescription = "Copy text",
+                                                             tint = if (copied) ElectricViolet else TextPrimaryColor,
+                                                             modifier = Modifier.size(13.dp)
+                                                         )
+                                                         Text(
+                                                             text = if (copied) "Copied" else "Copy",
+                                                             fontFamily = InstrumentSansFontFamily,
+                                                             fontWeight = FontWeight.Medium,
+                                                             fontSize = 11.sp,
+                                                             color = if (copied) ElectricViolet else TextPrimaryColor
+                                                         )
+                                                     }
+                                                 }
+
+                                                 // Go Deeper Button with interactive behavior
+                                                 Box(
+                                                     modifier = Modifier
+                                                         .height(34.dp)
+                                                         .weight(1.1f)
+                                                         .clip(RoundedCornerShape(8.dp))
+                                                         .background(Surface2)
+                                                         .border(1.dp, ElectricViolet.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                                         .clickable {
+                                                             val deeperPrompt = "Go Deeper on the previous analysis of '" + associatedUserQuery + "'. Reveal: assumptions, unconscious patterns, systemic forces, hidden incentives, and long-term trajectories. Provide genuinely new insights."
+                                                             onSubmitQuery(if (associatedUserQuery.isNotEmpty()) deeperPrompt else "Go Deeper on previous situation")
+                                                         },
+                                                     contentAlignment = Alignment.Center
+                                                 ) {
+                                                     Row(
+                                                         verticalAlignment = Alignment.CenterVertically,
+                                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                     ) {
+                                                         Icon(
+                                                             imageVector = Icons.Default.TrendingUp,
+                                                             contentDescription = "Go Deeper",
+                                                             tint = TextPrimaryColor,
+                                                             modifier = Modifier.size(13.dp)
+                                                         )
+                                                         Text(
+                                                             text = "Deeper",
+                                                             fontFamily = InstrumentSansFontFamily,
+                                                             fontWeight = FontWeight.Medium,
+                                                             fontSize = 11.sp,
+                                                             color = TextPrimaryColor
+                                                         )
+                                                     }
+                                                 }
+
+                                                 // Share Button
+                                                 Box(
+                                                     modifier = Modifier
+                                                         .height(34.dp)
+                                                         .weight(1f)
+                                                         .clip(RoundedCornerShape(8.dp))
+                                                         .background(Surface2)
+                                                         .border(1.dp, ElectricViolet.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                                         .clickable {
+                                                             val cleanText = ResponseParser.getCopyableText(message.text)
+                                                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                                 type = "text/plain"
+                                                                 putExtra(Intent.EXTRA_TEXT, cleanText)
+                                                             }
+                                                             context.startActivity(Intent.createChooser(shareIntent, "Share Analysis"))
+                                                         },
+                                                     contentAlignment = Alignment.Center
+                                                 ) {
+                                                     Row(
+                                                         verticalAlignment = Alignment.CenterVertically,
+                                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                     ) {
+                                                         Icon(
+                                                             imageVector = Icons.Default.Share,
+                                                             contentDescription = "Share",
+                                                             tint = TextPrimaryColor,
+                                                             modifier = Modifier.size(13.dp)
+                                                         )
+                                                         Text(
+                                                             text = "Share",
+                                                             fontFamily = InstrumentSansFontFamily,
+                                                             fontWeight = FontWeight.Medium,
+                                                             fontSize = 11.sp,
+                                                             color = TextPrimaryColor
+                                                         )
+                                                     }
+                                                 }
+
+                                                 // Export File Button
+                                                 Box(
+                                                     modifier = Modifier
+                                                         .height(34.dp)
+                                                         .weight(1f)
+                                                         .clip(RoundedCornerShape(8.dp))
+                                                         .background(Surface2)
+                                                         .border(1.dp, ElectricViolet.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                                         .clickable {
+                                                             try {
+                                                                 val cleanText = ResponseParser.getCopyableText(message.text)
+                                                                 val cacheFile = java.io.File(context.cacheDir, "depthlens_analysis_report.txt")
+                                                                 cacheFile.writeText(cleanText)
+                                                                 val contentUri = FileProvider.getUriForFile(
+                                                                     context,
+                                                                     "com.aistudio.depthlens.omg.fileprovider",
+                                                                     cacheFile
+                                                                 )
+                                                                 val exportIntent = Intent(Intent.ACTION_SEND).apply {
+                                                                     type = "text/plain"
+                                                                     putExtra(Intent.EXTRA_STREAM, contentUri)
+                                                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                                 }
+                                                                 context.startActivity(Intent.createChooser(exportIntent, "Export Analysis Report"))
+                                                             } catch (e: Exception) {
+                                                                 android.widget.Toast.makeText(context, "Export Error: ${e.localizedMessage}", android.widget.Toast.LENGTH_LONG).show()
+                                                             }
+                                                         },
+                                                     contentAlignment = Alignment.Center
+                                                 ) {
+                                                     Row(
+                                                         verticalAlignment = Alignment.CenterVertically,
+                                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                     ) {
+                                                         Icon(
+                                                             imageVector = Icons.Default.Download,
+                                                             contentDescription = "Export Report",
+                                                             tint = TextPrimaryColor,
+                                                             modifier = Modifier.size(13.dp)
+                                                         )
+                                                         Text(
+                                                             text = "Export",
+                                                             fontFamily = InstrumentSansFontFamily,
+                                                             fontWeight = FontWeight.Medium,
+                                                             fontSize = 11.sp,
+                                                             color = TextPrimaryColor
+                                                         )
+                                                     }
+                                                 }
+                                             }
+
+                                              Spacer(modifier = Modifier.height(6.dp))
+                                              Text(
+                                                  text = "DIG DEEPER",
+                                                  fontSize = 11.sp,
+                                                  letterSpacing = 1.sp,
+                                                  fontFamily = DMMonoFontFamily,
+                                                  fontWeight = FontWeight.Bold,
+                                                  color = PremiumCyan,
+                                                  modifier = Modifier.padding(bottom = 6.dp)
+                                              )
 
                                              Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                                  val digDeeperPaths = remember(associatedUserQuery) {
@@ -1006,137 +1083,18 @@ fun HomeScreen(
                                                                  lineHeight = 22.sp,
                                                                  fontFamily = InstrumentSansFontFamily,
                                                                  modifier = Modifier.weight(1f)
-                                                             )
-                                                         }
-                                                     }
-                                                 }
-                                             }
-
-                                             if (false && parsedResponse.suggestedQuestions.isNotEmpty()) {
-                                                Spacer(modifier = Modifier.height(12.dp))
-                                                Text(
-                                                    text = "DIG DEEPER",
-                                                    fontSize = 11.sp,
-                                                    letterSpacing = 1.sp,
-                                                    fontFamily = DMMonoFontFamily,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = PremiumCyan,
-                                                    modifier = Modifier.padding(bottom = 6.dp)
-                                                )
-                                                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                                    parsedResponse.suggestedQuestions.forEach { q ->
-                                                        Row(
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .background(Surface3, RoundedCornerShape(8.dp))
-                                                                .border(1.dp, PremiumCyan.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                                                                .clickable { onSubmitQuery(q) }
-                                                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .size(18.dp)
-                                                                    .background(PremiumCyan.copy(alpha = 0.12f), CircleShape),
-                                                                contentAlignment = Alignment.Center
-                                                            ) {
-                                                                Text("?", fontSize = 9.sp, color = PremiumCyan, fontWeight = FontWeight.Bold)
-                                                            }
-                                                            Spacer(modifier = Modifier.width(8.dp))
-                                                            Text(
-                                                                text = q,
-                                                                fontSize = 16.sp,
-                                                                color = TextSecondaryColor,
-                                                                lineHeight = 22.sp,
-                                                                fontFamily = InstrumentSansFontFamily,
-                                                                modifier = Modifier.weight(1f)
-                                                            )
-                                                        }
-                                                    }
+                                                              )
+                                                          }
+                                                      }
+                                                  }
+                                              }
                                                 }
-                                            }
-
-                                            // ── Exploration paths ──────────────────────────
-                                            if (false && parsedResponse.explorationPaths.isNotEmpty()) {
-                                                Spacer(modifier = Modifier.height(10.dp))
-                                                Text(
-                                                    text = "EXPLORE FURTHER",
-                                                    fontSize = 11.sp,
-                                                    letterSpacing = 1.sp,
-                                                    fontFamily = DMMonoFontFamily,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = ElectricViolet,
-                                                    modifier = Modifier.padding(bottom = 5.dp)
-                                                )
-                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    parsedResponse.explorationPaths.forEach { path ->
-                                                        Row(
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .background(ElectricViolet.copy(alpha = 0.07f), RoundedCornerShape(7.dp))
-                                                                .border(1.dp, ElectricViolet.copy(alpha = 0.2f), RoundedCornerShape(7.dp))
-                                                                .clickable { onSubmitQuery("$path — explore this path specifically in reference to my situation.") }
-                                                                .padding(horizontal = 10.dp, vertical = 7.dp),
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Text("✓", fontSize = 14.sp, color = ElectricViolet)
-                                                            Spacer(modifier = Modifier.width(7.dp))
-                                                            Text(
-                                                                text = path,
-                                                                fontSize = 16.sp,
-                                                                color = TextSecondaryColor,
-                                                                lineHeight = 22.sp,
-                                                                fontFamily = InstrumentSansFontFamily,
-                                                                modifier = Modifier.weight(1f)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            // ── Copy Button ────────────────────────────────
-                                            if (false) {
-                                                val clipboardManager = LocalClipboardManager.current
-                                            var copied by remember { mutableStateOf(false) }
-                                            Spacer(modifier = Modifier.height(10.dp))
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.End
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(7.dp))
-                                                        .background(if (copied) ElectricViolet.copy(alpha = 0.18f) else Surface3)
-                                                        .border(1.dp, if (copied) ElectricViolet.copy(alpha = 0.6f) else BorderSubtle, RoundedCornerShape(7.dp))
-                                                        .clickable {
-                                                            clipboardManager.setText(AnnotatedString(message.text))
-                                                            copied = true
-                                                        }
-                                                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.ContentCopy,
-                                                            contentDescription = "Copy analysis",
-                                                            tint = if (copied) ElectricViolet else TextMutedColor,
-                                                            modifier = Modifier.size(10.dp)
-                                                        )
-                                                        Text(
-                                                            text = if (copied) "Copied!" else "Copy",
-                                                            fontSize = 14.sp,
-                                                            fontFamily = DMMonoFontFamily,
-                                                            color = if (copied) ElectricViolet else TextMutedColor
-                                                        )
-                                                    }
-                                                }
-                                            }
                                             }
                                         }
                                     }
                                 } else {
                                     Card(
-                                        shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),
+                                         shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),
                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF141420)),
                                         border = BorderStroke(1.dp, Color(0x0FFFFFFF)),
                                         modifier = Modifier.fillMaxWidth()
@@ -1318,6 +1276,9 @@ fun HomeScreen(
                     value = rawText,
                     onValueChange = { rawText = it },
                     modifier = Modifier.weight(1f),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(
+                        if (ThemeManager.isDarkTheme) Color.White else Color.Black
+                    ),
                     textStyle = TextStyle(
                         fontFamily = InstrumentSansFontFamily,
                         fontSize = 17.sp,
@@ -1603,6 +1564,8 @@ fun HomeScreen(
                                     val mediaPerm = if (android.os.Build.VERSION.SDK_INT >= 33) {
                                         android.Manifest.permission.READ_MEDIA_IMAGES
                                     } else {
+
+
                                         android.Manifest.permission.READ_EXTERNAL_STORAGE
                                     }
                                     attachPermLauncher.launch(mediaPerm)

@@ -121,6 +121,7 @@ fun DashboardScreen(
 
     var showFeedbackDialog by remember { mutableStateOf(false) }
     var showThemeSelectorDialog by remember { mutableStateOf(false) }
+    var activeThemeName by remember { mutableStateOf(ThemeManager.themeName) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showReportBugDialog by remember { mutableStateOf(false) }
     var selectedMode by remember { mutableStateOf("Root Cause") }
@@ -967,17 +968,19 @@ fun DashboardScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         val themesList = listOf(
-                            Triple(true, "Deep Midnight", "Dark • Focused • Cinematic"),
-                            Triple(false, "Polar Dawn", "Clean • Bright • Productive")
+                            Triple("Void", "Void", "Pure Black • Silver • Minimalist"),
+                            Triple("Deep Sea", "Deep Sea", "Indigo • Neon Cyan • Cinematic"),
+                            Triple("Polar Dawn", "Polar Dawn", "Clean • Bright • Productive"),
+                            Triple("Ember", "Ember", "Fiery • Warm • Glowing Charcoal")
                         )
 
-                        themesList.forEach { (isDark, name, desc) ->
-                            val isSelected = ThemeManager.isDarkTheme == isDark
+                        themesList.forEach { (themeKey, name, desc) ->
+                            val isSelected = activeThemeName == themeKey
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        ThemeManager.setTheme(context, isDark)
+                                        activeThemeName = themeKey
                                         android.widget.Toast.makeText(context, "Theme Applied: $name", android.widget.Toast.LENGTH_SHORT).show()
                                         coroutineScope.launch {
                                             kotlinx.coroutines.delay(500)
@@ -985,16 +988,12 @@ fun DashboardScreen(
                                         }
                                     }
                                     .background(
-                                        color = if (isSelected) {
-                                            if (isDark) Color(0xFF1E1E2E) else Color(0xFFF1F5F9)
-                                        } else Color.Transparent,
+                                        color = if (isSelected) Surface3 else Color.Transparent,
                                         shape = RoundedCornerShape(16.dp)
                                     )
                                     .border(
                                         width = 1.dp,
-                                        color = if (isSelected) {
-                                            if (isDark) PremiumCyan.copy(alpha = 0.8f) else Color(0xFFE2E8F0)
-                                        } else Color.Transparent,
+                                        color = if (isSelected) ElectricViolet.copy(alpha = 0.8f) else Color.Transparent,
                                         shape = RoundedCornerShape(16.dp)
                                     )
                                     .padding(16.dp),
@@ -1003,7 +1002,7 @@ fun DashboardScreen(
                                 Box(
                                     modifier = Modifier
                                         .size(20.dp)
-                                        .border(2.dp, if (isSelected) PremiumCyan else if (ThemeManager.isDarkTheme) Color(0xFF475569) else Color(0xFF94A3B8), CircleShape)
+                                        .border(2.dp, if (isSelected) ElectricViolet else BorderSubtle, CircleShape)
                                         .padding(4.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -1011,7 +1010,7 @@ fun DashboardScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .background(PremiumCyan, CircleShape)
+                                                .background(ElectricViolet, CircleShape)
                                         )
                                     }
                                 }
@@ -1021,16 +1020,14 @@ fun DashboardScreen(
                                         text = name,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isSelected) {
-                                            if (ThemeManager.isDarkTheme) Color.White else Color(0xFF0F172A)
-                                        } else TextSecondaryColor
+                                        color = if (isSelected) TextPrimaryColor else TextSecondaryColor
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = desc,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Normal,
-                                        color = if (ThemeManager.isDarkTheme) Color(0xFF8E8D9F) else Color(0xFF64748B)
+                                        color = TextMutedColor
                                     )
                                 }
                             }
@@ -1808,48 +1805,45 @@ fun DashboardScreen(
     ) {
         // Active visual state controllers
         var currentTab by remember { mutableStateOf("home") }
-        var activeThemeName by remember { mutableStateOf("Void") }
 
         LaunchedEffect(activeThemeName) {
-            if (activeThemeName == "Polar Dawn") {
-                ThemeManager.isDarkTheme = false
-            } else {
-                ThemeManager.isDarkTheme = true
-            }
+            ThemeManager.setTheme(context, activeThemeName)
         }
 
         Scaffold(
             containerColor = DeepMidnight,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Surface1)
-                        .border(1.dp, BorderSubtle)
-                        .navigationBarsPadding()
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    BottomTabItem(
-                        tabId = "home",
-                        label = "Home",
-                        isActive = currentTab == "home",
-                        onClick = { currentTab = "home" }
-                    )
-                    BottomTabItem(
-                        tabId = "sessions",
-                        label = "Sessions",
-                        isActive = currentTab == "sessions",
-                        onClick = { currentTab = "sessions" }
-                    )
-                    BottomTabItem(
-                        tabId = "settings",
-                        label = "Settings",
-                        isActive = currentTab == "settings",
-                        onClick = { currentTab = "settings" }
-                    )
+                if (!WindowInsets.isImeVisible) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Surface1)
+                            .border(1.dp, BorderSubtle)
+                            .navigationBarsPadding()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BottomTabItem(
+                            tabId = "home",
+                            label = "Home",
+                            isActive = currentTab == "home",
+                            onClick = { currentTab = "home" }
+                        )
+                        BottomTabItem(
+                            tabId = "sessions",
+                            label = "Sessions",
+                            isActive = currentTab == "sessions",
+                            onClick = { currentTab = "sessions" }
+                        )
+                        BottomTabItem(
+                            tabId = "settings",
+                            label = "Settings",
+                            isActive = currentTab == "settings",
+                            onClick = { currentTab = "settings" }
+                        )
+                    }
                 }
             }
         ) { innerPadding ->
@@ -5083,4 +5077,3 @@ fun BottomTabItem(
         )
     }
 }
-

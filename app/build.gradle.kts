@@ -6,6 +6,72 @@ plugins {
   alias(libs.plugins.secrets)
 }
 
+tasks.register("repairHomeScreen") {
+    doLast {
+        val homeScreenFile = file("src/main/java/com/example/ui/screens/HomeScreen.kt")
+        if (homeScreenFile.exists()) {
+            var text = homeScreenFile.readText()
+            val nl = if (text.contains("\r\n")) "\r\n" else "\n"
+            
+            // 1. Strip comment block DEAD_CODE
+            text = text.replace(Regex("/\\* DEAD_CODE.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
+            
+            // 2. Remove the exact 5 mismatched braces block specifically (both Unix and CRLF)
+            val bracesUnix = "                                                                                               }\n                                             }\n                                         }\n                                     }\n                                 }"
+            val bracesCRLF = "                                                                                               }\r\n                                             }\r\n                                         }\r\n                                     }\r\n                                 }"
+            text = text.replace(bracesUnix, "")
+            text = text.replace(bracesCRLF, "")
+            
+            // 3. Update the fallback container with Card wrapper (both Unix and CRLF)
+            val findUnix = "                                 } else {\n                                        shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),\n                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF141420)),\n                                         border = BorderStroke(1.dp, Color(0x0FFFFFFF)),\n                                         modifier = Modifier.fillMaxWidth()\n                                     ) {"
+            val replUnix = "                                 } else {\n                                     Card(\n                                         shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),\n                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF141420)),\n                                         border = BorderStroke(1.dp, Color(0x0FFFFFFF)),\n                                         modifier = Modifier.fillMaxWidth()\n                                     ) {"
+            text = text.replace(findUnix, replUnix)
+            
+            val findCRLF = "                                 } else {\r\n                                        shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),\r\n                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF141420)),\r\n                                         border = BorderStroke(1.dp, Color(0x0FFFFFFF)),\r\n                                         modifier = Modifier.fillMaxWidth()\r\n                                     ) {"
+            val replCRLF = "                                 } else {\r\n                                     Card(\r\n                                         shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),\r\n                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF141420)),\r\n                                         border = BorderStroke(1.dp, Color(0x0FFFFFFF)),\r\n                                         modifier = Modifier.fillMaxWidth()\r\n                                     ) {"
+            text = text.replace(findCRLF, replCRLF)
+
+            // 4. Repair the three corrupted joined sections space-independently
+            val pat1 = Regex("lineHeight = 16\\.sp\\s+\\)\\s+}\\s+}\\s+else\\s*\\{\\s+Spacer\\(modifier = Modifier\\.weight\\(1f\\)\\)")
+            val pat2 = Regex("modifier = Modifier\\.size\\(10\\.dp\\)\\s+\\)\\s+}\\s+}\\s+}\\s+else\\s*\\{\\s+val parsedResponse = remember\\(message\\.text\\)")
+            val pat3 = Regex("fontWeight = FontWeight\\.Bold\\s+\\)\\s+}\\s+else\\s*\\{\\s+if \\(rawText\\.isEmpty\\(\\)\\)")
+            val pat4 = Regex("modifier = Modifier\\.weight\\(1f\\)\\s+\\)\\s+\\}\\s+else\\s*\\{\\s+Card\\(")
+            
+            println("PAT1 MATCHES: ${pat1.containsMatchIn(text)}")
+            println("PAT2 MATCHES: ${pat2.containsMatchIn(text)}")
+            println("PAT3 MATCHES: ${pat3.containsMatchIn(text)}")
+            println("PAT4 MATCHES: ${pat4.containsMatchIn(text)}")
+
+            text = text.replace(
+                pat1,
+                "lineHeight = 16.sp${nl}                                        )${nl}                                    }${nl}                                }${nl}                            } else {${nl}                                Spacer(modifier = Modifier.weight(1f))"
+            )
+
+            text = text.replace(
+                pat2,
+                "modifier = Modifier.size(10.dp)${nl}                                        )${nl}                                    }${nl}                                }${nl}                            } else {${nl}                            val parsedResponse = remember(message.text)"
+            )
+
+            text = text.replace(
+                pat4,
+                "modifier = Modifier.weight(1f)${nl}                                                              )${nl}                                                          }${nl}                                                      }${nl}                                                  }${nl}                                              }${nl}                                                }${nl}                                            }${nl}                                        }${nl}                                    }${nl}                                } else {${nl}                                    Card("
+            )
+
+            text = text.replace(
+                pat3,
+                "fontWeight = FontWeight.Bold${nl}                                )${nl}                            } else {${nl}                            if (rawText.isEmpty())"
+            )
+            
+            text = text.replace(
+                "// Helper to parse archived JSON — kept for any legacy calls",
+                "}${nl}${nl}// Helper to parse archived JSON — kept for any legacy calls"
+            )
+            
+            homeScreenFile.writeText(text)
+        }
+    }
+}
+
 android {
   namespace = "com.example"
   compileSdk = 36

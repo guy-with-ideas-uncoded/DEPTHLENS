@@ -35,6 +35,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontStyle
@@ -416,6 +417,407 @@ fun AnalysisScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            // ── LIVE PROBABILITY INTELLIGENCE ─────────────────────────────
+            val liveProbMetrics = parsedResponse?.probabilityMetrics
+            val liveFuturePathways = parsedResponse?.futurePathways ?: emptyList()
+            val liveTimelineForecast = parsedResponse?.timelineForecast
+
+            if (liveProbMetrics != null || liveFuturePathways.isNotEmpty() || liveTimelineForecast != null) {
+
+                // Section header
+                Text(
+                    text = "PROBABILITY INTELLIGENCE",
+                    fontSize = 8.5.sp,
+                    letterSpacing = 1.3.sp,
+                    fontFamily = DMMonoFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = TextMutedColor,
+                    modifier = Modifier.padding(bottom = 10.dp)
+                )
+
+                // ── 1. PROBABILITY METRICS CARD (circular gauge style) ────
+                if (liveProbMetrics != null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Surface2),
+                        border = BorderStroke(1.dp, ElectricViolet.copy(alpha = 0.35f))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(modifier = Modifier.size(7.dp).background(ElectricViolet, CircleShape))
+                                    Spacer(modifier = Modifier.width(7.dp))
+                                    Text(
+                                        text = "ANALYSIS PROBABILITY METRICS",
+                                        fontSize = 8.sp,
+                                        letterSpacing = 1.1.sp,
+                                        fontFamily = DMMonoFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        color = ElectricViolet
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .background(ElectricViolet.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "LIVE",
+                                        fontSize = 7.sp,
+                                        fontFamily = DMMonoFontFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        color = ElectricViolet
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // 4 metrics in 2×2 grid
+                            val metrics = listOf(
+                                Triple("Confidence", liveProbMetrics.confidence, PremiumCyan),
+                                Triple("Likelihood", liveProbMetrics.likelihood, SuccessColor),
+                                Triple("Risk Level", liveProbMetrics.risk, ErrorColor),
+                                Triple("Opportunity", liveProbMetrics.opportunity, WarningColor)
+                            )
+                            for (i in metrics.indices step 2) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = if (i + 2 < metrics.size) 8.dp else 0.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    for (j in 0..1) {
+                                        if (i + j < metrics.size) {
+                                            val (label, value, color) = metrics[i + j]
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = label,
+                                                        fontSize = 9.sp,
+                                                        fontFamily = DMMonoFontFamily,
+                                                        color = TextSecondaryColor
+                                                    )
+                                                    Text(
+                                                        text = "$value%",
+                                                        fontSize = 13.sp,
+                                                        fontFamily = DMMonoFontFamily,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = color
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                // Progress bar
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(5.dp)
+                                                        .background(Surface3, RoundedCornerShape(3.dp))
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth(value / 100f)
+                                                            .fillMaxHeight()
+                                                            .background(
+                                                                Brush.horizontalGradient(listOf(color.copy(alpha = 0.6f), color)),
+                                                                RoundedCornerShape(3.dp)
+                                                            )
+                                                    )
+                                                }
+                                            }
+                                        } else {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                // ── 2. FUTURE PATHWAYS CARD (scenario cards with badges) ──
+                if (liveFuturePathways.isNotEmpty()) {
+                    val pathwayColors = listOf(SuccessColor, WarningColor, ErrorColor, PremiumCyan, ElectricViolet)
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Surface2),
+                        border = BorderStroke(1.dp, SuccessColor.copy(alpha = 0.35f))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(7.dp).background(SuccessColor, CircleShape))
+                                Spacer(modifier = Modifier.width(7.dp))
+                                Text(
+                                    text = "FUTURE PATHWAYS FORECAST",
+                                    fontSize = 8.sp,
+                                    letterSpacing = 1.1.sp,
+                                    fontFamily = DMMonoFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SuccessColor
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Probability-weighted scenarios based on current trajectory",
+                                fontSize = 9.sp,
+                                fontFamily = InstrumentSansFontFamily,
+                                color = TextMutedColor,
+                                modifier = Modifier.padding(bottom = 10.dp)
+                            )
+
+                            liveFuturePathways.forEachIndexed { idx, pathway ->
+                                val pColor = pathwayColors.getOrElse(idx) { ElectricViolet }
+                                val prob = pathway.probability.coerceIn(0, 100)
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = if (idx < liveFuturePathways.size - 1) 10.dp else 0.dp)
+                                        .background(Surface3, RoundedCornerShape(10.dp))
+                                        .border(1.dp, pColor.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    // Title + probability badge
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = pathway.title.ifEmpty { "Pathway ${idx + 1}" },
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontFamily = InstrumentSansFontFamily,
+                                            color = TextPrimaryColor,
+                                            modifier = Modifier.weight(1f).padding(end = 6.dp)
+                                        )
+                                        // Probability badge
+                                        Box(
+                                            modifier = Modifier
+                                                .background(pColor.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                                .border(1.dp, pColor.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                        ) {
+                                            Text(
+                                                text = "$prob%",
+                                                fontSize = 12.sp,
+                                                fontFamily = DMMonoFontFamily,
+                                                fontWeight = FontWeight.Bold,
+                                                color = pColor
+                                            )
+                                        }
+                                    }
+
+                                    // Probability arc bar
+                                    Spacer(modifier = Modifier.height(7.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .background(Surface4, RoundedCornerShape(2.dp))
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(prob / 100f)
+                                                .fillMaxHeight()
+                                                .background(
+                                                    Brush.horizontalGradient(listOf(pColor.copy(alpha = 0.5f), pColor)),
+                                                    RoundedCornerShape(2.dp)
+                                                )
+                                        )
+                                    }
+
+                                    if (pathway.description.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(7.dp))
+                                        Text(
+                                            text = pathway.description,
+                                            fontSize = 10.sp,
+                                            fontFamily = InstrumentSansFontFamily,
+                                            color = TextSecondaryColor,
+                                            lineHeight = 14.sp
+                                        )
+                                    }
+
+                                    // Drivers / Risks / Opportunities chips
+                                    if (pathway.drivers.isNotEmpty() || pathway.risks.isNotEmpty() || pathway.opportunities.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(7.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                            if (pathway.drivers.isNotEmpty()) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(PremiumCyan.copy(alpha = 0.10f), RoundedCornerShape(4.dp))
+                                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "↗ ${pathway.drivers}",
+                                                        fontSize = 8.5.sp,
+                                                        fontFamily = DMMonoFontFamily,
+                                                        color = PremiumCyan,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                            if (pathway.risks.isNotEmpty()) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .background(ErrorColor.copy(alpha = 0.10f), RoundedCornerShape(4.dp))
+                                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "⚠ ${pathway.risks}",
+                                                        fontSize = 8.5.sp,
+                                                        fontFamily = DMMonoFontFamily,
+                                                        color = ErrorColor,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                // ── 3. TIMELINE FORECAST CARD (horizontal timeline style) ──
+                if (liveTimelineForecast != null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Surface2),
+                        border = BorderStroke(1.dp, WarningColor.copy(alpha = 0.35f))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(7.dp).background(WarningColor, CircleShape))
+                                Spacer(modifier = Modifier.width(7.dp))
+                                Text(
+                                    text = "TEMPORAL PROBABILITY FORECAST",
+                                    fontSize = 8.sp,
+                                    letterSpacing = 1.1.sp,
+                                    fontFamily = DMMonoFontFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = WarningColor
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            val timelineItems = listOf(
+                                Triple("SHORT TERM", liveTimelineForecast.shortTermProb, liveTimelineForecast.shortTermDesc),
+                                Triple("MID TERM", liveTimelineForecast.midTermProb, liveTimelineForecast.midTermDesc),
+                                Triple("LONG TERM", liveTimelineForecast.longTermProb, liveTimelineForecast.longTermDesc)
+                            )
+
+                            // Timeline connector layout
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                timelineItems.forEachIndexed { idx, (label, prob, desc) ->
+                                    val tColor = when (idx) {
+                                        0 -> PremiumCyan
+                                        1 -> WarningColor
+                                        else -> ElectricViolet
+                                    }
+                                    val clampedProb = prob.coerceIn(0, 100)
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        // Probability circle
+                                        Box(
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .background(tColor.copy(alpha = 0.12f), CircleShape)
+                                                .border(2.dp, tColor.copy(alpha = 0.5f), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "$clampedProb%",
+                                                fontSize = 13.sp,
+                                                fontFamily = DMMonoFontFamily,
+                                                fontWeight = FontWeight.Bold,
+                                                color = tColor
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(5.dp))
+                                        Text(
+                                            text = label,
+                                            fontSize = 7.sp,
+                                            fontFamily = DMMonoFontFamily,
+                                            fontWeight = FontWeight.Bold,
+                                            color = tColor,
+                                            textAlign = TextAlign.Center,
+                                            letterSpacing = 0.8.sp
+                                        )
+                                        if (desc.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = desc,
+                                                fontSize = 8.5.sp,
+                                                fontFamily = InstrumentSansFontFamily,
+                                                color = TextMutedColor,
+                                                textAlign = TextAlign.Center,
+                                                lineHeight = 11.sp
+                                            )
+                                        }
+                                    }
+                                    // Connector line between items
+                                    if (idx < timelineItems.size - 1) {
+                                        Box(
+                                            modifier = Modifier
+                                                .width(16.dp)
+                                                .padding(top = 24.dp)
+                                                .height(1.dp)
+                                                .background(BorderSubtle)
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (liveTimelineForecast.explanation.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Surface3, RoundedCornerShape(8.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    Text(
+                                        text = liveTimelineForecast.explanation,
+                                        fontSize = 9.5.sp,
+                                        fontFamily = InstrumentSansFontFamily,
+                                        color = TextSecondaryColor,
+                                        lineHeight = 13.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+            }
 
             // FUTURE PROBABILITY CANVS & MODEL (D3-style)
             var selectedPointIndex by remember { mutableStateOf<Int?>(null) }
@@ -1096,4 +1498,3 @@ data class WebSignalCardData(
     val relevance: Int,
     val summary: String
 )
-
