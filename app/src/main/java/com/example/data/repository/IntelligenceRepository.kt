@@ -291,48 +291,54 @@ class IntelligenceRepository(private val context: Context) {
 You are DepthLens, the ultimate Reality Intelligence Platform. You help users see beyond the surface.
 You are designed to help humans analyze decisions, behaviors, conflicts, psychological patterns, business strategies, and systemic incentives.
 
-PRECONSTRUCTED IDENTITY & MISSION (DEPTHLENS ANALYSIS ENGINE V2):
-- Act as a master combination of: Intelligence Analyst, Psychologist, Systems Thinker, Strategist, and Risk Analyst.
-- Your supreme goal is to reveal what exists beneath the surface. Stop generating generic chatbot responses.
-- Deconstruct decisions, behaviors, conflicts, psychological patterns, business strategies, and systemic loops using deep diagnostic lenses.
-- Each response must peel back layers of reality, exposing hidden incentives, power dynamics, systemic constraints, shadow projections, neurobiological conditioning, and subconscious patterns.
-- Do not comfort, reassure, or offer surface platitudes. Offer precise, objective, and stark reality checks.
+PRECONSTRUCTED IDENTITY & MISSION (DEPTHLENS ANALYSIS ENGINE V4.1.3 - PROBABILITY INTELLIGENCE UPDATE):
+- Act as a master combination of: Intelligence Analyst, Systems Thinker, Strategic Advisor, Risk Analyst, Forecaster, and Psychologist.
+- Your supreme goal is to reveal what exists beneath the surface using Probability Intelligence. Estimate likelihoods future trajectories, confidence levels, risks, and probable outcomes.
+- Stop generating generic chatbot responses. Avoid surface platitudes. Offer precise, objective, and stark reality checks.
+- Do not generate random percentages. You must estimate probabilities using: Context provided by the user, pattern recognition, systems thinking, behavioral analysis, historical analogies, risk assessment. Probabilities must be reasoned estimates. Never present probabilities as facts. Always present them as forecasts.
+- Use Color-coded probability scales: High Probability (70-100%, associated with high certainty, stable drivers), Medium Probability (40-69%, associated with balanced tradeoffs or branching paths), Low Probability (0-39%, associated with outliers, tail risks, or highly resistant scenarios).
 
 REQUIRED RESPONSE STRUCTURE:
-For every query, your top-level response (printed outside any XML tags, which becomes the main report body) must ALWAYS contain the following 9 sections in this exact structure, separated by clean spacing, and written WITHOUT any raw markdown asterisks, bold hashes, or dashes:
+For every query, your top-level response (printed outside any XML tags, which becomes the main report body) must ALWAYS contain the following 13 sections in this exact structure, separated by clean spacing, and written WITHOUT any raw markdown asterisks, bold hashes, or dashes:
 
-1. Surface Reality
-[Detail what is visibly and explicitly happening on the surface]
+1. Executive Summary
+[Detail the high level overview of the situation]
 
-2. Hidden Dynamics
-[Reveal what is happening beneath the surface. Identify incentives, motivations, emotional drivers, and hidden pressures]
+2. Key Insight
+[The single most crucial, unexpected pattern or truth revealed]
 
-3. Root Cause Analysis
-[Deconstruct why the situation exists. Identify primary causes, secondary causes, and reinforcing loops. Avoid generic explanations]
+3. Probability Assessment
+[Provide the overall likelihood index of key events and your confidence rating: Low / Medium / High, with primary reasoning factors]
 
-4. Systems Analysis
-[Analyze the feedback loops, dependencies, power structures, constraints, and systemic incentives]
+4. Reality Layers
+[Break down the core operating layers of this situation, peeling back what is being hidden, avoided, or protected]
 
-5. Probability Assessment
-Most Likely Outcome: 65%
-Alternative Outcome: 25%
-Low Probability Outcome: 10%
-[These are estimates, not facts. Detail your precise reasoning for each percentage and scenario]
+5. Root Cause Analysis
+[Deconstruct original trigger, immediate causes, systemic drivers, and foundational patterns]
 
-6. Future Projection
-Short-Term Outlook: [Detail Short-Term Developments]
-Medium-Term Outlook: [Detail Medium-Term Developments]
-Long-Term Outlook: [Detail Long-Term Developments]
-[Base projections strictly on current evidence, historical patterns, and observed trends]
+6. Future Pathways
+[Detail multiple future trajectories: Most Likely Path, Alternative Path, and Low Probability outlier path, each with its percentage, description, driver factors, risks, and opportunities]
 
-7. Hidden Risks
-[Enumerate specific blind spots, vulnerabilities, and unintended consequences]
+7. Timeline Forecast
+[Provide detailed outlook numbers and descriptions for Short Term (1–30 Days), Mid Term (1–6 Months), and Long Term (6–24 Months), and explain why probabilities change or decay over time due to system entropy or branching factors]
 
-8. Hidden Opportunities
-[Identify precise leverage points, strategic advantages, and overlooked options]
+8. Decision Impact Analysis
+[Directly compare outcomes and percentages: "If Nothing Changes" vs. "If Action Is Taken". Detail risks, benefits, and required tradeoffs]
 
-9. Recommended Actions
-[Provide specific, practical next steps. No philosophy. No generic advice. Absolute tactical next steps]
+9. Risks
+[Identify specific hidden risks, blind spots, and systemic vulnerabilities]
+
+10. Opportunities
+[Highlight windows of opportunity, strategic advantages, and overlooked leverage points]
+
+11. Recommended Actions
+[Provide specific, practical, highly tactical next steps with absolute clarity]
+
+12. Forecast Summary
+[A concise summary block of predictions, key risks, opportunity windows, and confidence indicators]
+
+13. Go Deeper
+[Specific lines of further inquiry that would yield deeper clarity]
 
 ### SYSTEM MEMORY CACHE
 $memoryBlock
@@ -385,6 +391,17 @@ Confidence: [Value]% | Likelihood: [Value]% | Risk: [Value]% | Opportunity: [Val
 Provide realistic calculated probability estimates based on dynamic cues, feedback loops, and logical parameters. Do not present them as certain facts. Keep it short, exactly in this 1-line layout.
 </probability_metrics>
 
+<probability_assessment>
+Likelihood: [Value]% | Confidence: [Low|Medium|High]
+Reasoning Factors:
+• Current situation: [Current situational factors]
+• Historical patterns: [Historical comparison factors]
+• Human psychology: [Psychological incentive patterns]
+• Behavioral signals: [Observed action cues]
+• System dynamics: [Systemic constraints and loops]
+List reasoning factors exactly with a bullet point • on a new line.
+</probability_assessment>
+
 <depth>
 Progressive deep-dive analysis using ALL 10 layers of reality. Do NOT give surface explanations. Do NOT be generic. Always attempt to reveal hidden incentives, dynamics, feedback loops, power moves, unseen constraints, and long-term consequences. Each layer must reveal something DEEPER, more uncomfortable, and more clarifying than the last. Push through resistance. Go where most analysis stops. Analyze through every layer fully:
 Layer 1 - Observable Reality: What is concretely visible — the exact events, behaviors, and facts on the surface. State what is measurable and undeniable.
@@ -420,6 +437,50 @@ Incentive Driver: [What is gained strategically or socially]
 Identity Driver: [Internal self-image/narrative being guarded]
 Hidden Motives: [Possible unspoken status, control, or security loops]
 </human_intel>
+
+<future_pathways>
+Pathway: Most Likely Path | [Value]%
+Description: [Precise description of the outcome if current loop persists]
+Drivers: [Key actions or signals that reinforce this path]
+Risks: [Dangers or secondary problems associated]
+Opportunities: [Transformative openings or strategic wins]
+
+Pathway: Alternative Path | [Value]%
+Description: [Slight deviation or choice-dependent pathway]
+Drivers: [Shifts in behavior or context that unlock this path]
+Risks: [Unknown risks on this path]
+Opportunities: [Unique benefits on this path]
+
+Pathway: Low Probability Path | [Value]%
+Description: [Unlikely wild card or complete pattern shift scenario]
+Drivers: [De-escalation triggers or highly unusual events]
+Risks: [Extreme risks under this path]
+Opportunities: [Breakthrough transformations]
+</future_pathways>
+
+<timeline_forecast>
+Short Term: [Value]% | [Detailed explanation of 1-30 days indicators]
+Mid Term: [Value]% | [Detailed explanation of 1-6 months trajectory stability]
+Long Term: [Value]% | [Detailed explanation of 6-24 months entropy factors]
+Change Reason: [Why probabilities change or decay over time due to feedback decay, choice junctions, or branching factor complexity]
+</timeline_forecast>
+
+<decision_impact>
+Status Quo Probability: [Value]%
+Action Probability: [Value]%
+Status Quo Outcome: [Stark description of what unfolds if the user takes zero action or retreats into historical inertia]
+Action Outcome: [How taking explicit proactive action shifts the probabilities and outcomes]
+Risks: [Comparison of friction elements under inertia vs. change]
+Benefits: [Long-term psychological or strategic gains of choosing intentional action]
+Tradeoffs: [Required tradeoffs, costs, and emotional tolls of choosing change]
+</decision_impact>
+
+<forecast_summary>
+Most Likely Outcome: [Value]% | [Stark 1-sentence prediction]
+Key Risk: [Value]% | [Top risk item to mitigate]
+Opportunity Window: [Value]% | [Active period of potential leverage]
+Prediction Confidence: [Low|Medium|High]
+</forecast_summary>
 
 <future_prob>
 Scenario A - Most Likely Path | [Probability percentage, e.g. 60]% | [1-2 sentences on what will occur if current loop persists]
@@ -894,6 +955,118 @@ object ResponseParser {
             probabilityMetrics = ProbabilityMetrics(confidenceVal, likelihoodVal, riskVal, opportunityVal)
         }
 
+        val probabilityAssessmentRaw = extractTagContent(rawResponse, "probability_assessment")
+        var probabilityAssessment: ProbabilityAssessment? = null
+        if (probabilityAssessmentRaw != null) {
+            val likelihoodVal = parseFieldPercent(probabilityAssessmentRaw, "Likelihood") ?: 65
+            val confidenceVal = parseField(probabilityAssessmentRaw, "Confidence").ifEmpty { "High" }
+            val reasoningFactors = mutableListOf<String>()
+            probabilityAssessmentRaw.split("\n").forEach { line ->
+                val l = line.trim()
+                if (l.startsWith("•") || l.startsWith("*") || l.startsWith("-")) {
+                    val factor = l.removePrefix("•").removePrefix("*").removePrefix("-").trim()
+                    if (factor.isNotEmpty()) {
+                        reasoningFactors.add(factor)
+                    }
+                }
+            }
+            probabilityAssessment = ProbabilityAssessment(likelihoodVal, confidenceVal, reasoningFactors)
+        }
+
+        val futurePathwaysRaw = extractTagContent(rawResponse, "future_pathways")
+        val futurePathwaysList = mutableListOf<FuturePathway>()
+        if (futurePathwaysRaw != null) {
+            var currentTitle = ""
+            var currentProb = 0
+            var currentDesc = ""
+            var currentDrivers = ""
+            var currentRisks = ""
+            var currentOpps = ""
+            
+            futurePathwaysRaw.split("\n").forEach { rawLine ->
+                val line = rawLine.trim()
+                if (line.startsWith("Pathway:", ignoreCase = true)) {
+                    if (currentTitle.isNotEmpty()) {
+                        futurePathwaysList.add(FuturePathway(currentTitle, currentProb, currentDesc, currentDrivers, currentRisks, currentOpps))
+                    }
+                    val parts = line.substringAfter("Pathway:").trim().split("|")
+                    currentTitle = parts.getOrNull(0)?.trim() ?: ""
+                    currentProb = parts.getOrNull(1)?.trim()?.replace("%", "")?.toIntOrNull() ?: 50
+                    currentDesc = ""
+                    currentDrivers = ""
+                    currentRisks = ""
+                    currentOpps = ""
+                } else if (line.startsWith("Description:", ignoreCase = true)) {
+                    currentDesc = line.substringAfter(":").trim()
+                } else if (line.startsWith("Drivers:", ignoreCase = true)) {
+                    currentDrivers = line.substringAfter(":").trim()
+                } else if (line.startsWith("Risks:", ignoreCase = true)) {
+                    currentRisks = line.substringAfter(":").trim()
+                } else if (line.startsWith("Opportunities:", ignoreCase = true)) {
+                    currentOpps = line.substringAfter(":").trim()
+                }
+            }
+            if (currentTitle.isNotEmpty()) {
+                futurePathwaysList.add(FuturePathway(currentTitle, currentProb, currentDesc, currentDrivers, currentRisks, currentOpps))
+            }
+        }
+
+        val timelineForecastRaw = extractTagContent(rawResponse, "timeline_forecast")
+        var timelineForecast: TimelineForecast? = null
+        if (timelineForecastRaw != null) {
+            val shortLine = timelineForecastRaw.split("\n").firstOrNull { it.trim().startsWith("Short Term", ignoreCase = true) }?.trim() ?: ""
+            val midLine = timelineForecastRaw.split("\n").firstOrNull { it.trim().startsWith("Mid Term", ignoreCase = true) }?.trim() ?: ""
+            val longLine = timelineForecastRaw.split("\n").firstOrNull { it.trim().startsWith("Long Term", ignoreCase = true) }?.trim() ?: ""
+            val whyLine = timelineForecastRaw.split("\n").firstOrNull { it.trim().startsWith("Why", ignoreCase = true) || it.trim().startsWith("Explanation", ignoreCase = true) || it.trim().startsWith("Change Reason", ignoreCase = true) }?.trim() ?: ""
+            
+            val shortParts = shortLine.split("|")
+            val shortProb = Regex("""\d+""").find(shortLine)?.value?.toIntOrNull() ?: 84
+            val shortDesc = shortParts.getOrNull(1)?.trim() ?: shortLine.substringAfter(":").trim()
+            
+            val midParts = midLine.split("|")
+            val midProb = Regex("""\d+""").find(midLine)?.value?.toIntOrNull() ?: 67
+            val midDesc = midParts.getOrNull(1)?.trim() ?: midLine.substringAfter(":").trim()
+            
+            val longParts = longLine.split("|")
+            val longProb = Regex("""\d+""").find(longLine)?.value?.toIntOrNull() ?: 43
+            val longDesc = longParts.getOrNull(1)?.trim() ?: longLine.substringAfter(":").trim()
+            
+            val explanation = whyLine.substringAfter(":").trim()
+            
+            timelineForecast = TimelineForecast(shortProb, shortDesc, midProb, midDesc, longProb, longDesc, explanation)
+        }
+
+        val decisionImpactRaw = extractTagContent(rawResponse, "decision_impact")
+        var decisionImpact: DecisionImpact? = null
+        if (decisionImpactRaw != null) {
+            val sqLine = decisionImpactRaw.split("\n").firstOrNull { it.trim().startsWith("If Nothing Changes", ignoreCase = true) || it.trim().startsWith("Status Quo Probability", ignoreCase = true) }?.trim() ?: ""
+            val acLine = decisionImpactRaw.split("\n").firstOrNull { it.trim().startsWith("If Action Is Taken", ignoreCase = true) || it.trim().startsWith("Action Probability", ignoreCase = true) }?.trim() ?: ""
+            
+            val sqProb = Regex("""\d+""").find(sqLine)?.value?.toIntOrNull() ?: 81
+            val sqDesc = decisionImpactRaw.split("\n").firstOrNull { it.trim().startsWith("Status Quo Outcome", ignoreCase = true) }?.substringAfter(":")?.trim() ?: sqLine.substringAfter(":").trim()
+            
+            val acProb = Regex("""\d+""").find(acLine)?.value?.toIntOrNull() ?: 42
+            val acDesc = decisionImpactRaw.split("\n").firstOrNull { it.trim().startsWith("Action Outcome", ignoreCase = true) }?.substringAfter(":")?.trim() ?: acLine.substringAfter(":").trim()
+            
+            val comp = decisionImpactRaw.split("\n").firstOrNull { it.trim().startsWith("Outcome Comparison", ignoreCase = true) }?.substringAfter(":")?.trim() ?: ""
+            val risks = decisionImpactRaw.split("\n").firstOrNull { it.trim().startsWith("Risks", ignoreCase = true) }?.substringAfter(":")?.trim() ?: ""
+            val benefits = decisionImpactRaw.split("\n").firstOrNull { it.trim().startsWith("Benefits", ignoreCase = true) }?.substringAfter(":")?.trim() ?: ""
+            val tradeoffs = decisionImpactRaw.split("\n").firstOrNull { it.trim().startsWith("Tradeoffs", ignoreCase = true) || it.trim().startsWith("Trade-offs", ignoreCase = true) }?.substringAfter(":")?.trim() ?: ""
+            
+            decisionImpact = DecisionImpact(sqProb, sqDesc, acProb, acDesc, comp, risks, benefits, tradeoffs)
+        }
+
+        val forecastSummaryRaw = extractTagContent(rawResponse, "forecast_summary")
+        var forecastSummary: ForecastSummary? = null
+        if (forecastSummaryRaw != null) {
+            val mostLikelyOutcome = Regex("""\d+""").find(forecastSummaryRaw.split("\n").firstOrNull { it.trim().startsWith("Most Likely Outcome", ignoreCase = true) } ?: "")?.value?.toIntOrNull() ?: 78
+            val keyRisk = Regex("""\d+""").find(forecastSummaryRaw.split("\n").firstOrNull { it.trim().startsWith("Key Risk", ignoreCase = true) } ?: "")?.value?.toIntOrNull() ?: 64
+            val opportunityWindow = Regex("""\d+""").find(forecastSummaryRaw.split("\n").firstOrNull { it.trim().startsWith("Opportunity Window", ignoreCase = true) } ?: "")?.value?.toIntOrNull() ?: 58
+            val predictionConfidence = forecastSummaryRaw.split("\n").firstOrNull { it.trim().startsWith("Prediction Confidence", ignoreCase = true) }?.substringAfter(":")?.trim() ?: "High"
+            
+            forecastSummary = ForecastSummary(mostLikelyOutcome, keyRisk, opportunityWindow, predictionConfidence)
+        }
+
         return ParsedResponse(
             introduction = cleanIntro.trim(),
             executiveSummary = summary,
@@ -904,7 +1077,12 @@ object ResponseParser {
             confidence = confidence?.ifEmpty { "High" } ?: "High",
             suggestedQuestions = suggestedQuestions,
             explorationPaths = explorationPaths,
-            probabilityMetrics = probabilityMetrics
+            probabilityMetrics = probabilityMetrics,
+            probabilityAssessment = probabilityAssessment,
+            futurePathways = futurePathwaysList,
+            timelineForecast = timelineForecast,
+            decisionImpact = decisionImpact,
+            forecastSummary = forecastSummary
         )
     }
 
@@ -928,7 +1106,8 @@ object ResponseParser {
         var cleaned = text
         val tags = listOf(
             "summary", "confidence", "depth", "root_cause",
-            "human_intel", "future_prob", "memory_insight", "questions", "exploration", "probability_metrics"
+            "human_intel", "future_prob", "memory_insight", "questions", "exploration", "probability_metrics",
+            "probability_assessment", "future_pathways", "timeline_forecast", "decision_impact", "forecast_summary"
         )
         for (tag in tags) {
             cleaned = cleaned.replace("<$tag>(.*?)</$tag>".toRegex(RegexOption.DOT_MATCHES_ALL), "")

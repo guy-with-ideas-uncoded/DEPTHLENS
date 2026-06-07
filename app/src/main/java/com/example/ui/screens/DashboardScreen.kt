@@ -1820,6 +1820,7 @@ fun DashboardScreen(
 
         Scaffold(
             containerColor = DeepMidnight,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 Row(
                     modifier = Modifier
@@ -1855,7 +1856,12 @@ fun DashboardScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    .padding(
+                        start = innerPadding.calculateStartPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                        top = 0.dp,
+                        end = innerPadding.calculateEndPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                        bottom = innerPadding.calculateBottomPadding()
+                    )
             ) {
                 // Multi-screen routing
                 when (currentTab) {
@@ -2663,6 +2669,92 @@ fun DepthLensDiagnosticCard(
             }
         }
 
+        // v4.1.3 Probability Assessment Card
+        parsed.probabilityAssessment?.let { pa ->
+            val color = when {
+                pa.likelihood >= 70 -> SuccessColor
+                pa.likelihood >= 40 -> WarningColor
+                else -> ErrorColor
+            }
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceCardColor),
+                border = BorderStroke(1.dp, color.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = color, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "PROBABILITY ASSESSMENT",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = color,
+                                letterSpacing = 1.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.12f)),
+                            border = BorderStroke(1.dp, color.copy(alpha = 0.35f)),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "${pa.confidence} CONFIDENCE".uppercase(),
+                                fontSize = 7.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = color,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Overall Likelihood", fontSize = 11.5.sp, color = TextSecondaryColor)
+                        Text("${pa.likelihood}%", fontSize = 16.sp, fontWeight = FontWeight.Black, color = color)
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { pa.likelihood / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = color,
+                        trackColor = RichNavy
+                    )
+
+                    if (pa.reasoningFactors.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Reasoning Factors", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = PremiumCyan, letterSpacing = 0.5.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        pa.reasoningFactors.forEach { factor ->
+                            Row(modifier = Modifier.padding(vertical = 2.dp)) {
+                                Text("•", color = color, fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(factor, fontSize = 11.sp, color = TextPrimaryColor, lineHeight = 15.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Probability Matrix Engine Card layout
         if (parsed.probabilityMetrics != null) {
             Card(
@@ -2867,6 +2959,302 @@ fun DepthLensDiagnosticCard(
                                 lineHeight = 16.sp
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // v4.1.3 Future Pathways Card
+        if (parsed.futurePathways.isNotEmpty()) {
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceCardColor),
+                border = BorderStroke(1.dp, RichNavy),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        "PROBABILITY FUTURE PATHWAYS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PremiumCyan,
+                        letterSpacing = 1.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    parsed.futurePathways.forEach { pathway ->
+                        val barColor = when {
+                            pathway.probability >= 70 -> SuccessColor
+                            pathway.probability >= 40 -> WarningColor
+                            else -> ErrorColor
+                        }
+
+                        Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(pathway.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimaryColor)
+                                Text("${pathway.probability}%", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = barColor)
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            LinearProgressIndicator(
+                                progress = { pathway.probability / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = barColor,
+                                trackColor = RichNavy
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            if (pathway.description.isNotEmpty()) {
+                                Text(pathway.description, fontSize = 11.sp, color = TextSecondaryColor, lineHeight = 15.sp)
+                            }
+                            if (pathway.drivers.isNotEmpty() || pathway.risks.isNotEmpty() || pathway.opportunities.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (pathway.drivers.isNotEmpty()) {
+                                        Text("Drivers: ${pathway.drivers}", fontSize = 9.5.sp, color = PremiumCyan, modifier = Modifier.weight(1f))
+                                    }
+                                    if (pathway.risks.isNotEmpty()) {
+                                        Text("Risks: ${pathway.risks}", fontSize = 9.5.sp, color = ErrorColor.copy(alpha = 0.85f), modifier = Modifier.weight(1f))
+                                    }
+                                    if (pathway.opportunities.isNotEmpty()) {
+                                        Text("Opps: ${pathway.opportunities}", fontSize = 9.5.sp, color = SuccessColor.copy(alpha = 0.85f), modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // v4.1.3 Timeline Forecast Card
+        parsed.timelineForecast?.let { tf ->
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceCardColor),
+                border = BorderStroke(1.dp, ElectricViolet.copy(alpha = 0.25f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        "TIMELINE FORECAST HORIZONS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PremiumCyan,
+                        letterSpacing = 1.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val horizons = listOf(
+                        Triple("Short Term (1-30 Days)", tf.shortTermProb, tf.shortTermDesc),
+                        Triple("Mid Term (1-6 Months)", tf.midTermProb, tf.midTermDesc),
+                        Triple("Long Term (6-24 Months)", tf.longTermProb, tf.longTermDesc)
+                    )
+
+                    horizons.forEach { (label, prob, desc) ->
+                        val col = when {
+                            prob >= 70 -> SuccessColor
+                            prob >= 40 -> WarningColor
+                            else -> ErrorColor
+                        }
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextPrimaryColor)
+                                Text("$prob%", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = col)
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            LinearProgressIndicator(
+                                progress = { prob / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(4.dp)
+                                    .clip(RoundedCornerShape(2.dp)),
+                                color = col,
+                                trackColor = RichNavy
+                            )
+                            if (desc.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(desc, fontSize = 10.sp, color = TextSecondaryColor, lineHeight = 14.sp)
+                            }
+                        }
+                    }
+
+                    if (tf.explanation.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(RichNavy, RoundedCornerShape(6.dp))
+                                .padding(8.dp)
+                        ) {
+                            Column {
+                                Text("PROBABILITY DECAY DRIVER", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = ElectricViolet)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(tf.explanation, fontSize = 10.sp, color = TextPrimaryColor, lineHeight = 14.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // v4.1.3 Decision Impact Card
+        parsed.decisionImpact?.let { di ->
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceCardColor),
+                border = BorderStroke(1.dp, RichNavy),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        "DECISION IMPACT ANALYSIS",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PremiumCyan,
+                        letterSpacing = 1.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = RichNavy),
+                            border = BorderStroke(1.dp, ErrorColor.copy(alpha = 0.25f))
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Status Quo", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = ErrorColor)
+                                    Text("${di.statusQuoProb}%", fontSize = 11.sp, fontWeight = FontWeight.Black, color = ErrorColor)
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(di.statusQuoDesc, fontSize = 10.sp, color = TextPrimaryColor, lineHeight = 13.sp)
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = RichNavy),
+                            border = BorderStroke(1.dp, SuccessColor.copy(alpha = 0.25f))
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Proactive Action", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SuccessColor)
+                                    Text("${di.actionProb}%", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SuccessColor)
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(di.actionDesc, fontSize = 10.sp, color = TextPrimaryColor, lineHeight = 13.sp)
+                            }
+                        }
+                    }
+
+                    if (di.comparison.isNotEmpty() || di.risks.isNotEmpty() || di.benefits.isNotEmpty() || di.tradeoffs.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (di.comparison.isNotEmpty()) {
+                                Text("Comparison: ${di.comparison}", fontSize = 10.sp, color = TextSecondaryColor, lineHeight = 13.sp)
+                            }
+                            if (di.risks.isNotEmpty()) {
+                                Text("Risks: ${di.risks}", fontSize = 10.sp, color = ErrorColor.copy(alpha = 0.85f), lineHeight = 13.sp)
+                            }
+                            if (di.benefits.isNotEmpty()) {
+                                Text("Benefits: ${di.benefits}", fontSize = 10.sp, color = SuccessColor.copy(alpha = 0.85f), lineHeight = 13.sp)
+                            }
+                            if (di.tradeoffs.isNotEmpty()) {
+                                Text("Tradeoffs: ${di.tradeoffs}", fontSize = 10.sp, color = WarningColor, lineHeight = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // v4.1.3 Forecast Summary Card
+        parsed.forecastSummary?.let { fs ->
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = SurfaceCardColor),
+                border = BorderStroke(1.dp, PremiumCyan.copy(alpha = 0.25f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 5.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        "FORECAST INTELLIGENCE SUMMARY",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PremiumCyan,
+                        letterSpacing = 1.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val items = listOf(
+                            Triple("Outcome", fs.mostLikelyOutcome, ElectricViolet),
+                            Triple("Key Risk", fs.keyRisk, Color(0xFFFF5555)),
+                            Triple("Opportunity", fs.opportunityWindow, Color(0xFF50E3C2))
+                        )
+
+                        items.forEach { (label, value, tint) ->
+                            Card(
+                                modifier = Modifier.weight(1f),
+                                colors = CardDefaults.cardColors(containerColor = RichNavy),
+                                border = BorderStroke(1.dp, BorderSubtle),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TextSecondaryColor)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("$value%", fontSize = 14.sp, fontWeight = FontWeight.Black, color = tint)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Prediction Confidence Rating", fontSize = 11.sp, color = TextMutedColor)
+                        Text(fs.predictionConfidence.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SuccessColor)
                     }
                 }
             }

@@ -376,6 +376,64 @@ fun ChatScreen(
                                                             fontFamily = InstrumentSansFontFamily
                                                         )
                                                     }
+
+                                                    // Chat Inline Probability Assessment
+                                                    parsed.probabilityAssessment?.let { pa ->
+                                                        val color = when {
+                                                            pa.likelihood >= 70 -> SuccessColor
+                                                            pa.likelihood >= 40 -> WarningColor
+                                                            else -> ErrorColor
+                                                        }
+                                                        Column(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .padding(bottom = 12.dp)
+                                                                .background(color.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                                                .border(1.dp, color.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                                                .padding(10.dp)
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text(
+                                                                    text = "PROBABILITY LIKELIHOOD",
+                                                                    fontSize = 7.5.sp,
+                                                                    letterSpacing = 1.sp,
+                                                                    fontFamily = DMMonoFontFamily,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = color
+                                                                )
+                                                                Text(
+                                                                    text = "${pa.confidence} CONFIDENCE",
+                                                                    fontSize = 7.5.sp,
+                                                                    fontFamily = DMMonoFontFamily,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = color
+                                                                )
+                                                            }
+                                                            Spacer(modifier = Modifier.height(6.dp))
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text("Likelihood Estimate", fontSize = 11.sp, color = TextSecondaryColor, fontFamily = InstrumentSansFontFamily)
+                                                                Text("${pa.likelihood}%", fontSize = 13.sp, fontWeight = FontWeight.Black, color = color, fontFamily = InstrumentSansFontFamily)
+                                                            }
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            LinearProgressIndicator(
+                                                                progress = { pa.likelihood / 100f },
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .height(4.dp)
+                                                                    .clip(RoundedCornerShape(2.dp)),
+                                                                color = color,
+                                                                trackColor = Surface3
+                                                            )
+                                                        }
+                                                    }
                                                                                             // Inline Reality Layer summary panel
                                                 if (parsed.depthLayers.isNotEmpty()) {
                                                     var wasArchived by remember { mutableStateOf(false) }

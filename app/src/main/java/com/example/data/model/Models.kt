@@ -49,6 +49,49 @@ data class ProbabilityMetrics(
     val opportunity: Int = 71
 )
 
+data class ProbabilityAssessment(
+    val likelihood: Int = 65,
+    val confidence: String = "High",
+    val reasoningFactors: List<String> = emptyList()
+)
+
+data class FuturePathway(
+    val title: String,
+    val probability: Int,
+    val description: String = "",
+    val drivers: String = "",
+    val risks: String = "",
+    val opportunities: String = ""
+)
+
+data class TimelineForecast(
+    val shortTermProb: Int = 80,
+    val shortTermDesc: String = "",
+    val midTermProb: Int = 60,
+    val midTermDesc: String = "",
+    val longTermProb: Int = 40,
+    val longTermDesc: String = "",
+    val explanation: String = ""
+)
+
+data class DecisionImpact(
+    val statusQuoProb: Int = 80,
+    val statusQuoDesc: String = "",
+    val actionProb: Int = 40,
+    val actionDesc: String = "",
+    val comparison: String = "",
+    val risks: String = "",
+    val benefits: String = "",
+    val tradeoffs: String = ""
+)
+
+data class ForecastSummary(
+    val mostLikelyOutcome: Int = 75,
+    val keyRisk: Int = 60,
+    val opportunityWindow: Int = 50,
+    val predictionConfidence: String = "High"
+)
+
 data class ParsedResponse(
     val introduction: String = "",
     val executiveSummary: String? = null,
@@ -59,7 +102,12 @@ data class ParsedResponse(
     val confidence: String? = null, // "Low" / "Medium" / "High"
     val suggestedQuestions: List<String> = emptyList(),
     val explorationPaths: List<String> = emptyList(),
-    val probabilityMetrics: ProbabilityMetrics? = null
+    val probabilityMetrics: ProbabilityMetrics? = null,
+    val probabilityAssessment: ProbabilityAssessment? = null,
+    val futurePathways: List<FuturePathway> = emptyList(),
+    val timelineForecast: TimelineForecast? = null,
+    val decisionImpact: DecisionImpact? = null,
+    val forecastSummary: ForecastSummary? = null
 )
 
 data class DepthLayerInsight(

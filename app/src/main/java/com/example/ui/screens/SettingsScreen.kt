@@ -65,11 +65,10 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(DeepMidnight)
+            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Spacer(modifier = Modifier.height(14.dp))
-
         // Page Header
         Text(
             text = "Settings",
@@ -888,7 +887,7 @@ fun SettingsScreen(
         InteractiveSettingsCard(
             icon = "✕",
             title = "About DepthLens",
-            subtitle = "View software license details and dynamic credits · v4.1.1",
+            subtitle = "View software license details and dynamic credits · v4.1.1a",
             onClick = onShowAbout
         )
 

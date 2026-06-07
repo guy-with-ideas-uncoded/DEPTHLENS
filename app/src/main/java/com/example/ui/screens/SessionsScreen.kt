@@ -84,6 +84,7 @@ fun SessionsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(DeepMidnight)
+            .statusBarsPadding()
     ) {
         // App Header section
         Column(
@@ -92,8 +93,6 @@ fun SessionsScreen(
                 .background(Surface1)
                 .padding(vertical = 12.dp, horizontal = 16.dp)
         ) {
-            Spacer(modifier = Modifier.height(14.dp)) // Safe padding for status icons
-
             Text(
                 text = "Session Library",
                 fontFamily = DMSerifDisplayFontFamily,

@@ -116,7 +116,7 @@ object GithubUpdateManager {
         
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "4.1.1"
+            packageInfo.versionName ?: "4.1.1a"
         } catch (e: Exception) {
             "4.0.0"
         }
@@ -245,8 +245,8 @@ object GithubUpdateManager {
                     val localVersion = getInstalledVersion(context)
                     
                     val mockRelease = GitHubRelease(
-                        tagName = "v4.1.1",
-                        name = "DepthLens v4.1.1 — Intelligence Refinement",
+                        tagName = "v4.1.1a",
+                        name = "DepthLens v4.1.1a — Intelligence Refinement",
                         publishedAt = "June 7, 2026",
                         body = "### What's New\n" +
                                 "- **UI/UX and navigation experience refined**\n" +
@@ -260,7 +260,7 @@ object GithubUpdateManager {
                                 "- **Simplified Settings and removed developer-only tools**\n" +
                                 "- **Added GitHub repository link**\n" +
                                 "- **Performance improvements and bug fixes**",
-                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v4.1.1/DEPTHLENS.apk",
+                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v4.1.1a/DEPTHLENS.apk",
                         apkFileName = "DEPTHLENS.apk",
                         apkSize = 41943040L
                     )
@@ -272,7 +272,7 @@ object GithubUpdateManager {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                    val isNew = isNewerVersion("v4.1.1", localVersion)
+                    val isNew = isNewerVersion("v4.1.1a", localVersion)
                     onComplete(isNew, mockRelease)
                 }
             }

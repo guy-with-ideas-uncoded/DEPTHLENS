@@ -196,6 +196,7 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .background(DeepMidnight)
+            .statusBarsPadding()
     ) {
         // Main scrollable content
         Column(
