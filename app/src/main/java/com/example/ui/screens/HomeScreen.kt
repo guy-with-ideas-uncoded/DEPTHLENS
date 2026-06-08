@@ -89,6 +89,8 @@ fun HomeScreen(
     sessions: List<SessionEntity>,
     selectedMode: String,
     onModeSelected: (String) -> Unit,
+    selectedDepth: String = "Standard Analysis",
+    onDepthSelected: (String) -> Unit = {},
     onSessionSelected: (String) -> Unit,
     onSubmitQuery: (String) -> Unit,
     onNavigateToChat: () -> Unit,
@@ -530,6 +532,89 @@ fun HomeScreen(
                                 Spacer(modifier = Modifier.weight(1f))
                             }
                         }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Section header for depth
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "ANALYSIS DEPTH",
+                        fontSize = 8.sp,
+                        letterSpacing = 1.2.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextMutedColor,
+                        fontFamily = DMMonoFontFamily
+                    )
+                }
+
+                val depthsList = listOf(
+                    Triple("Quick Insight", "⚡", "Concise snapshot & swift action points"),
+                    Triple("Standard Analysis", "🔍", "Balanced diagnostic & structured overview"),
+                    Triple("Deep Analysis", "🧠", "Maximum multi-layered, behavioral schemas"),
+                    Triple("Full Investigation", "🌐", "Strategic loops, trajectories & game-theory")
+                )
+
+                for (i in depthsList.indices step 2) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        for (j in 0..1) {
+                            if (i + j < depthsList.size) {
+                                val (depth, emoji, desc) = depthsList[i + j]
+                                val isActive = depth == selectedDepth
+
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = Surface2
+                                    ),
+                                    border = BorderStroke(
+                                        width = if (isActive) 1.5.dp else 1.dp,
+                                        color = if (isActive) ElectricViolet else BorderSubtle
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { onDepthSelected(depth) }
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)
+                                    ) {
+                                        Text(
+                                            text = emoji,
+                                            fontSize = 18.sp,
+                                            modifier = Modifier.padding(bottom = 2.dp)
+                                        )
+                                        Text(
+                                            text = depth,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimaryColor,
+                                            fontFamily = InstrumentSansFontFamily,
+                                            modifier = Modifier.padding(bottom = 1.dp)
+                                        )
+                                        Text(
+                                            text = desc,
+                                            fontSize = 12.sp,
+                                            fontFamily = InstrumentSansFontFamily,
+                                            color = TextMutedColor,
+                                            lineHeight = 16.sp
+                                        )
+                                    }
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                    if (i == 0) {
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
                 }
             }
@@ -1912,6 +1997,7 @@ private fun ExportOptionsDialog(
         modifier = Modifier.border(1.2.dp, ElectricViolet.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
     )
 }
+
 
 // Helper to parse archived JSON — kept for any legacy calls
 private data class ParsedArchivedDetails(val introduction: String = "", val depthLayers: List<com.example.data.model.DepthLayerInsight> = emptyList())

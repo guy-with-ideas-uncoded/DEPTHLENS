@@ -33,6 +33,12 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
 
     fun setSelectedMode(mode: String) { _selectedMode.value = mode }
 
+    // Selected analysis depth (synced from UI)
+    private val _selectedDepth = MutableStateFlow("Standard Analysis")
+    val selectedDepth: StateFlow<String> = _selectedDepth.asStateFlow()
+
+    fun setSelectedDepth(depth: String) { _selectedDepth.value = depth }
+
     // Loading indicator dynamically mapped from the repository's background analyses set
     val isLoading: StateFlow<Boolean> = combine(
         _activeSessionId,
@@ -159,7 +165,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 val lastUserMsg = existingHistory.lastOrNull { it.role == "user" }
                 if (lastUserMsg != null) {
                     // Trigger analysis again in background
-                    repository.startBackgroundAnalysis(sessionId)
+                    repository.startBackgroundAnalysis(sessionId, _selectedMode.value, _selectedDepth.value)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -174,7 +180,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 // Delete this AI response
                 repository.deleteMessageById(aiMessageId)
                 // Trigger background analysis again
-                repository.startBackgroundAnalysis(sessionId)
+                repository.startBackgroundAnalysis(sessionId, _selectedMode.value, _selectedDepth.value)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -245,7 +251,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 repository.insertUserMessage(sessionId, cleanQuery, attachedUri)
                 
                 // 2. Perform intelligence analysis call to external models in background (non-blocking)
-                repository.startBackgroundAnalysis(sessionId) {
+                repository.startBackgroundAnalysis(sessionId, _selectedMode.value, _selectedDepth.value) {
                     if (cleanQuery.isNotEmpty()) {
                         viewModelScope.launch {
                             if (isFirstQuery) {
@@ -566,7 +572,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                     </suggested>
                 """.trimIndent()
                 
-                repository.generateAnalysis(sessionId, specialPrompt)
+                repository.generateAnalysis(sessionId, customInstructionOverride = specialPrompt)
             } catch (e: Exception) {
                 e.printStackTrace()
             }

@@ -110,8 +110,19 @@ fun AnalysisScreen(
 
     val scrollState = rememberScrollState()
 
+    // Scroll to top when a new AI message starts (new id) so the user sees the beginning
     LaunchedEffect(latestAiMessage?.id) {
         if (latestAiMessage != null) {
+            scrollState.scrollTo(0)
+        }
+    }
+
+    // Also scroll to top when streaming finishes (text stops changing).
+    // We debounce by 400 ms: if the text hasn't changed within that window we
+    // consider generation done and snap back to the top.
+    LaunchedEffect(latestAiMessage?.text) {
+        if (latestAiMessage != null) {
+            delay(400L)
             scrollState.animateScrollTo(0)
         }
     }

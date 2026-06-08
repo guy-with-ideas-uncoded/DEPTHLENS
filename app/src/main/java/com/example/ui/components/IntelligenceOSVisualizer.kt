@@ -57,6 +57,11 @@ fun IntelligenceOSVisualizer(
             parsedLayers = parsed.depthLayers
         )
 
+        // 2B. D3 FORCE-DIRECTED LAYERS ENGINE GRAPH
+        D3ForceDirectedGraph(
+            parsedLayers = parsed.depthLayers
+        )
+
         // 3. AI CONFIDENCE ENGINE (Displayed prominently early)
         AiConfidenceEngine(
             confidenceLevel = parsed.confidence?.ifBlank { null } ?: calculatedData.confidenceLevel,

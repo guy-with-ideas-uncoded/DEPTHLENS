@@ -249,7 +249,14 @@ class IntelligenceRepository(private val context: Context) {
         }
     }
 
-    suspend fun generateAnalysis(sessionId: String, customInstructionOverride: String? = null): ParsedResponse = withContext(Dispatchers.IO) {
+    suspend fun generateAnalysis(
+        sessionId: String,
+        category: String? = null,
+        depth: String? = null,
+        customInstructionOverride: String? = null
+    ): ParsedResponse = withContext(Dispatchers.IO) {
+        val sessionCategory = category ?: "Root Cause"
+        val sessionDepth = depth ?: "Standard Analysis"
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
             val errorMsg = "Error: Missing Gemini API Key. Please add your key to the Secrets panel in Google AI Studio to unlock DepthLens's operations."
@@ -483,7 +490,15 @@ Early Warning Signals: [2 indicators/signals total, each 3-5 words only, 1 line]
 Follow this format meticulously. Wrap each visual module within its respective tags to generate the absolute premium, zero-markdown-clutter diagnostic response. Respond directly with insights.
         """.trimIndent()
 
-        val systemInstructionText = when (detectedLevel) {
+        val chosenLevel = when (sessionDepth) {
+            "Quick Insight" -> IntentLevel.LEVEL_1_SIMPLE
+            "Standard Analysis" -> IntentLevel.LEVEL_3_DEEP
+            "Deep Analysis" -> IntentLevel.LEVEL_3_DEEP
+            "Full Investigation" -> IntentLevel.LEVEL_4_STRATEGIC
+            else -> detectedLevel
+        }
+
+        val systemInstructionText = when (chosenLevel) {
             IntentLevel.LEVEL_1_SIMPLE -> level1Text
             IntentLevel.LEVEL_2_FOCUSED -> level2Text
             IntentLevel.LEVEL_4_STRATEGIC -> level4Text
@@ -744,16 +759,43 @@ Follow this format meticulously. Wrap each visual module within its respective t
             contentsPayload.add(Content(role = msg.role, parts = partsList))
         }
 
+        val categoryFocusInstruction = when (sessionCategory) {
+            "Root Cause" -> "Focus heavily on identifying the foundational triggers, immediate causes, original wounds, and systemic patterns of the situation."
+            "Psychology" -> "Focus heavily on mapping individual beliefs, defense mechanisms, shadow traits, coping strategies, and psychological barriers."
+            "Systems" -> "Focus heavily on identifying feedback loops, systemic levers, delayed reactions, unintended consequences, and system blind spots."
+            "Probability" -> "Focus heavily on probabilistic outcomes, risk profiles, likelihood estimates, and compounding decision results."
+            "Business" -> "Focus heavily on strategic advantages, industry incentives, game-theory motives, market positions, and financial leverage."
+            "Relationships" -> "Focus heavily on interpersonal dynamics, communication loops, co-dependencies, unexpressed expectations, and emotional safety."
+            "Spiritual" -> "Focus heavily on high-level soul contracts, karmic patterns, energy blocks, alignment hurdles, and spiritual evolution opportunities."
+            "Decision Making" -> "Focus heavily on decision trees, trade-offs, inertia risk vs proactive change gains, and cognitive biases influencing choices."
+            else -> ""
+        }
+
+        val finalSystemText = customInstructionOverride ?: """
+$systemInstructionText
+
+### SPECIALIZED LENS FOCUS: $sessionCategory
+$categoryFocusInstruction
+
+### INTENDED ANALYSIS DEPTH
+Selected depth rating: $sessionDepth. You MUST adjust your detail levels accordingly:
+- If Quick Insight: Maintain high density but short, concise summaries.
+- If Standard Analysis: Balanced, exhaustive diagnostic coverage.
+- If Deep Analysis: Extremely thoroughly detailed multi-layered assessment, deep dive.
+- If Full Investigation: Elite forecasting, strategic trajectories, game-theoretic analysis.
+        """.trimIndent()
+
         val request = GenerateContentRequest(
             contents = contentsPayload,
             generationConfig = GenerationConfig(temperature = 0.72f),
-            systemInstruction = Content(parts = listOf(Part(text = customInstructionOverride ?: systemInstructionText)))
+            systemInstruction = Content(parts = listOf(Part(text = finalSystemText)))
         )
 
         var modelText: String? = null
         var lastException: Exception? = null
-        val modelsToTry = listOf("gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-pro-preview")
-        val retryDelays = listOf(2000L, 5000L, 12000L)
+        // Strict Priority Rules (using modern preview models first): gemini-3.1-pro-preview, then gemini-3.5-flash, fallback to gemini-2.5-flash, gemini-2.5-pro
+        val modelsToTry = listOf("gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro")
+        val retryDelays = listOf(2000L, 5000L, 10000L) // 2s, 5s, 10s retries
 
         for (modelName in modelsToTry) {
             for ((attempt, delay) in retryDelays.withIndex()) {
@@ -765,13 +807,11 @@ Follow this format meticulously. Wrap each visual module within its respective t
                         break
                     }
                 } catch (e: Exception) {
-                    val msg = e.message ?: ""
-                    val is429 = msg.contains("429") || msg.contains("quota", ignoreCase = true) || msg.contains("rate", ignoreCase = true)
-                    if (is429 && attempt < retryDelays.size - 1) {
+                    lastException = e
+                    if (attempt < retryDelays.size - 1) {
                         kotlinx.coroutines.delay(delay)
                         continue
                     } else {
-                        lastException = e
                         break
                     }
                 }
@@ -820,25 +860,62 @@ Follow this format meticulously. Wrap each visual module within its respective t
 
             return@withContext ResponseParser.parse(modelText)
         } else {
+            val msgState = lastException?.message ?: "unknown cause"
             val userFriendlyError = when {
-                lastException?.message?.contains("429") == true ||
-                lastException?.message?.contains("quota", ignoreCase = true) == true ->
-                    "Error: DepthLens is experiencing high demand right now. Please wait 30 seconds and try again."
+                // Connection/Internet/DNS/SSL errors
+                msgState.contains("Unable to resolve host", ignoreCase = true) ||
+                msgState.contains("NoRouteToHostException", ignoreCase = true) ||
+                msgState.contains("UnknownHostException", ignoreCase = true) ->
+                    "Error: DNS resolution failed or no internet connection. Please verify your cell signal or Wi-Fi status."
 
-                lastException?.message?.contains("timeout", ignoreCase = true) == true ||
-                lastException?.message?.contains("connect", ignoreCase = true) == true ->
-                    "Error: Connection timeout. Please check your internet connection and retry."
+                msgState.contains("SSLHandshakeException", ignoreCase = true) ||
+                msgState.contains("SSL handshake", ignoreCase = true) ->
+                    "Error: SSL handshake failed. Secure network communication could not be established with the Gemini servers."
 
-                lastException?.message?.contains("401") == true ||
-                lastException?.message?.contains("403") == true ->
-                    "Error: API key invalid or expired. Please reconfigure your Gemini API key in Settings."
+                msgState.contains("timeout", ignoreCase = true) ||
+                msgState.contains("TimeoutException", ignoreCase = true) ||
+                msgState.contains("SocketTimeoutException", ignoreCase = true) ->
+                    "Error: Network timeout. The server took too long to respond. Please check your network speed and try again."
 
-                lastException?.message?.contains("500") == true ||
-                lastException?.message?.contains("503") == true ->
-                    "Error: Gemini servers are temporarily unavailable. Please retry in a moment."
+                msgState.contains("connect", ignoreCase = true) ||
+                msgState.contains("ConnectException", ignoreCase = true) ->
+                    "Error: No internet connection. Could not connect to Gemini servers."
+
+                // Rate limiting and Quota
+                msgState.contains("429") ||
+                msgState.contains("quota", ignoreCase = true) ||
+                msgState.contains("rate limit", ignoreCase = true) ||
+                msgState.contains("Rate limit exceeded", ignoreCase = true) ->
+                    "Error: API quota exceeded or rate limit hit. You have reached your current Gemini API usage limits. Please wait a moment or check your Google AI Studio quota."
+
+                // Authentication
+                msgState.contains("401") ||
+                msgState.contains("403") ||
+                msgState.contains("auth", ignoreCase = true) ||
+                msgState.contains("API key", ignoreCase = true) ->
+                    "Error: Authentication failure. Your API key is invalid or unauthorized. Please re-enter a valid Gemini API key in Settings."
+
+                // Server Unavailable (500s)
+                msgState.contains("500") ->
+                    "Error: Server unavailable. Gemini internal server error occurred (500)."
+                
+                msgState.contains("503") ||
+                msgState.contains("Service Unavailable", ignoreCase = true) ->
+                    "Error: Gemini servers are temporarily unavailable or overloaded (503)."
+
+                // Request cancelled
+                msgState.contains("CancellationException", ignoreCase = true) ||
+                msgState.contains("Job was cancelled", ignoreCase = true) ->
+                    "Error: Request cancelled. The analysis was stopped by the user or system."
+
+                // Malformed / JSON Parsing
+                msgState.contains("JsonParsingException", ignoreCase = true) ||
+                msgState.contains("SerializationException", ignoreCase = true) ||
+                msgState.contains("malformed", ignoreCase = true) ->
+                    "Error: JSON parsing failure or malformed response from the model. The received format is invalid."
 
                 else ->
-                    "Error: Analysis could not be completed. Please retry."
+                    "Error invoking DepthLens: $msgState"
             }
             val errorMsg = userFriendlyError
             try {
@@ -980,7 +1057,12 @@ Follow this format meticulously. Wrap each visual module within its respective t
         return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
     }
 
-    fun startBackgroundAnalysis(sessionId: String, onComplete: () -> Unit = {}) {
+    fun startBackgroundAnalysis(
+        sessionId: String,
+        category: String = "Root Cause",
+        depth: String = "Standard Analysis",
+        onComplete: () -> Unit = {}
+    ) {
         synchronized(this) {
             val current = _runningAnalyses.value
             if (current.contains(sessionId)) return // Already running
@@ -989,7 +1071,7 @@ Follow this format meticulously. Wrap each visual module within its respective t
 
         backgroundScope.launch {
             try {
-                generateAnalysis(sessionId)
+                generateAnalysis(sessionId, category, depth)
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {

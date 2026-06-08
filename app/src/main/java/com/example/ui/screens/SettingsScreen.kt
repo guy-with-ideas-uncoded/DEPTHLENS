@@ -1076,9 +1076,13 @@ fun SettingsRow(
             }
         }
 
+        val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = { newValue ->
+                hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                onCheckedChange(newValue)
+            },
             colors = SwitchDefaults.colors(
                 checkedThumbColor = ElectricViolet,
                 checkedTrackColor = Color(0x2E7E65FF),

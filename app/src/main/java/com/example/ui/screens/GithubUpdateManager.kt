@@ -116,7 +116,7 @@ object GithubUpdateManager {
         
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "4.1.5"
+            packageInfo.versionName ?: "5.8.9"
         } catch (e: Exception) {
             "4.0.0"
         }
@@ -245,18 +245,16 @@ object GithubUpdateManager {
                     val localVersion = getInstalledVersion(context)
                     
                     val mockRelease = GitHubRelease(
-                        tagName = "v4.1.5",
-                        name = "DepthLens v4.1.5 — Polar Dawn Patch",
-                        publishedAt = "June 7, 2026",
-                        body = "### What's New in v4.1.5\n" +
-                                "- **Sleek Polar Dawn UI Consistency**: Complete light template audit and element leaks resolved across the system.\n" +
-                                "- **Icon-Only Response Action Row**: Clean 4-button modern pill layout for intuitive user operations.\n" +
-                                "- **Full-Featured Copy, Share, Export Actions**: Copy complete insights, trigger Android Share Sheets, and export as TXT, JSON or PDF to local Downloads.\n" +
-                                "- **Larger Symmetrical Header Logo**: Sized up main logo by 30% with continuous glowing centering.\n" +
-                                "- **Corrected Greeting Typography**: Soft, eye-safe readable dark greeting tones for Polar Dawn.\n" +
+                        tagName = "v5.8.9",
+                        name = "DepthLens v5.8.9 — Engine Reliability Patch",
+                        publishedAt = "June 8, 2026",
+                        body = "### What's New in v5.8.9\n" +
+                                "- **False High-Demand Error Removal**: Show the real underlying API or network exception cause dynamically.\n" +
+                                "- **Twin-Dimension Analysis Selection**: Dual-dimension category and depth selectors now live in the home screen.\n" +
+                                "- **Smart Scroll Control Logic**: Generation completion now lands perfectly at the reading mode start.\n" +
                                 "- **Performance improvements and bug fixes**",
-                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v4.1.5/DEPTHLENS.apk",
-                        apkFileName = "DEPTHLENS-v415.apk",
+                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v5.8.9/DEPTHLENS.apk",
+                        apkFileName = "DEPTHLENS-v589.apk",
                         apkSize = 41943040L
                     )
                     
@@ -267,7 +265,7 @@ object GithubUpdateManager {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                    val isNew = isNewerVersion("v4.1.5", localVersion)
+                    val isNew = isNewerVersion("v5.8.9", localVersion)
                     onComplete(isNew, mockRelease)
                 }
             }

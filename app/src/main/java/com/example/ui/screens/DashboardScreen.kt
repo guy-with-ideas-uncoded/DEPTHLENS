@@ -17,6 +17,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -128,6 +130,7 @@ fun DashboardScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showReportBugDialog by remember { mutableStateOf(false) }
     var selectedMode by remember { mutableStateOf("Root Cause") }
+    var selectedDepth by remember { mutableStateOf("Standard Analysis") }
     
     var reportBugMessage by remember { mutableStateOf("") }
     var reportBugSubmitted by remember { mutableStateOf(false) }
@@ -137,6 +140,7 @@ fun DashboardScreen(
     var feedbackMessage by remember { mutableStateOf("") }
     var feedbackEmail by remember { mutableStateOf("") }
     var feedbackSubmitted by remember { mutableStateOf(false) }
+    var wasLoading by remember { mutableStateOf(false) }
 
     // Media permission states & helper functions
     var permissionToRequest by remember { mutableStateOf<String?>(null) }
@@ -333,8 +337,13 @@ fun DashboardScreen(
     // Scroll to bottom when a new analytic report lands
     LaunchedEffect(activeMessages.size, isLoading) {
         if (activeMessages.isNotEmpty()) {
-            listState.animateScrollToItem(activeMessages.size - 1)
+            if (isLoading) {
+                listState.animateScrollToItem(activeMessages.size - 1)
+            } else if (wasLoading) {
+                listState.animateScrollToItem(activeMessages.size - 1, scrollOffset = 0)
+            }
         }
+        wasLoading = isLoading
     }
 
     // Interactive onboarding overlay if not completed
@@ -1885,6 +1894,8 @@ fun DashboardScreen(
                             sessions = sessions,
                             selectedMode = selectedMode,
                             onModeSelected = { selectedMode = it; viewModel.setSelectedMode(it) },
+                            selectedDepth = selectedDepth,
+                            onDepthSelected = { selectedDepth = it; viewModel.setSelectedDepth(it) },
                             onSessionSelected = { sessionId -> viewModel.selectSession(sessionId) },
                             onSubmitQuery = { text -> viewModel.sendQuery(text) },
                             onNavigateToChat = { /* no-op: results shown on home */ },
@@ -2168,6 +2179,60 @@ fun DashboardScreen(
                             onSubmit = { text -> viewModel.sendQuery(text) },
                             onModeChanged = { selectedMode = it }
                         )
+                    }
+                }
+
+                // Floating Navigation Buttons (▲ Scroll to Top, ▼ Scroll to Bottom)
+                if (activeMessages.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = 100.dp, end = 16.dp),
+                        contentAlignment = Alignment.BottomEnd
+                    ) {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Scroll to Top Button
+                            androidx.compose.material3.IconButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(0)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Surface2.copy(alpha = 0.85f), CircleShape)
+                                    .border(1.0.dp, ElectricViolet.copy(alpha = 0.4f), CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                    contentDescription = "Scroll to Top",
+                                    tint = TextPrimaryColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            
+                            // Scroll to Bottom Button
+                            androidx.compose.material3.IconButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(activeMessages.size - 1)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Surface2.copy(alpha = 0.85f), CircleShape)
+                                    .border(1.0.dp, ElectricViolet.copy(alpha = 0.4f), CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Scroll to Bottom",
+                                    tint = TextPrimaryColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -3485,6 +3550,7 @@ fun DepthLensDiagnosticCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             val context = LocalContext.current
+            val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
             val shareableText = remember(parsed) { parsed.toShareableText() }
             
             // Copy Button - styled consistent with app design
@@ -3495,6 +3561,7 @@ fun DepthLensDiagnosticCard(
                     .background(if (dashCopied) ElectricViolet.copy(alpha = 0.18f) else Surface3)
                     .border(1.dp, if (dashCopied) ElectricViolet.copy(alpha = 0.6f) else BorderSubtle, RoundedCornerShape(7.dp))
                     .clickable {
+                        hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                         val clipboardManager = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                         val clipData = android.content.ClipData.newPlainText("DepthLens Analysis", shareableText)
                         clipboardManager.setPrimaryClip(clipData)
@@ -3522,12 +3589,55 @@ fun DepthLensDiagnosticCard(
                     )
                 }
             }
+
+            // PDF Export Button - styled consistent with Copy Button
+            var isPdfExporting by remember { mutableStateOf(false) }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(if (isPdfExporting) SuccessColor.copy(alpha = 0.18f) else Surface3)
+                    .border(1.dp, if (isPdfExporting) SuccessColor.copy(alpha = 0.6f) else BorderSubtle, RoundedCornerShape(7.dp))
+                    .clickable {
+                        hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        isPdfExporting = true
+                        val fileName = "depthlens_analysis_${System.currentTimeMillis()}.pdf"
+                        val pdfBytes = generatePdfReport("DepthLens Analysis Result", shareableText)
+                        val ok = saveToDownloads(context, fileName, "application/pdf", pdfBytes)
+                        if (ok) {
+                            Toast.makeText(context, "Saved successfully to Downloads!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Export failed.", Toast.LENGTH_SHORT).show()
+                        }
+                        isPdfExporting = false
+                    }
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.List,
+                        contentDescription = "Export to PDF",
+                        tint = if (isPdfExporting) SuccessColor else PremiumCyan,
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Text(
+                        text = if (isPdfExporting) "Saving..." else "Export PDF",
+                        fontSize = 8.5.sp,
+                        fontFamily = DMMonoFontFamily,
+                        color = if (isPdfExporting) SuccessColor else PremiumCyan
+                    )
+                }
+            }
             
             // ↗ Share Button
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .clickable {
+                        hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                         val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(android.content.Intent.EXTRA_TEXT, shareableText)
@@ -3612,6 +3722,65 @@ fun BottomInputPanel(
     var rawText by remember { mutableStateOf("") }
     val modes = listOf("Root Cause", "Psychology", "Systems", "Probability", "Multi-Layer")
     var selectedMode by remember { mutableStateOf("Root Cause") }
+
+    var isListeningForSpeech by remember { mutableStateOf(false) }
+    val speechContext = LocalContext.current
+    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
+    
+    val speechRecognizer = remember {
+        try {
+            android.speech.SpeechRecognizer.createSpeechRecognizer(speechContext)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    val recognitionListener = remember {
+        object : android.speech.RecognitionListener {
+            override fun onReadyForSpeech(params: android.os.Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() {
+                isListeningForSpeech = false
+            }
+            override fun onError(error: Int) {
+                isListeningForSpeech = false
+            }
+            override fun onResults(results: android.os.Bundle?) {
+                val matches = results?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)
+                if (!matches.isNullOrEmpty()) {
+                    val spokenText = matches[0]
+                    rawText = if (rawText.isEmpty()) spokenText else "$rawText $spokenText"
+                }
+                isListeningForSpeech = false
+            }
+            override fun onPartialResults(partialResults: android.os.Bundle?) {}
+            override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+        }
+    }
+
+    LaunchedEffect(speechRecognizer) {
+        speechRecognizer?.setRecognitionListener(recognitionListener)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            speechRecognizer?.destroy()
+        }
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted && speechRecognizer != null) {
+            isListeningForSpeech = true
+            val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            }
+            speechRecognizer.startListening(intent)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -3731,6 +3900,48 @@ fun BottomInputPanel(
 
             IconButton(
                 onClick = {
+                    hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    if (isListeningForSpeech) {
+                        speechRecognizer?.stopListening()
+                        isListeningForSpeech = false
+                    } else {
+                        val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                            speechContext,
+                            android.Manifest.permission.RECORD_AUDIO
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                        if (hasPermission) {
+                            isListeningForSpeech = true
+                            val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            }
+                            speechRecognizer?.startListening(intent)
+                        } else {
+                            audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        if (isListeningForSpeech) Color(0xFFFF3B30).copy(alpha = 0.2f) else Surface2,
+                        CircleShape
+                    )
+                    .border(1.dp, if (isListeningForSpeech) Color(0xFFFF3B30) else BorderSubtle, CircleShape)
+            ) {
+                Icon(
+                    imageVector = if (isListeningForSpeech) Icons.Rounded.Stop else Icons.Rounded.Mic,
+                    contentDescription = "Voice Input",
+                    tint = if (isListeningForSpeech) Color(0xFFFF3B30) else PremiumCyan,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            IconButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                     if (rawText.trim().isNotEmpty() || attachedImageUri != null) {
                         val promptWithMode = if (selectedMode != "Root Cause") {
                             "[$selectedMode Mode] ${rawText.trim()}"
@@ -5083,4 +5294,131 @@ fun BottomTabItem(
             letterSpacing = 0.08.sp
         )
     }
+}
+
+private fun saveToDownloads(context: android.content.Context, fileName: String, mimeType: String, contentBytes: ByteArray): Boolean {
+    return try {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val contentValues = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(contentBytes)
+                }
+                true
+            } else {
+                false
+            }
+        } else {
+            val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            val file = java.io.File(downloadsDir, fileName)
+            file.writeBytes(contentBytes)
+            true
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        false
+    }
+}
+
+private fun generatePdfReport(titleText: String, textContent: String): ByteArray {
+    val pdfDocument = android.graphics.pdf.PdfDocument()
+    val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4 Size: 595 x 842 pt
+    var page = pdfDocument.startPage(pageInfo)
+    var canvas = page.canvas
+    val paint = android.graphics.Paint()
+    
+    // Draw Elegant Header Title
+    paint.textSize = 20f
+    paint.isFakeBoldText = true
+    paint.color = android.graphics.Color.rgb(124, 58, 237) // Modern violet #7C3AED
+    canvas.drawText("DEPTHLENS REPORT", 40f, 55f, paint)
+    
+    // Draw details metadata
+    paint.textSize = 10f
+    paint.isFakeBoldText = false
+    paint.color = android.graphics.Color.GRAY
+    val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+    canvas.drawText("Generated: $timestamp | Version v4.1.6", 40f, 75f, paint)
+    
+    // Divider
+    paint.strokeWidth = 1.2f
+    paint.color = android.graphics.Color.LTGRAY
+    canvas.drawLine(40f, 90f, 555f, 90f, paint)
+    
+    // Render text with pages pagination
+    var currentY = 120f
+    val margin = 40f
+    val maxWidth = 515f
+    paint.color = android.graphics.Color.BLACK
+    paint.textSize = 10.5f
+    
+    val sections = textContent.replace("\r", "").split("\n")
+    for (section in sections) {
+        if (section.trim().isEmpty()) {
+            currentY += 10f
+            continue
+        }
+        
+        if (section.startsWith("###") || section.startsWith("##") || section.startsWith("#")) {
+            paint.isFakeBoldText = true
+            paint.textSize = 12f
+            paint.color = android.graphics.Color.rgb(88, 28, 135)
+            val cleanSec = section.replace("#", "").trim()
+            if (currentY > 790) {
+                pdfDocument.finishPage(page)
+                page = pdfDocument.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, pdfDocument.pages.size + 1).create())
+                canvas = page.canvas
+                currentY = 50f
+            }
+            canvas.drawText(cleanSec, margin, currentY, paint)
+            currentY += 22f
+            continue
+        } else {
+            paint.isFakeBoldText = false
+            paint.textSize = 10f
+            paint.color = android.graphics.Color.BLACK
+        }
+        
+        val words = section.split(" ")
+        val line = StringBuilder()
+        for (word in words) {
+            val spaceText = if (line.isNotEmpty()) " " + word else word
+            if (paint.measureText(line.toString() + spaceText) < maxWidth) {
+                line.append(spaceText)
+            } else {
+                if (currentY > 790) {
+                    pdfDocument.finishPage(page)
+                    page = pdfDocument.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, pdfDocument.pages.size + 1).create())
+                    canvas = page.canvas
+                    currentY = 50f
+                }
+                canvas.drawText(line.toString(), margin, currentY, paint)
+                currentY += 16f
+                line.setLength(0)
+                line.append(word)
+            }
+        }
+        if (line.isNotEmpty()) {
+            if (currentY > 790) {
+                pdfDocument.finishPage(page)
+                page = pdfDocument.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, pdfDocument.pages.size + 1).create())
+                canvas = page.canvas
+                currentY = 50f
+            }
+            canvas.drawText(line.toString(), margin, currentY, paint)
+            currentY += 18f
+        }
+    }
+    
+    pdfDocument.finishPage(page)
+    val outputStream = java.io.ByteArrayOutputStream()
+    pdfDocument.writeTo(outputStream)
+    pdfDocument.close()
+    return outputStream.toByteArray()
 }
