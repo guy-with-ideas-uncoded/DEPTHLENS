@@ -125,7 +125,7 @@ class IntelligenceRepository(private val context: Context) {
             generationConfig = GenerationConfig(temperature = 0.5f)
         )
 
-        val modelsToTry = listOf("gemini-2.5-flash", "gemini-3.5-flash")
+        val modelsToTry = listOf("gemini-2.0-flash")
         var generatedTitle: String? = null
         val retryDelays = listOf(2000L, 5000L, 12000L)
 
@@ -793,8 +793,7 @@ Selected depth rating: $sessionDepth. You MUST adjust your detail levels accordi
 
         var modelText: String? = null
         var lastException: Exception? = null
-        // Strict Priority Rules (using modern preview models first): gemini-3.1-pro-preview, then gemini-3.5-flash, fallback to gemini-2.5-flash, gemini-2.5-pro
-        val modelsToTry = listOf("gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro")
+        val modelsToTry = listOf("gemini-2.0-flash")
         val retryDelays = listOf(2000L, 5000L, 10000L) // 2s, 5s, 10s retries
 
         for (modelName in modelsToTry) {
@@ -1031,7 +1030,7 @@ Selected depth rating: $sessionDepth. You MUST adjust your detail levels accordi
         )
         
         try {
-            val response = apiService.generateContent("gemini-2.5-flash", apiKey, request)
+            val response = apiService.generateContent("gemini-2.0-flash", apiKey, request)
             response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
                 ?: "Unable to sync session context at this moment."
         } catch (e: Exception) {

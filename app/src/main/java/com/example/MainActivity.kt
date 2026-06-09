@@ -31,11 +31,25 @@ class MainActivity : ComponentActivity() {
       receivedSessionId = initialSessionId
     }
 
-    // Initialize the DepthLens Theme and Software Update Systems
-    com.example.ui.theme.ThemeManager.init(applicationContext)
-    com.example.ui.theme.TypographyManager.init(applicationContext)
-    GithubUpdateManager.init(applicationContext)
-    GithubUpdateManager.checkForUpdates(applicationContext, force = false)
+    // Initialize the DepthLens Theme and Software Update Systems safely to prevent startup crashes
+    try {
+        com.example.ui.theme.ThemeManager.init(applicationContext)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+
+    try {
+        com.example.ui.theme.TypographyManager.init(applicationContext)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+
+    try {
+        GithubUpdateManager.init(applicationContext)
+        GithubUpdateManager.checkForUpdates(applicationContext, force = false)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
 
     setContent {
       MyApplicationTheme {

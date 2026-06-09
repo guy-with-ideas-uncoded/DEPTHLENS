@@ -95,6 +95,7 @@ fun DashboardScreen(
     val archivedInsights by viewModel.archivedInsights.collectAsState()
     val deepDiveInsights by viewModel.deepDiveInsights.collectAsState()
     val isDeepDiveLoading by viewModel.isDeepDiveLoading.collectAsState()
+    val diagnostics by viewModel.diagnostics.collectAsState()
 
     val continuityBrief by viewModel.continuityBrief.collectAsState()
     val continuityBriefStatus by viewModel.continuityBriefStatus.collectAsState()
@@ -1949,7 +1950,9 @@ fun DashboardScreen(
                             onSaveGithubSettings = { token, repo -> viewModel.saveGithubSettings(token, repo) },
                             onSignOut = { viewModel.signOut() },
                             onLoginWithGoogle = { email, name -> viewModel.loginWithGoogle(email, name) },
-                            onLoginAsGuest = { name -> viewModel.loginAsGuest(name) }
+                            onLoginAsGuest = { name -> viewModel.loginAsGuest(name) },
+                            diagnostics = diagnostics,
+                            onRefreshDiagnostics = { viewModel.refreshDiagnostics() }
                         )
                     }
                 }

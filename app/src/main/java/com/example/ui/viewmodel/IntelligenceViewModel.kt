@@ -82,9 +82,16 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     private val _isDeepDiveLoading = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val isDeepDiveLoading: StateFlow<Map<String, Boolean>> = _isDeepDiveLoading.asStateFlow()
 
+    // Engine Diagnostics Flow
+    private val _diagnostics = MutableStateFlow(EngineDiagnostics())
+    val diagnostics: StateFlow<EngineDiagnostics> = _diagnostics.asStateFlow()
+
     init {
         // Always open the Home Screen on app launch / entry
         _activeSessionId.value = null
+
+        // Trigger Engine Diagnostics Health Check at Startup
+        runEngineDiagnostics()
 
         // Load deep-dive insights from prefs
         try {
@@ -406,18 +413,11 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 )
 
                 var insightText: String? = null
-                val modelsToTry = listOf("gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-pro-preview")
-                for (modelName in modelsToTry) {
-                    try {
-                        val response = com.example.data.network.RetrofitClient.service.generateContent(modelName, apiKey, request)
-                        val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                        if (!text.isNullOrEmpty()) {
-                            insightText = text
-                            break
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                try {
+                    val response = com.example.data.network.RetrofitClient.service.generateContent("gemini-2.0-flash", apiKey, request)
+                    insightText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
 
                 val result = insightText ?: "Error generating deep-dive insight from the service. Please verify your connection and try again."
@@ -730,4 +730,118 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             else -> "Strategic Reality Analysis"
         }
     }
+
+    fun refreshDiagnostics() {
+        runEngineDiagnostics()
+    }
+
+    private fun runEngineDiagnostics() {
+        viewModelScope.launch {
+            _diagnostics.emit(_diagnostics.value.copy(
+                geminiStatus = "Checking",
+                apiKeyStatus = "Checking",
+                networkStatus = "Checking",
+                endpointStatus = "Checking"
+            ))
+
+            val context = getApplication<Application>().applicationContext
+            
+            // 1. Check API Key configuration
+            val rawKey = BuildConfig.GEMINI_API_KEY
+            val isConfigured = !rawKey.isNullOrEmpty() && rawKey != "YOUR_GEMINI_API_KEY" && rawKey != "YOUR_API_KEY"
+            val apiKeyStr = if (isConfigured) {
+                val prefix = if (rawKey.length > 4) rawKey.take(4) else "AIza"
+                val suffix = if (rawKey.length > 4) rawKey.takeLast(4) else "..."
+                "Configured (${prefix}***${suffix})"
+            } else {
+                "Not Configured"
+            }
+
+            // 2. Check Network connectivity
+            var isConnected = false
+            var networkStr = "Unknown"
+            try {
+                val connManager = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+                @Suppress("DEPRECATION")
+                val activeNetwork = connManager?.activeNetworkInfo
+                @Suppress("DEPRECATION")
+                isConnected = activeNetwork != null && activeNetwork.isConnected
+                networkStr = if (isConnected) "Online" else "Offline"
+            } catch (e: SecurityException) {
+                networkStr = "Permission Denied"
+            } catch (e: Exception) {
+                networkStr = "Error"
+            }
+
+            // 3. Check Gemini connection status and endpoint health
+            var geminiStr = "Disconnected"
+            var endpointStr = "Unreachable"
+            var lastRequestStr = "No Request Made"
+            if (isConfigured && isConnected) {
+                try {
+                    val response = com.example.data.network.RetrofitClient.service.generateContent(
+                        "gemini-2.0-flash",
+                        rawKey,
+                        com.example.data.network.GenerateContentRequest(
+                            contents = listOf(
+                                com.example.data.network.Content(
+                                    parts = listOf(com.example.data.network.Part(text = "ping"))
+                                )
+                            ),
+                            generationConfig = com.example.data.network.GenerationConfig(temperature = 0.1f)
+                        )
+                    )
+                    
+                    if (response != null) {
+                        geminiStr = "Connected"
+                        endpointStr = "Healthy"
+                        lastRequestStr = "Success"
+                    } else {
+                        geminiStr = "Connected (API Empty Response)"
+                        endpointStr = "Partially Unhealthy"
+                        lastRequestStr = "Empty Response"
+                    }
+                } catch (e: Exception) {
+                    val msg = e.message ?: e.toString()
+                    geminiStr = "Error"
+                    lastRequestStr = when {
+                        "403" in msg || "401" in msg || "API_KEY" in msg || "unauthorized" in msg.lowercase() -> "Authentication Error"
+                        "429" in msg || "quota" in msg.lowercase() || "limit" in msg.lowercase() -> "Rate Limited / Quota Exceeded"
+                        "404" in msg || "not found" in msg.lowercase() || "model" in msg.lowercase() -> "Endpoint Not Found (404)"
+                        "timeout" in msg.lowercase() || "time out" in msg.lowercase() -> "Network Timeout"
+                        else -> "Failed (${msg.take(40)})"
+                    }
+                    endpointStr = "Unhealthy"
+                }
+            } else {
+                if (!isConfigured) {
+                    geminiStr = "Service Key Missing"
+                    endpointStr = "Unreachable"
+                    lastRequestStr = "Awaiting credentials"
+                } else {
+                    geminiStr = "Offline Mode"
+                    endpointStr = "Offline"
+                    lastRequestStr = "Awaiting network connection"
+                }
+            }
+
+            _diagnostics.emit(EngineDiagnostics(
+                geminiStatus = geminiStr,
+                apiKeyStatus = apiKeyStr,
+                networkStatus = networkStr,
+                modelName = "gemini-2.0-flash",
+                endpointStatus = endpointStr,
+                lastRequestStatus = lastRequestStr
+            ))
+        }
+    }
 }
+
+data class EngineDiagnostics(
+    val geminiStatus: String = "Pending",
+    val apiKeyStatus: String = "Pending",
+    val networkStatus: String = "Pending",
+    val modelName: String = "gemini-2.0-flash",
+    val endpointStatus: String = "Pending",
+    val lastRequestStatus: String = "Pending"
+)

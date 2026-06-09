@@ -246,13 +246,13 @@ object GithubUpdateManager {
                     
                     val mockRelease = GitHubRelease(
                         tagName = "v5.8.9",
-                        name = "DepthLens v5.8.9 — Engine Reliability Patch",
-                        publishedAt = "June 8, 2026",
+                        name = "DepthLens v5.8.9 — Critical Recovery & Engine Stabilization Release",
+                        publishedAt = "June 9, 2026",
                         body = "### What's New in v5.8.9\n" +
-                                "- **False High-Demand Error Removal**: Show the real underlying API or network exception cause dynamically.\n" +
-                                "- **Twin-Dimension Analysis Selection**: Dual-dimension category and depth selectors now live in the home screen.\n" +
-                                "- **Smart Scroll Control Logic**: Generation completion now lands perfectly at the reading mode start.\n" +
-                                "- **Performance improvements and bug fixes**",
+                                "- **Gemini Flash Latest Single Integration**: Simplified intelligence engine to rely fully and robustly on a single model.\n" +
+                                "- **API Engine Diagnostics**: Added a comprehensive engine monitoring board under settings to verify endpoint network and authentication.\n" +
+                                "- **Robust Fallback Auto-Retries**: Intelligent retry state logic with 2s, 5s and 10s delay intervals on failures.\n" +
+                                "- **Precision Error Categorization**: Fine-grained error mappings for DNS, timeouts, rates, and handshake exceptions.",
                         apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v5.8.9/DEPTHLENS.apk",
                         apkFileName = "DEPTHLENS-v589.apk",
                         apkSize = 41943040L

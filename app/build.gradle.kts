@@ -80,7 +80,7 @@ android {
     applicationId = "com.aistudio.depthlens.uqmzkx"
     minSdk = 24
     targetSdk = 36
-    versionCode = 5890
+    versionCode = 5891
     versionName = "5.8.9"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

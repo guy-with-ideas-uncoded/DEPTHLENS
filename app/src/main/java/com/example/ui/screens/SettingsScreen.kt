@@ -54,6 +54,8 @@ fun SettingsScreen(
     onSignOut: () -> Unit = {},
     onLoginWithGoogle: (String, String) -> Unit = { _, _ -> },
     onLoginAsGuest: (String) -> Unit = {},
+    diagnostics: com.example.ui.viewmodel.EngineDiagnostics = com.example.ui.viewmodel.EngineDiagnostics(),
+    onRefreshDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showExportToast by remember { mutableStateOf(false) }
@@ -621,6 +623,155 @@ fun SettingsScreen(
             }
         }
 
+        // --- SECTION: SYSTEM DIAGNOSTICS ---
+        Text(
+            text = "SYSTEM DIAGNOSTICS",
+            fontSize = 8.sp,
+            letterSpacing = 1.3.sp,
+            fontFamily = DMMonoFontFamily,
+            fontWeight = FontWeight.Bold,
+            color = TextMutedColor,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 20.dp)
+                .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp)),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Surface1)
+        ) {
+            var showDiagnosticsDialog by remember { mutableStateOf(false) }
+
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Engine Diagnostics",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = InstrumentSansFontFamily,
+                            color = TextPrimaryColor
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Verify Gemini endpoint, connection latency, and credentials.",
+                            fontSize = 11.sp,
+                            fontFamily = InstrumentSansFontFamily,
+                            color = TextMutedColor
+                        )
+                    }
+                    Button(
+                        onClick = { showDiagnosticsDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("Open", fontSize = 11.sp, color = Color.White, fontFamily = InstrumentSansFontFamily, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                if (showDiagnosticsDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showDiagnosticsDialog = false },
+                        title = {
+                            Text(
+                                text = "AI Engine Diagnostics",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = TextPrimaryColor,
+                                fontFamily = DMSerifDisplayFontFamily,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            )
+                        },
+                        text = {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Real-time health evaluation and status of DepthLens's intelligence core service constraints.",
+                                    fontSize = 11.sp,
+                                    color = TextSecondaryColor,
+                                    fontFamily = InstrumentSansFontFamily,
+                                    lineHeight = 15.sp
+                                )
+
+                                Divider(color = BorderSubtle, thickness = 0.8.dp)
+
+                                // 1. Gemini Status
+                                DiagnosticItemRow(
+                                    label = "Gemini Status",
+                                    value = diagnostics.geminiStatus,
+                                    healthyValue = "Connected"
+                                )
+
+                                // 2. API Key
+                                DiagnosticItemRow(
+                                    label = "API Key",
+                                    value = diagnostics.apiKeyStatus,
+                                    healthyValue = "Configured"
+                                )
+
+                                // 3. Network Status
+                                DiagnosticItemRow(
+                                    label = "Network Status",
+                                    value = diagnostics.networkStatus,
+                                    healthyValue = "Online"
+                                )
+
+                                // 4. Selected Model
+                                DiagnosticItemRow(
+                                    label = "Model",
+                                    value = diagnostics.modelName,
+                                    healthyValue = "gemini-2.0-flash"
+                                )
+
+                                // 5. Endpoint Healthy
+                                DiagnosticItemRow(
+                                    label = "Endpoint",
+                                    value = diagnostics.endpointStatus,
+                                    healthyValue = "Healthy"
+                                )
+
+                                // 6. Last analysis request
+                                DiagnosticItemRow(
+                                    label = "Last Analysis Request",
+                                    value = diagnostics.lastRequestStatus,
+                                    healthyValue = "Success"
+                                )
+
+                                Button(
+                                    onClick = onRefreshDiagnostics,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Surface3),
+                                    border = BorderStroke(1.dp, ElectricViolet.copy(alpha = 0.4f)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                                ) {
+                                    Text("Re-Run Health Check", fontSize = 11.sp, color = ElectricViolet, fontWeight = FontWeight.Bold, fontFamily = InstrumentSansFontFamily)
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showDiagnosticsDialog = false }) {
+                                Text("Done", color = PremiumCyan, fontWeight = FontWeight.Bold, fontFamily = InstrumentSansFontFamily)
+                            }
+                        },
+                        containerColor = DeepMidnight,
+                        tonalElevation = 6.dp,
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                }
+            }
+        }
+
         // --- SECTION: HELP & SUPPORT ---
         Text(
             text = "HELP & SUPPORT",
@@ -887,7 +1038,7 @@ fun SettingsScreen(
         InteractiveSettingsCard(
             icon = "✕",
             title = "About DepthLens",
-            subtitle = "View software license details and dynamic credits · v4.1.5",
+            subtitle = "View software license details and dynamic credits · v5.8.9",
             onClick = onShowAbout
         )
 
@@ -1090,5 +1241,42 @@ fun SettingsRow(
                 uncheckedTrackColor = Surface4
             )
         )
+    }
+}
+
+@Composable
+fun DiagnosticItemRow(label: String, value: String, healthyValue: String) {
+    val isHealthy = value == healthyValue || (healthyValue == "Configured" && value.startsWith("Configured"))
+    val statusColor = when (value) {
+        "Pending", "Checking" -> WarningColor
+        healthyValue -> SuccessColor
+        else -> if (isHealthy) SuccessColor else ErrorColor
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontFamily = InstrumentSansFontFamily,
+            color = TextSecondaryColor
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(statusColor, CircleShape)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = value.uppercase(),
+                fontSize = 10.sp,
+                fontFamily = DMMonoFontFamily,
+                color = statusColor,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }

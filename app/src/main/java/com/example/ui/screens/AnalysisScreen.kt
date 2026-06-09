@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -110,27 +111,26 @@ fun AnalysisScreen(
 
     val scrollState = rememberScrollState()
 
-    // Scroll to top immediately when a brand-new AI message arrives (new id).
-    // This handles the moment the model starts responding.
-    LaunchedEffect(latestAiMessage?.id) {
-        if (latestAiMessage != null) {
+    // Immediately scroll to the beginning of the analysis container when a new request is submitted or a response begins
+    LaunchedEffect(latestUserMessage?.id, latestAiMessage?.id) {
+        if (latestUserMessage != null || latestAiMessage != null) {
             scrollState.scrollTo(0)
         }
     }
 
-    // Scroll to top when streaming finishes.
-    // Strategy: wait until text has stopped changing for 1200 ms (streaming done),
-    // then snap to top so the user reads from the beginning.
-    // We do NOT scroll on every text change — that would interrupt the user mid-read
-    // during streaming by constantly resetting their scroll position.
-    val currentText = latestAiMessage?.text
-    LaunchedEffect(currentText) {
-        if (latestAiMessage != null && currentText != null) {
-            val textAtLaunch = currentText
-            delay(1200L)
-            // Only scroll if text hasn't changed in 1200ms (streaming has stopped)
-            if (latestAiMessage.text == textAtLaunch) {
-                scrollState.animateScrollTo(0)
+    val showScrollButtonState by remember {
+        derivedStateOf {
+            val max = scrollState.maxValue
+            val curr = scrollState.value
+            if (max > 150) {
+                val halfWay = max / 2
+                if (curr > halfWay) {
+                    if (curr > 150) "top" else "none"
+                } else {
+                    if (curr < max - 150) "bottom" else "none"
+                }
+            } else {
+                "none"
             }
         }
     }
@@ -151,11 +151,14 @@ fun AnalysisScreen(
         )
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(DeepMidnight)
     ) {
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
         // Redesigned Topbar Bar
         Row(
             modifier = Modifier
@@ -1689,6 +1692,63 @@ fun AnalysisScreen(
                         }
                     }
                 }
+            }
+        }
+        }
+
+        // Floating scroll arrow premium glass buttons (v5.8.9)
+        AnimatedVisibility(
+            visible = showScrollButtonState != "none",
+            enter = scaleIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
+            exit = scaleOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 76.dp, end = 20.dp)
+        ) {
+            val isTop = showScrollButtonState == "top"
+            val icon = if (isTop) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown
+            val desc = if (isTop) "Scroll to Top" else "Scroll to Bottom"
+            
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .shadow(elevation = 8.dp, shape = CircleShape)
+                    .background(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xCC1A1B26),
+                                Color(0xE60D0D14)
+                            )
+                        ),
+                        shape = CircleShape
+                    )
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                ElectricViolet.copy(alpha = 0.8f),
+                                PremiumCyan.copy(alpha = 0.6f)
+                            )
+                        ),
+                        shape = CircleShape
+                    )
+                    .clickable {
+                        coroutineScope.launch {
+                            if (isTop) {
+                                scrollState.animateScrollTo(0)
+                            } else {
+                                scrollState.animateScrollTo(scrollState.maxValue)
+                            }
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = desc,
+                    tint = PremiumCyan,
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
     }

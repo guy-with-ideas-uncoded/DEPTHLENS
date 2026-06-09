@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -34,6 +37,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -109,6 +113,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("depthlens_prefs", android.content.Context.MODE_PRIVATE) }
     var hasCompletedOnboarding by remember { mutableStateOf(prefs.getBoolean("has_completed_permission_onboarding", false)) }
     
@@ -219,7 +224,7 @@ fun HomeScreen(
 
     var editingMessageId by remember { mutableStateOf<String?>(null) }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(DeepMidnight)
@@ -227,26 +232,37 @@ fun HomeScreen(
             .imePadding()
     ) {
         val scrollState = rememberScrollState()
-        val isKeyboardVisible = WindowInsets.isImeVisible
 
-        // Scroll to bottom only when user sends a message or keyboard appears.
-        // Never scroll to bottom for AI responses — buries the start of the analysis.
-        LaunchedEffect(activeMessages.size, isKeyboardVisible) {
-            if (activeMessages.isNotEmpty() && activeMessages.last().role == "user") {
-                kotlinx.coroutines.delay(100)
-                scrollState.animateScrollTo(scrollState.maxValue)
-            }
-        }
-
-        // Scroll to top when AI finishes generating.
-        var wasLoadingHome by remember { mutableStateOf(false) }
+        // Immediately scroll to the beginning of the analysis container when a new request starts
+        var wasLoadingState by remember { mutableStateOf(false) }
         LaunchedEffect(isLoading) {
-            if (wasLoadingHome && !isLoading && activeMessages.isNotEmpty() && activeMessages.last().role == "model") {
-                kotlinx.coroutines.delay(150)
-                scrollState.animateScrollTo(0)
+            if (!wasLoadingState && isLoading) {
+                // Immediately snap to the top of the analysis container
+                scrollState.scrollTo(0)
             }
-            wasLoadingHome = isLoading
+            wasLoadingState = isLoading
         }
+
+        val showScrollButtonState by remember {
+            derivedStateOf {
+                val max = scrollState.maxValue
+                val curr = scrollState.value
+                if (max > 150) {
+                    val halfWay = max / 2
+                    if (curr > halfWay) {
+                        if (curr > 150) "top" else "none"
+                    } else {
+                        if (curr < max - 150) "bottom" else "none"
+                    }
+                } else {
+                    "none"
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
 
         // Main scrollable content
         Column(
@@ -1492,7 +1508,64 @@ fun HomeScreen(
             }
             }
         }
+    } // End of inner Column
+
+    // Floating scroll arrow premium glass buttons (v5.8.9)
+    AnimatedVisibility(
+        visible = showScrollButtonState != "none",
+        enter = scaleIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
+        exit = scaleOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(bottom = 76.dp, end = 20.dp)
+    ) {
+        val isTop = showScrollButtonState == "top"
+        val icon = if (isTop) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown
+        val desc = if (isTop) "Scroll to Top" else "Scroll to Bottom"
+        
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .shadow(elevation = 8.dp, shape = CircleShape)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xCC1A1B26),
+                            Color(0xE60D0D14)
+                        )
+                    ),
+                    shape = CircleShape
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            ElectricViolet.copy(alpha = 0.8f),
+                            PremiumCyan.copy(alpha = 0.6f)
+                        )
+                    ),
+                    shape = CircleShape
+                )
+                .clickable {
+                    coroutineScope.launch {
+                        if (isTop) {
+                            scrollState.animateScrollTo(0)
+                        } else {
+                            scrollState.animateScrollTo(scrollState.maxValue)
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = desc,
+                tint = PremiumCyan,
+                modifier = Modifier.size(24.dp)
+            )
+        }
     }
+}
 
     // Attachment bottom sheet overlay
     androidx.compose.animation.AnimatedVisibility(
