@@ -23,6 +23,22 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     val repoOwnerAndName = MutableStateFlow(prefs.getString("github_repo", "") ?: "")
     val onboardingCompleted = MutableStateFlow(prefs.getBoolean("onboarding_completed", false))
 
+    // Selected Gemini model — persisted in SharedPrefs, defaults to gemini-flash-latest
+    private val _selectedModel = MutableStateFlow(
+        prefs.getString(com.example.data.repository.IntelligenceRepository.PREF_KEY_MODEL,
+            com.example.data.repository.IntelligenceRepository.DEFAULT_MODEL)
+            ?: com.example.data.repository.IntelligenceRepository.DEFAULT_MODEL
+    )
+    val selectedModel: StateFlow<String> = _selectedModel.asStateFlow()
+
+    fun setSelectedModel(modelString: String) {
+        _selectedModel.value = modelString
+        prefs.edit().putString(
+            com.example.data.repository.IntelligenceRepository.PREF_KEY_MODEL,
+            modelString
+        ).apply()
+    }
+
     // Active session selection
     private val _activeSessionId = MutableStateFlow<String?>(null)
     val activeSessionId: StateFlow<String?> = _activeSessionId.asStateFlow()
@@ -413,11 +429,19 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 )
 
                 var insightText: String? = null
-                try {
-                    val response = com.example.data.network.RetrofitClient.service.generateContent("gemini-2.0-flash", apiKey, request)
-                    insightText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                val deepDiveModels = com.example.data.repository.IntelligenceRepository.buildModelFallbackChain(
+                    prefs.getString(com.example.data.repository.IntelligenceRepository.PREF_KEY_MODEL,
+                        com.example.data.repository.IntelligenceRepository.DEFAULT_MODEL)
+                        ?: com.example.data.repository.IntelligenceRepository.DEFAULT_MODEL
+                )
+                for (modelName in deepDiveModels) {
+                    try {
+                        val response = com.example.data.network.RetrofitClient.service.generateContent(modelName, apiKey, request)
+                        insightText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                        if (!insightText.isNullOrEmpty()) break
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
 
                 val result = insightText ?: "Error generating deep-dive insight from the service. Please verify your connection and try again."
@@ -779,8 +803,12 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             var lastRequestStr = "No Request Made"
             if (isConfigured && isConnected) {
                 try {
+                    val diagModel = prefs.getString(
+                        com.example.data.repository.IntelligenceRepository.PREF_KEY_MODEL,
+                        com.example.data.repository.IntelligenceRepository.DEFAULT_MODEL
+                    ) ?: com.example.data.repository.IntelligenceRepository.DEFAULT_MODEL
                     val response = com.example.data.network.RetrofitClient.service.generateContent(
-                        "gemini-2.0-flash",
+                        diagModel,
                         rawKey,
                         com.example.data.network.GenerateContentRequest(
                             contents = listOf(
@@ -825,11 +853,15 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 }
             }
 
+            val activeModel = prefs.getString(
+                com.example.data.repository.IntelligenceRepository.PREF_KEY_MODEL,
+                com.example.data.repository.IntelligenceRepository.DEFAULT_MODEL
+            ) ?: com.example.data.repository.IntelligenceRepository.DEFAULT_MODEL
             _diagnostics.emit(EngineDiagnostics(
                 geminiStatus = geminiStr,
                 apiKeyStatus = apiKeyStr,
                 networkStatus = networkStr,
-                modelName = "gemini-2.0-flash",
+                modelName = activeModel,
                 endpointStatus = endpointStr,
                 lastRequestStatus = lastRequestStr
             ))
@@ -841,7 +873,7 @@ data class EngineDiagnostics(
     val geminiStatus: String = "Pending",
     val apiKeyStatus: String = "Pending",
     val networkStatus: String = "Pending",
-    val modelName: String = "gemini-2.0-flash",
+    val modelName: String = com.example.data.repository.IntelligenceRepository.DEFAULT_MODEL,
     val endpointStatus: String = "Pending",
     val lastRequestStatus: String = "Pending"
 )

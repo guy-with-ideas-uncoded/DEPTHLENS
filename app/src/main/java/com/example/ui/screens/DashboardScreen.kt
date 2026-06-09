@@ -96,6 +96,7 @@ fun DashboardScreen(
     val deepDiveInsights by viewModel.deepDiveInsights.collectAsState()
     val isDeepDiveLoading by viewModel.isDeepDiveLoading.collectAsState()
     val diagnostics by viewModel.diagnostics.collectAsState()
+    val selectedModel by viewModel.selectedModel.collectAsState()
 
     val continuityBrief by viewModel.continuityBrief.collectAsState()
     val continuityBriefStatus by viewModel.continuityBriefStatus.collectAsState()
@@ -1952,7 +1953,9 @@ fun DashboardScreen(
                             onLoginWithGoogle = { email, name -> viewModel.loginWithGoogle(email, name) },
                             onLoginAsGuest = { name -> viewModel.loginAsGuest(name) },
                             diagnostics = diagnostics,
-                            onRefreshDiagnostics = { viewModel.refreshDiagnostics() }
+                            onRefreshDiagnostics = { viewModel.refreshDiagnostics() },
+                            selectedModel = selectedModel,
+                            onModelSelected = { viewModel.setSelectedModel(it) }
                         )
                     }
                 }

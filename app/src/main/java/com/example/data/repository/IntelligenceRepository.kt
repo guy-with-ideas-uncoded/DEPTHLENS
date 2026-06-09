@@ -23,6 +23,51 @@ import java.util.UUID
 import com.example.data.network.CloudSyncService
 
 class IntelligenceRepository(private val context: Context) {
+
+    companion object {
+        // ── All available Gemini models (display name → API model string) ──
+        // Ordered: best/newest first, lightweight last as final fallback.
+        // "gemini-flash-latest" always points to the newest Flash release automatically.
+        val ALL_MODELS: List<Pair<String, String>> = listOf(
+            Pair("Gemini Flash Latest (Auto)",   "gemini-flash-latest"),
+            Pair("Gemini 3.5 Flash",             "gemini-3.5-flash"),
+            Pair("Gemini 3.1 Flash Lite",        "gemini-3.1-flash-lite"),
+            Pair("Gemini 3 Flash Preview",       "gemini-3-flash-preview"),
+            Pair("Gemini 3.1 Pro Preview",       "gemini-3.1-pro-preview"),
+            Pair("Gemini Pro Latest (Auto)",     "gemini-pro-latest"),
+            Pair("Gemini Flash-Lite Latest (Auto)", "gemini-flash-lite-latest")
+        )
+
+        // Default preferred model — "gemini-flash-latest" auto-tracks the newest Flash
+        const val DEFAULT_MODEL = "gemini-flash-latest"
+        const val PREF_KEY_MODEL = "selected_gemini_model"
+        const val PREFS_NAME     = "depthlens_prefs"
+
+        // Build the fallback chain starting from the user's chosen model,
+        // then appending all others so the app never fully fails.
+        fun buildModelFallbackChain(preferredModel: String): List<String> {
+            val all = ALL_MODELS.map { it.second }
+            val ordered = mutableListOf(preferredModel)
+            // Always ensure these reliable fallbacks are in the chain
+            val fallbacks = listOf(
+                "gemini-flash-latest",
+                "gemini-3.5-flash",
+                "gemini-3.1-flash-lite",
+                "gemini-3-flash-preview",
+                "gemini-3.1-pro-preview",
+                "gemini-pro-latest",
+                "gemini-flash-lite-latest"
+            )
+            for (m in fallbacks) {
+                if (m != preferredModel) ordered.add(m)
+            }
+            return ordered
+        }
+
+        private val _runningAnalyses = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
+        val runningAnalyses: kotlinx.coroutines.flow.StateFlow<Set<String>> = _runningAnalyses.asStateFlow()
+    }
+
     private val db = DepthDatabase.getDatabase(context)
     private val sessionDao = db.sessionDao()
     private val messageDao = db.messageDao()
@@ -47,6 +92,12 @@ class IntelligenceRepository(private val context: Context) {
     }
 
     private val backgroundScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO)
+
+    /** Read the user-selected model from SharedPrefs; falls back to DEFAULT_MODEL */
+    private fun getPreferredModel(): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(PREF_KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
+    }
 
     private fun triggerUpload(block: suspend (userId: String) -> Unit) {
         val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
@@ -125,9 +176,9 @@ class IntelligenceRepository(private val context: Context) {
             generationConfig = GenerationConfig(temperature = 0.5f)
         )
 
-        val modelsToTry = listOf("gemini-2.0-flash")
+        val modelsToTry = buildModelFallbackChain(getPreferredModel())
         var generatedTitle: String? = null
-        val retryDelays = listOf(2000L, 5000L, 12000L)
+        val retryDelays = listOf(3000L, 10000L, 30000L)
 
         for (modelName in modelsToTry) {
             for ((attempt, delay) in retryDelays.withIndex()) {
@@ -793,8 +844,8 @@ Selected depth rating: $sessionDepth. You MUST adjust your detail levels accordi
 
         var modelText: String? = null
         var lastException: Exception? = null
-        val modelsToTry = listOf("gemini-2.0-flash")
-        val retryDelays = listOf(2000L, 5000L, 10000L) // 2s, 5s, 10s retries
+        val modelsToTry = buildModelFallbackChain(getPreferredModel())
+        val retryDelays = listOf(3000L, 10000L, 30000L) // 3s, 10s, 30s — longer waits for quota recovery
 
         for (modelName in modelsToTry) {
             for ((attempt, delay) in retryDelays.withIndex()) {
@@ -807,11 +858,13 @@ Selected depth rating: $sessionDepth. You MUST adjust your detail levels accordi
                     }
                 } catch (e: Exception) {
                     lastException = e
+                    val msg = e.message ?: ""
+                    val is429 = msg.contains("429") || msg.contains("quota", ignoreCase = true) || msg.contains("rate", ignoreCase = true)
                     if (attempt < retryDelays.size - 1) {
                         kotlinx.coroutines.delay(delay)
                         continue
                     } else {
-                        break
+                        break // quota hit on this model — outer loop tries next model
                     }
                 }
             }
@@ -1030,9 +1083,19 @@ Selected depth rating: $sessionDepth. You MUST adjust your detail levels accordi
         )
         
         try {
-            val response = apiService.generateContent("gemini-2.0-flash", apiKey, request)
-            response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
-                ?: "Unable to sync session context at this moment."
+            // Try models in fallback order for context sync too
+            val syncModels = buildModelFallbackChain(getPreferredModel())
+            var syncResult: String? = null
+            for (syncModel in syncModels) {
+                try {
+                    val response = apiService.generateContent(syncModel, apiKey, request)
+                    syncResult = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+                    if (!syncResult.isNullOrEmpty()) break
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            syncResult ?: "Unable to sync session context at this moment."
         } catch (e: Exception) {
             e.printStackTrace()
             "Error syncing context: ${e.message}"
@@ -1127,15 +1190,6 @@ Selected depth rating: $sessionDepth. You MUST adjust your detail levels accordi
         } catch (e: Exception) {
             e.printStackTrace()
         }
-    }
-
-    companion object {
-        private val _runningAnalyses = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
-        val runningAnalyses: kotlinx.coroutines.flow.StateFlow<Set<String>> = _runningAnalyses.asStateFlow()
-
-        private val backgroundScope = kotlinx.coroutines.CoroutineScope(
-            kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
-        )
     }
 }
 
