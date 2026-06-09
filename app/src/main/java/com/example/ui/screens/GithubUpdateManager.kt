@@ -116,7 +116,7 @@ object GithubUpdateManager {
         
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "5.8.9"
+            packageInfo.versionName ?: "5.8.9.x"
         } catch (e: Exception) {
             "4.0.0"
         }
@@ -245,16 +245,15 @@ object GithubUpdateManager {
                     val localVersion = getInstalledVersion(context)
                     
                     val mockRelease = GitHubRelease(
-                        tagName = "v5.8.9",
-                        name = "DepthLens v5.8.9 — Critical Recovery & Engine Stabilization Release",
+                        tagName = "v5.8.9.x",
+                        name = "DepthLens v5.8.9.x — Dynamic Follow-up Intelligence & Aesthetics Polish",
                         publishedAt = "June 9, 2026",
-                        body = "### What's New in v5.8.9\n" +
-                                "- **Gemini Flash Latest Single Integration**: Simplified intelligence engine to rely fully and robustly on a single model.\n" +
-                                "- **API Engine Diagnostics**: Added a comprehensive engine monitoring board under settings to verify endpoint network and authentication.\n" +
-                                "- **Robust Fallback Auto-Retries**: Intelligent retry state logic with 2s, 5s and 10s delay intervals on failures.\n" +
-                                "- **Precision Error Categorization**: Fine-grained error mappings for DNS, timeouts, rates, and handshake exceptions.",
-                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v5.8.9/DEPTHLENS.apk",
-                        apkFileName = "DEPTHLENS-v589.apk",
+                        body = "### What's New in v5.8.9.x\n" +
+                                "- **Model 2 Follow-Up Intelligence Mode**: Intelligent conversational memory detects follow-up inquiries on the same topic, generating context-aware deep system dynamics continuations instead of redundant visual report frameworks.\n" +
+                                "- **Diagnostic Card Streamlining**: The Reality Layer Activation diagnostic visualizer card is removed from settings and follow-up threads per client request for an elegant, expert-conversational direct response flow.\n" +
+                                "- **Polished Aesthetics & Layouts**: Smoothed spacing, paddings, and card alignment across conversational screens.",
+                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v5.8.9.x/DEPTHLENS.apk",
+                        apkFileName = "DEPTHLENS-v589x.apk",
                         apkSize = 41943040L
                     )
                     
@@ -265,7 +264,7 @@ object GithubUpdateManager {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                    val isNew = isNewerVersion("v5.8.9", localVersion)
+                    val isNew = isNewerVersion("v5.8.9.x", localVersion)
                     onComplete(isNew, mockRelease)
                 }
             }
