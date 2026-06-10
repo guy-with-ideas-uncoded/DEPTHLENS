@@ -27,6 +27,13 @@ import com.example.ui.theme.*
 import com.example.ui.viewmodel.IntelligenceViewModel
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.firebase.auth.GoogleAuthProvider
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,10 +52,37 @@ fun LoginScreen(
     var isPasswordVisible by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
 
-    // Google Sign-In Emulator Modal
-    var showGoogleDialog by remember { mutableStateOf(false) }
-    var googleEmail by remember { mutableStateOf("ashah331@gmail.com") }
-    var googleName by remember { mutableStateOf("Ashae Shah") }
+    // Real Google Sign-In Activity Result Launcher
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+        try {
+            val account: GoogleSignInAccount = task.getResult(ApiException::class.java)
+            val idToken = account.idToken
+            if (idToken != null) {
+                isLoading = true
+                val credential = GoogleAuthProvider.getCredential(idToken, null)
+                FirebaseAuth.getInstance().signInWithCredential(credential)
+                    .addOnCompleteListener { authTask ->
+                        isLoading = false
+                        if (authTask.isSuccessful) {
+                            val firebaseUser = authTask.result?.user
+                            if (firebaseUser != null) {
+                                viewModel.onAuthSuccess(firebaseUser, firebaseUser.displayName, isNew = false)
+                                Toast.makeText(context, "Access authorized via Google", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Google Firebase Auth failed: ${authTask.exception?.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+            } else {
+                Toast.makeText(context, "Google Sign-In failed: Client ID/ID Token is null.", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "Google Sign-In Exception: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
 
     Box(
         modifier = modifier
@@ -321,7 +355,18 @@ fun LoginScreen(
 
             // Google Sign-In Button
             OutlinedButton(
-                onClick = { showGoogleDialog = true },
+                onClick = {
+                    try {
+                        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                            .requestIdToken(context.getString(R.string.default_web_client_id))
+                            .requestEmail()
+                            .build()
+                        val googleSignInClient = GoogleSignIn.getClient(context, gso)
+                        googleSignInLauncher.launch(googleSignInClient.signInIntent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Google Sign-In error: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(44.dp),
@@ -351,101 +396,5 @@ fun LoginScreen(
                 }
             }
         }
-    }
-
-    // Google Simulator Modal for Streaming Emulator Compatibility
-    if (showGoogleDialog) {
-        AlertDialog(
-            onDismissRequest = { showGoogleDialog = false },
-            title = {
-                Text(
-                    text = "Google Authentication (Sandbox)",
-                    fontFamily = DMSerifDisplayFontFamily,
-                    fontSize = 18.sp,
-                    color = TextPrimaryColor
-                )
-            },
-            text = {
-                Column {
-                    Text(
-                        text = "Simulate OAuth identity securely inside your current browser emulator sandbox workspace:",
-                        fontSize = 11.sp,
-                        fontFamily = InstrumentSansFontFamily,
-                        color = TextMutedColor,
-                        modifier = Modifier.padding(bottom = 14.dp)
-                    )
-
-                    OutlinedTextField(
-                        value = googleEmail,
-                        onValueChange = { googleEmail = it },
-                        label = { Text("Google Account Email") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimaryColor,
-                            unfocusedTextColor = TextPrimaryColor,
-                            focusedBorderColor = ElectricViolet,
-                            unfocusedBorderColor = BorderSubtle
-                        ),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                    )
-
-                    OutlinedTextField(
-                        value = googleName,
-                        onValueChange = { googleName = it },
-                        label = { Text("Display Name") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = TextPrimaryColor,
-                            unfocusedTextColor = TextPrimaryColor,
-                            focusedBorderColor = ElectricViolet,
-                            unfocusedBorderColor = BorderSubtle
-                        ),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val cleanGEmail = googleEmail.trim()
-                        val cleanGName = googleName.trim()
-
-                        if (cleanGEmail.isEmpty() || cleanGName.isEmpty()) {
-                            Toast.makeText(context, "Please enter Google ID details.", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        showGoogleDialog = false
-                        isLoading = true
-
-                        // Perform sandbox validation with simulated firebase credentials securely!
-                        coroutineScope.launch {
-                            try {
-                                val auth = FirebaseAuth.getInstance()
-                                // Log in using standard secure guest or simulated Firebase profile!
-                                // For an emulator sandbox we also save a custom Google tag in prefs
-                                // so it syncs to their exact user UID on Firestore.
-                                // We can write their profile under "google_" + uid!
-                                val simulatedUserId = "google_" + java.util.UUID.nameUUIDFromBytes(cleanGEmail.toByteArray()).toString().substring(0, 8)
-                                viewModel.loginSimulatedGoogle(simulatedUserId, cleanGEmail, cleanGName)
-                                Toast.makeText(context, "Google Access Granted.", Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Google error: ${e.message}", Toast.LENGTH_SHORT).show()
-                            } finally {
-                                isLoading = false
-                            }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet)
-                ) {
-                    Text("Authorize", fontSize = 11.sp)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showGoogleDialog = false }) {
-                    Text("Cancel", color = TextMutedColor, fontSize = 11.sp)
-                }
-            },
-            containerColor = Surface1
-        )
     }
 }

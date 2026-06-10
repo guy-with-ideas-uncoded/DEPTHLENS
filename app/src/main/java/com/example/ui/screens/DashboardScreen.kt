@@ -350,8 +350,8 @@ fun DashboardScreen(
         wasLoading = isLoading
     }
 
-    // Interactive onboarding overlay if not completed
-    if (!onboardingCompleted) {
+    // Interactive onboarding overlay disabled
+    if (false) {
         var onboardingName by remember { mutableStateOf("") }
         var onboardingEmail by remember { mutableStateOf("") }
         val isEmailValid = onboardingEmail.contains("@") && onboardingEmail.length > 5
