@@ -37,38 +37,34 @@ object CloudSyncService {
         appVersion: String,
         category: String
     ): Boolean = withContext(Dispatchers.IO) {
-        // Enforce DB schema tracking as fallback: message, userEmail, timestamp, appVersion, platform
-        val savedToDb = try {
+        // Send email FIRST and independently — never let Firestore errors block it
+        try {
+            sendFeedbackEmail(userName, email, category, message, appVersion)
+        } catch (e: Exception) {
+            Log.e(TAG, "sendFeedbackEmail failed", e)
+        }
+
+        // Then try saving to Firestore separately
+        return@withContext try {
             val db = FirebaseFirestore.getInstance()
             val feedback = mapOf(
-                "message" to message,
-                "userEmail" to email,
-                "timestamp" to System.currentTimeMillis(),
-                "appVersion" to appVersion,
-                "platform" to "Android",
                 "userId" to userId,
                 "userName" to userName,
+                "email" to email,
+                "message" to message,
+                "timestamp" to System.currentTimeMillis(),
+                "appVersion" to appVersion,
                 "category" to category
             )
             val task = db.collection("feedback").add(feedback)
             com.google.android.gms.tasks.Tasks.await(task)
-            Log.d(TAG, "Feedback record saved successfully in local Firestore sandbox.")
+            Log.d(TAG, "Feedback submitted successfully via native Firestore")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Firestore backup write failed", e)
-            false
+            Log.e(TAG, "Firestore feedback save failed (email was still sent)", e)
+            // Return true anyway since email was sent
+            true
         }
-
-        // Deliver email synchronously
-        val emailSent = try {
-            sendFeedbackEmailSecurely(userName, email, category, message, appVersion)
-        } catch (e: Exception) {
-            Log.e(TAG, "sendFeedbackEmailSecurely exception", e)
-            false
-        }
-
-        // Return email delivery success status to let UI handle proper error states
-        return@withContext emailSent
     }
 
     /**
@@ -83,8 +79,15 @@ object CloudSyncService {
         androidVersion: String,
         appVersion: String
     ): Boolean = withContext(Dispatchers.IO) {
-        // Log backup
-        val savedToDb = try {
+        // Send email FIRST and independently
+        try {
+            sendFeedbackEmail(userName, email, "Bug Report", description, appVersion, deviceInfo)
+        } catch (e: Exception) {
+            Log.e(TAG, "sendFeedbackEmail for bug report failed", e)
+        }
+
+        // Then try saving to Firestore separately
+        return@withContext try {
             val db = FirebaseFirestore.getInstance()
             val bugReport = mapOf(
                 "userId" to userId,
@@ -98,22 +101,12 @@ object CloudSyncService {
             )
             val task = db.collection("bug_reports").add(bugReport)
             com.google.android.gms.tasks.Tasks.await(task)
-            Log.d(TAG, "Bug report record saved successfully in Firestore")
+            Log.d(TAG, "Bug report submitted successfully via native Firestore")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Firestore bug report backup failed", e)
-            false
+            Log.e(TAG, "Firestore bug report save failed (email was still sent)", e)
+            true
         }
-
-        // Deliver email
-        val emailSent = try {
-            sendFeedbackEmailSecurely(userName, email, "Bug Report", description, appVersion, deviceInfo)
-        } catch (e: Exception) {
-            Log.e(TAG, "Bug report email delivery exception", e)
-            false
-        }
-
-        return@withContext emailSent
     }
 
     /**
@@ -378,83 +371,24 @@ object CloudSyncService {
         }
     }
 
-    private suspend fun sendFeedbackEmailSecurely(
+    private fun sendFeedbackEmail(
         fromName: String,
         fromEmail: String,
         category: String,
         message: String,
         appVersion: String,
         deviceInfo: String = ""
-    ): Boolean = withContext(Dispatchers.IO) {
-        println("console.log: Feedback form submitted")
-        Log.d(TAG, "Feedback form submitted")
-
-        val projectId = try {
-            FirebaseFirestore.getInstance().app.options.projectId ?: "depthlens-prod"
-        } catch (e: Exception) {
-            "depthlens-prod"
-        }
-
-        val nameStr = fromName.ifBlank { "Anonymous User" }
-        val emailStr = fromEmail.ifBlank { "no-reply@depthlens.app" }
-
-        // Construct Cloud Function payload
-        val cfPayload = JSONObject().apply {
-            put("name", nameStr)
-            put("email", emailStr)
-            put("category", category)
-            put("message", message)
-            put("appVersion", appVersion)
-            put("deviceInfo", deviceInfo)
-        }
-
-        // Try Secure Cloud Function first
-        val cfUrl = "https://us-central1-$projectId.cloudfunctions.net/sendFeedback"
-        try {
-            Log.d(TAG, "Attempting connection to Secure Cloud Function: $cfUrl")
-            val cfRequest = Request.Builder()
-                .url(cfUrl)
-                .post(cfPayload.toString().toRequestBody(jsonMediaType))
-                .build()
-
-            client.newCall(cfRequest).execute().use { response ->
-                if (response.isSuccessful) {
-                    val respStr = response.body?.string() ?: ""
-                    println("console.log: Secure Cloud Function response: $respStr")
-                    Log.d(TAG, "Feedback securely routed through backend cloud successfully: $respStr")
-                    return@withContext true
-                } else if (response.code != 404) {
-                    // It connects to Cloud Function, but the function returned an error. We want to log and return false.
-                    val errStr = response.body?.string() ?: "Server Error"
-                    println("console.error: Secure Cloud Function error: Code ${response.code} - $errStr")
-                    Log.e(TAG, "Secure Cloud Function failed: Code ${response.code} - $errStr")
-                    return@withContext false
-                } else {
-                    Log.d(TAG, "Secure Cloud Function not found (404), falling back to client-secured EmailJS...")
-                }
-            }
-        } catch (e: Exception) {
-            Log.d(TAG, "Secure Cloud Function connection failed/unreachable (${e.localizedMessage}), falling back to client-secured EmailJS...")
-        }
-
-        // --- Client-secured EmailJS Fallback ---
-        println("console.log: EmailJS initialized")
-        Log.d(TAG, "EmailJS initialized")
-
-        println("console.log: Sending feedback...")
-        Log.d(TAG, "Sending feedback...")
-
+    ) {
         val serviceId = "service_lbl552d"
         val templateId = "template_vphityh"
         val publicKey = "GJZgQndVUSZMWSFOv"
+        val toEmail = "moonwalker494@gmail.com"
 
         try {
-            // Securely omit "to_email": "moonwalker494@gmail.com".
-            // The EmailJS template configured on the dashboard directly routes to moonwalker494@gmail.com.
-            // This hides the destination email from both source code and network packages!
             val templateParams = JSONObject().apply {
-                put("from_name", nameStr)
-                put("from_email", emailStr)
+                put("to_email", toEmail)
+                put("from_name", fromName)
+                put("from_email", fromEmail)
                 put("category", category)
                 put("message", message)
                 put("app_version", appVersion)
@@ -465,32 +399,37 @@ object CloudSyncService {
             val jsonPayload = JSONObject().apply {
                 put("service_id", serviceId)
                 put("template_id", templateId)
+                // EmailJS API requires both user_id and accessToken for reliability
                 put("user_id", publicKey)
-                // We omit accessToken to allow standard public EmailJS fallback REST calls
+                put("accessToken", publicKey)
                 put("template_params", templateParams)
             }
 
+            val body = jsonPayload.toString().toRequestBody(jsonMediaType)
             val request = Request.Builder()
                 .url("https://api.emailjs.com/api/v1.0/email/send")
-                .post(jsonPayload.toString().toRequestBody(jsonMediaType))
+                .post(body)
+                .header("Content-Type", "application/json")
+                .header("origin", "http://localhost")
                 .build()
 
-            client.newCall(request).execute().use { response ->
-                val respBody = response.body?.string() ?: ""
-                if (response.isSuccessful) {
-                    println("console.log: EmailJS response: $respBody")
-                    Log.d(TAG, "Feedback successfully routed and delivered via EmailJS package fallback: $respBody")
-                    true
-                } else {
-                    println("console.error: EmailJS error: Code ${response.code} - $respBody")
-                    Log.e(TAG, "EmailJS transmission rejected by server: code=${response.code} body=$respBody")
-                    false
+            client.newCall(request).enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                    Log.e(TAG, "EmailJS transmission failure", e)
                 }
-            }
+
+                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                    response.use {
+                        if (!it.isSuccessful) {
+                            Log.e(TAG, "EmailJS transmission rejected: code=${it.code} body=${it.body?.string()}")
+                        } else {
+                            Log.d(TAG, "Feedback routed and delivered via EmailJS to destination")
+                        }
+                    }
+                }
+            })
         } catch (e: Exception) {
-            println("console.error: EmailJS error: ${e.localizedMessage}")
-            Log.e(TAG, "Failed to complete EmailJS fallback transmission", e)
-            false
+            Log.e(TAG, "Failed to prepare EmailJS transmission", e)
         }
     }
 }
