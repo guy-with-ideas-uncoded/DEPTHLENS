@@ -125,18 +125,31 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         }
 
         _syncStatus.value = "Syncing..."
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
+                // Ensure there is a real Firebase Auth session before attempting Firestore access.
+                // Simulated logins (google_simulated_*) use anonymous Firebase Auth so Firestore
+                // security rules (request.auth != null) are satisfied.
+                val firebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                if (firebaseUser == null) {
+                    // No real auth session — skip the Firestore ping to avoid a Permission Denied error
+                    _syncStatus.value = "Offline"
+                    _lastSyncedTime.value = null
+                    _chatsSyncedCount.value = 0
+                    _pendingUploadsCount.value = 0
+                    return@launch
+                }
+
                 val dbInstance = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                
+
                 // Firestore write
                 val testDocRef = dbInstance.collection("users").document(uid).collection("sync_test").document("ping")
                 val testData = mapOf("timestamp" to System.currentTimeMillis(), "client" to "Android App")
                 com.google.android.gms.tasks.Tasks.await(testDocRef.set(testData))
-                
+
                 // Firestore read
                 com.google.android.gms.tasks.Tasks.await(testDocRef.get())
-                
+
                 _syncStatus.value = "Active"
                 _lastSyncedTime.value = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
                 _chatsSyncedCount.value = sessions.value.size
@@ -582,6 +595,19 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
 
         viewModelScope.launch {
             try {
+                // Simulated Google logins don't have a real Firebase Auth session, which causes
+                // Firestore permission errors ("Error" in Cloud Sync). Sign in anonymously so that
+                // request.auth is non-null and Firestore security rules are satisfied.
+                val firebaseAuth = com.google.firebase.auth.FirebaseAuth.getInstance()
+                if (firebaseAuth.currentUser == null) {
+                    try {
+                        val anonTask = firebaseAuth.signInAnonymously()
+                        com.google.android.gms.tasks.Tasks.await(anonTask)
+                        android.util.Log.d("IntelligenceViewModel", "Anonymous Firebase Auth sign-in succeeded for simulated login")
+                    } catch (authEx: Exception) {
+                        android.util.Log.w("IntelligenceViewModel", "Anonymous sign-in failed — Firestore sync may be blocked by security rules", authEx)
+                    }
+                }
                 com.example.data.network.CloudSyncService.createProfileIfNotExist(simulatedId, email, name)
                 repository.fetchAndSyncFromFirestore(simulatedId)
                 runStartupSyncTest()
