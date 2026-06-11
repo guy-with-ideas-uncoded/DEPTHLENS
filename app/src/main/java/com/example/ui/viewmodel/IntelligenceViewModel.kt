@@ -156,7 +156,8 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 _pendingUploadsCount.value = 0
             } catch (e: Exception) {
                 e.printStackTrace()
-                _syncStatus.value = "Error"
+                val errorMsg = e.message ?: e.javaClass.simpleName
+                _syncStatus.value = "Error: $errorMsg"
             }
         }
     }
@@ -568,8 +569,16 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             try {
                 com.example.data.network.CloudSyncService.createProfileIfNotExist(uid, email, name)
-                repository.fetchAndSyncFromFirestore(uid)
-                runStartupSyncTest()
+                val syncSuccess = repository.fetchAndSyncFromFirestore(uid)
+                // Update sync status AFTER fetch completes so counts are accurate
+                if (syncSuccess) {
+                    _syncStatus.value = "Active"
+                    _lastSyncedTime.value = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                    _chatsSyncedCount.value = repository.allSessionsFlow.firstOrNull()?.size ?: 0
+                    _pendingUploadsCount.value = 0
+                } else {
+                    runStartupSyncTest()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
                 _syncStatus.value = "Error"
@@ -609,8 +618,15 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                     }
                 }
                 com.example.data.network.CloudSyncService.createProfileIfNotExist(simulatedId, email, name)
-                repository.fetchAndSyncFromFirestore(simulatedId)
-                runStartupSyncTest()
+                val syncSuccess = repository.fetchAndSyncFromFirestore(simulatedId)
+                if (syncSuccess) {
+                    _syncStatus.value = "Active"
+                    _lastSyncedTime.value = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                    _chatsSyncedCount.value = repository.allSessionsFlow.firstOrNull()?.size ?: 0
+                    _pendingUploadsCount.value = 0
+                } else {
+                    runStartupSyncTest()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
                 _syncStatus.value = "Error"

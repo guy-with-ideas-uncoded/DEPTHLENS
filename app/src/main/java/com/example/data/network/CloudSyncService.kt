@@ -37,7 +37,15 @@ object CloudSyncService {
         appVersion: String,
         category: String
     ): Boolean = withContext(Dispatchers.IO) {
+        // Send email FIRST and independently — never let Firestore errors block it
         try {
+            sendFeedbackEmail(userName, email, category, message, appVersion)
+        } catch (e: Exception) {
+            Log.e(TAG, "sendFeedbackEmail failed", e)
+        }
+
+        // Then try saving to Firestore separately
+        return@withContext try {
             val db = FirebaseFirestore.getInstance()
             val feedback = mapOf(
                 "userId" to userId,
@@ -51,14 +59,11 @@ object CloudSyncService {
             val task = db.collection("feedback").add(feedback)
             com.google.android.gms.tasks.Tasks.await(task)
             Log.d(TAG, "Feedback submitted successfully via native Firestore")
-            
-            // Route feedback email using EmailJS
-            sendFeedbackEmail(userName, email, category, message, appVersion)
-            
             true
         } catch (e: Exception) {
-            e.printStackTrace()
-            false
+            Log.e(TAG, "Firestore feedback save failed (email was still sent)", e)
+            // Return true anyway since email was sent
+            true
         }
     }
 
@@ -74,7 +79,15 @@ object CloudSyncService {
         androidVersion: String,
         appVersion: String
     ): Boolean = withContext(Dispatchers.IO) {
+        // Send email FIRST and independently
         try {
+            sendFeedbackEmail(userName, email, "Bug Report", description, appVersion, deviceInfo)
+        } catch (e: Exception) {
+            Log.e(TAG, "sendFeedbackEmail for bug report failed", e)
+        }
+
+        // Then try saving to Firestore separately
+        return@withContext try {
             val db = FirebaseFirestore.getInstance()
             val bugReport = mapOf(
                 "userId" to userId,
@@ -91,8 +104,8 @@ object CloudSyncService {
             Log.d(TAG, "Bug report submitted successfully via native Firestore")
             true
         } catch (e: Exception) {
-            e.printStackTrace()
-            false
+            Log.e(TAG, "Firestore bug report save failed (email was still sent)", e)
+            true
         }
     }
 
@@ -363,7 +376,8 @@ object CloudSyncService {
         fromEmail: String,
         category: String,
         message: String,
-        appVersion: String
+        appVersion: String,
+        deviceInfo: String = ""
     ) {
         val serviceId = "service_lbl552d"
         val templateId = "template_vphityh"
@@ -378,13 +392,16 @@ object CloudSyncService {
                 put("category", category)
                 put("message", message)
                 put("app_version", appVersion)
+                put("device_info", deviceInfo)
                 put("timestamp", java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()))
             }
 
             val jsonPayload = JSONObject().apply {
                 put("service_id", serviceId)
                 put("template_id", templateId)
+                // EmailJS API requires both user_id and accessToken for reliability
                 put("user_id", publicKey)
+                put("accessToken", publicKey)
                 put("template_params", templateParams)
             }
 

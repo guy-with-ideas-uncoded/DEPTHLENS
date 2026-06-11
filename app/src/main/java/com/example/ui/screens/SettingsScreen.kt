@@ -963,7 +963,7 @@ fun SettingsScreen(
         InteractiveSettingsCard(
             icon = "✕",
             title = "About DepthLens",
-            subtitle = "View software license details and dynamic credits · v5.8.9.x1",
+            subtitle = "View software license details and dynamic credits · v5.8.9.x-1",
             onClick = onShowAbout
         )
 

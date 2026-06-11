@@ -1478,7 +1478,7 @@ fun HomeScreen(
         }
     } // End of inner Column
 
-    // Floating scroll arrow premium glass buttons (v5.8.9.x1)
+    // Floating scroll arrow premium glass buttons (v5.8.9.x-1)
     AnimatedVisibility(
         visible = showScrollButtonState != "none",
         enter = scaleIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
