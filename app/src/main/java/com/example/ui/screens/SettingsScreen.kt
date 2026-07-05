@@ -393,10 +393,16 @@ fun SettingsMainView(
                         desc = "Cleanup, incognito, lock",
                         onClick = { onNavigateToSub("privacy") }
                     )
+                    val context = LocalContext.current
+                    val latestReleaseState by com.example.ui.screens.GithubUpdateManager.latestRelease.collectAsState()
+                    val hasUpdate = latestReleaseState?.let {
+                        com.example.ui.screens.GithubUpdateManager.isNewerVersion(it.tagName, com.example.ui.screens.GithubUpdateManager.getInstalledVersion(context))
+                    } ?: false
+
                     SettingsRow(
                         icon = Icons.Default.SystemUpdate,
                         title = "Update App",
-                        desc = "v8.7 · check for updates",
+                        desc = if (hasUpdate) "Show Update Available" else "Check for updates",
                         onClick = { onNavigateToSub("update") }
                     )
                     SettingsRow(
@@ -2148,10 +2154,15 @@ fun PrivacySubscreen(
 
 @Composable
 fun UpdateSubscreen(onBack: () -> Unit) {
-    var checking by remember { mutableStateOf(false) }
-    var updateAvailable by remember { mutableStateOf<com.example.ui.screens.GitHubRelease?>(null) }
-    var updateStatusMessage by remember { mutableStateOf("You are up to date") }
     val context = LocalContext.current
+    val latestReleaseState by com.example.ui.screens.GithubUpdateManager.latestRelease.collectAsState()
+    val initialHasUpdate = latestReleaseState?.let {
+        com.example.ui.screens.GithubUpdateManager.isNewerVersion(it.tagName, com.example.ui.screens.GithubUpdateManager.getInstalledVersion(context))
+    } ?: false
+
+    var checking by remember { mutableStateOf(false) }
+    var updateAvailable by remember { mutableStateOf<com.example.ui.screens.GitHubRelease?>(if (initialHasUpdate) latestReleaseState else null) }
+    var updateStatusMessage by remember { mutableStateOf(if (initialHasUpdate) "Show Update Available" else "You are up to date") }
     val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
     var autoWifi by remember { mutableStateOf(prefs.getBoolean("auto_update_wifi", true)) }
 
@@ -2243,7 +2254,7 @@ fun UpdateSubscreen(onBack: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Build $versionCode · $updateStatusMessage",
+                    text = updateStatusMessage,
                     color = textMuted,
                     fontSize = 11.sp,
                     fontFamily = InstrumentSansFontFamily
@@ -2265,7 +2276,7 @@ fun UpdateSubscreen(onBack: () -> Unit) {
                                     checking = false
                                     if (hasUpdate && release != null) {
                                         updateAvailable = release
-                                        updateStatusMessage = "Update available: ${release.tagName}"
+                                        updateStatusMessage = "Show Update Available"
                                     } else {
                                         updateAvailable = null
                                         updateStatusMessage = "You are up to date"

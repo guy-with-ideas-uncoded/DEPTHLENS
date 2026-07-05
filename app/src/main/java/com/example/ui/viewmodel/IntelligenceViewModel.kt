@@ -100,6 +100,8 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     private val _activeSessionId = MutableStateFlow<String?>(null)
     val activeSessionId: StateFlow<String?> = _activeSessionId.asStateFlow()
 
+    private var isFirstLaunchSessionSetup = true
+
     // Selected analysis mode (synced from UI)
     private val _selectedMode = MutableStateFlow("Multi-Layer")
     val selectedMode: StateFlow<String> = _selectedMode.asStateFlow()
@@ -535,10 +537,13 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         
         viewModelScope.launch {
             restoreActiveSession()
+            kotlinx.coroutines.delay(5000)
+            isFirstLaunchSessionSetup = false
         }
     }
 
     fun selectSession(sessionId: String?) {
+        isFirstLaunchSessionSetup = false
         speechManager.resetState()
         val targetId = sessionId ?: "draft_session_id"
         _activeSessionId.value = targetId
@@ -1177,6 +1182,10 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun restoreActiveSession() {
+        if (isFirstLaunchSessionSetup) {
+            _activeSessionId.value = "draft_session_id"
+            return
+        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val sessionList = repository.getAllSessionsDirect()
             if (sessionList.isNotEmpty()) {
