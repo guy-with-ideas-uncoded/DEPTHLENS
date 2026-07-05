@@ -77,8 +77,8 @@ android {
     applicationId = "com.aistudio.depthlens.uqmzkx"
     minSdk = 24
     targetSdk = 35
-    versionCode = 5892
-    versionName = "5.8.9.x-1"
+    versionCode = 6000
+    versionName = "6.0.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -287,16 +287,16 @@ androidComponents {
                     if (!buildOutputDirResolved.exists()) buildOutputDirResolved.mkdirs()
                     if (!dotBuildOutputDirResolved.exists()) dotBuildOutputDirResolved.mkdirs()
                     
-                    val apkName = if (vName == "release") "DepthLens_Release.apk" else "DepthLens_Debug.apk"
+                    val versionedApkName = if (vName == "release") "DepthLens_v6.0.0_Release.apk" else "DepthLens_v6.0.0_Debug.apk"
                     
                     // Copy to build-outputs
-                    originalApkResolved.copyTo(File(buildOutputDirResolved, apkName), overwrite = true)
+                    originalApkResolved.copyTo(File(buildOutputDirResolved, versionedApkName), overwrite = true)
                     
                     // Copy to .build-outputs
-                    originalApkResolved.copyTo(File(dotBuildOutputDirResolved, apkName), overwrite = true)
+                    originalApkResolved.copyTo(File(dotBuildOutputDirResolved, versionedApkName), overwrite = true)
                     
                     val sizeMB = originalApkResolved.length() / (1024.0 * 1024.0)
-                    println("Successfully copied full APK to /build-outputs and /.build-outputs as $apkName (${String.format("%.2f", sizeMB)} MB)")
+                    println("Successfully copied full APK to /build-outputs and /.build-outputs as $versionedApkName (${String.format("%.2f", sizeMB)} MB)")
                 }
             }
         }

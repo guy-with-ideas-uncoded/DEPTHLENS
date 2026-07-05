@@ -1,216 +1,288 @@
-# DEPTHLENS
+<div align="center">
 
-### SEE BEYOND THE SURFACE
+<br/>
 
-🚀 Live Website
+```
+██████╗ ███████╗██████╗ ████████╗██╗  ██╗██╗     ███████╗███╗   ██╗███████╗
+██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██║  ██║██║     ██╔════╝████╗  ██║██╔════╝
+██║  ██║█████╗  ██████╔╝   ██║   ███████║██║     █████╗  ██╔██╗ ██║███████╗
+██║  ██║██╔══╝  ██╔═══╝    ██║   ██╔══██║██║     ██╔══╝  ██║╚██╗██║╚════██║
+██████╔╝███████╗██║        ██║   ██║  ██║███████╗███████╗██║ ╚████║███████║
+╚═════╝ ╚══════╝╚═╝        ╚═╝   ╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═══╝╚══════╝
+```
 
-https://shorturl.at/TDOZi
+### **Reality Intelligence Platform**
 
----
+*Most people see the surface. DepthLens reveals what lies beneath.*
 
-# DEPTHLENS - See Beyond the Surface
+<br/>
 
-<img width="2880" height="5786" alt="bash" src="https://github.com/user-attachments/assets/6657a73d-6277-4d78-a638-7e337f6147f9" />
+[![Android](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/madfordiamonds/DEPTHLENS/releases)
+[![Kotlin](https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
+[![Firebase](https://img.shields.io/badge/Backend-Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com)
+[![Gemini](https://img.shields.io/badge/AI-Gemini-8E75B2?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
 
----
+<br/>
 
-**Most people see symptoms.**
+[**🌐 Live Website**](https://shorturl.at/TDOZi) &nbsp;·&nbsp; [**📱 Download APK**](https://github.com/madfordiamonds/DEPTHLENS/releases) &nbsp;·&nbsp; [**📝 Releases**](https://github.com/madfordiamonds/DEPTHLENS/releases)
 
-**DepthLens reveals patterns.**
-
-**Most people see events.**
-
-**DepthLens reveals systems.**
-
-**Most people see answers.**
-
-**DepthLens reveals reality.**
-
----
-
-## What is DepthLens?
-
-DepthLens is a Reality Intelligence Platform designed to help users uncover hidden patterns, root causes, incentives, strategic leverage points, and deeper layers of reality through advanced AI reasoning.
-
-Instead of simply answering questions, DepthLens helps users understand:
-
-* Why things happen
-* What drives behavior
-* What incentives are operating
-* What patterns are repeating
-* What risks are emerging
-* What actions create the highest leverage
+</div>
 
 ---
 
-## Core Capabilities
+<br/>
 
-### Root Cause Analysis
+## The Problem with Ordinary AI
 
-Move beyond symptoms and identify the true drivers behind problems.
+Most AI tools give you **answers**.  
+DepthLens gives you **understanding**.
 
-### Strategic Intelligence
+```
+Traditional AI:   Question ──────────────────────► Answer
 
-Reveal hidden incentives, power structures, leverage points, and second-order effects.
+DepthLens:        Question ──► Analysis ──► Patterns ──► Root Causes ──► Understanding
+```
 
-### Psychology & Human Behavior
+The difference isn't speed. It's depth.
 
-Analyze motives, decision-making patterns, emotional dynamics, and behavioral drivers.
-
-### Systems Thinking
-
-Understand feedback loops, dependencies, unintended consequences, and complex interactions.
-
-### Future Probability Analysis
-
-Explore possible outcomes, risks, opportunities, and future scenarios.
-
-### Relationship Intelligence
-
-Analyze communication patterns, conflicts, motivations, and interpersonal dynamics.
-
-### Decision X-Ray
-
-Evaluate difficult decisions from multiple perspectives before taking action.
-
-### Deep Research
-
-Transform scattered information into structured understanding.
+<br/>
 
 ---
 
-## Why DepthLens?
+## What Is DepthLens?
 
-Traditional AI focuses on:
+**DepthLens** is a Reality Intelligence Platform built for people who need to think clearly in complex situations.
 
-Question → Answer
+It doesn't just respond — it investigates. It doesn't just inform — it reveals.
 
-DepthLens focuses on:
+Whether you're navigating a business decision, understanding human behavior, analyzing a system, or exploring a pattern you can't quite name — DepthLens is built to go deeper than the surface.
 
-Question → Analysis → Patterns → Root Causes → Understanding
-
-The goal is not merely information.
-
-The goal is clarity.
+<br/>
 
 ---
 
-## Features
+## App Preview
 
-* Advanced Reality Intelligence Engine
-* Root Cause Detection
-* Strategic Leverage Analysis
-* Psychological Insight Frameworks
-* Future Probability Modeling
-* Conversation Continuity
-* Long-Term Memory System
-* Privacy-First Architecture
-* Multimodal Intelligence
-* Smart Conversation Titles
-* In-App Updates
-* Background Analysis Notifications
-* Modern Mobile Experience
+<br/>
 
----
+<div align="center">
 
-## Privacy First
+<table>
+<tr>
+<td align="center" width="25%">
+<img src="mockups/screen_chat.svg" width="200" alt="Chat Screen"/>
+<br/><sub><b>Intelligence Chat</b></sub>
+<br/><sub>Root cause · strategic · psychological analysis in any language</sub>
+</td>
+<td align="center" width="25%">
+<img src="mockups/screen_insights.svg" width="200" alt="Insights Dashboard"/>
+<br/><sub><b>Intelligence Dashboard</b></sub>
+<br/><sub>Memory patterns, behavioral insights, probability forecasts</sub>
+</td>
+<td align="center" width="25%">
+<img src="mockups/screen_voice.svg" width="200" alt="Voice Mode"/>
+<br/><sub><b>Voice · Video · Screen</b></sub>
+<br/><sub>Live multimodal intelligence with barge-in support</sub>
+</td>
+<td align="center" width="25%">
+<img src="mockups/screen_settings.svg" width="200" alt="Settings"/>
+<br/><sub><b>Appearance & Settings</b></sub>
+<br/><sub>6 themes · Liquid Crystal & Frost Aurora glass · AI controls</sub>
+</td>
+</tr>
+</table>
 
-Your conversations remain yours.
+</div>
 
-DepthLens is designed around:
-
-* User control
-* Data isolation
-* Local memory storage
-* Secure architecture
-* Privacy-first design
-
-Users can:
-
-* Export memories
-* Delete memories
-* Disable memory
-* Clear conversation history
-
-No user can access another user's information.
+<br/>
 
 ---
 
-## Intelligence Philosophy
+## Core Intelligence Modules
 
-Most tools provide information.
+<br/>
 
-DepthLens seeks understanding.
+### 🔍 Root Cause Analysis
+Move past symptoms. Identify the true driver behind any problem, pattern, or situation.
 
-The platform is designed to help users move from:
+### 🧠 Strategic Intelligence
+Uncover hidden incentives, power structures, leverage points, and second-order effects before they catch you off guard.
 
-Information → Insight
+### 👁️ Psychology & Human Behavior
+Decode motives, decision-making patterns, emotional dynamics, and the invisible forces shaping behavior.
 
-Insight → Understanding
+### 🔄 Systems Thinking
+Map feedback loops, dependencies, unintended consequences, and complex interactions across any domain.
 
-Understanding → Better Decisions
+### 🔮 Future Probability Analysis
+Explore possible outcomes, emerging risks, and high-probability scenarios before committing to action.
 
-Better Decisions → Better Outcomes
+### 💬 Relationship Intelligence
+Analyze communication patterns, conflicts, motivations, and interpersonal dynamics with precision.
+
+### ⚖️ Decision X-Ray
+Evaluate critical decisions from multiple perspectives — before you make them.
+
+### 📚 Deep Research
+Transform scattered, incomplete information into structured, actionable understanding.
+
+<br/>
 
 ---
 
-## Vision
+## Platform Features
 
-To build the world's most trusted Reality Intelligence Platform.
+| Feature | Status |
+|---|---|
+| Advanced Reality Intelligence Engine | ✅ Live |
+| Multimodal Intelligence (Text, Image, File, PDF) | ✅ Live |
+| Voice · Video · Screen Share Intelligence | ✅ Live |
+| Hinglish / Gujarati / English auto-detect | ✅ Live |
+| Long-Term Memory System | ✅ Live |
+| Intelligence Dashboard (patterns + forecasts) | ✅ Live |
+| Smart Conversation Titles | ✅ Live |
+| Liquid Crystal & Frost Aurora glass themes | ✅ Live |
+| 6 Themes + Accent Colors + App Icons | ✅ Live |
+| "Hey Lens" hands-free wake word | ✅ Live |
+| In-App Updates | ✅ Live |
+| Background Analysis Notifications | ✅ Live |
+| Biometric App Lock | ✅ Live |
+| Incognito Session (no save) | ✅ Live |
+| PDF Chat Export | ✅ Live |
 
-A system that helps people:
-
-* Think clearly
-* See deeper
-* Understand systems
-* Reveal hidden patterns
-* Navigate complexity
-
----
-
-## Download
-
-Download the latest APK from the Releases section.
+<br/>
 
 ---
 
 ## Roadmap
 
-### Upcoming Features
+> **Vision:** Build the world's most advanced Reality Intelligence System.
 
-* Voice Intelligence
-* Video Analysis
-* Advanced Memory Engine
-* Project Workspaces
-* Knowledge Graphs
-* Collaborative Intelligence
-* Enterprise Intelligence Suite
-* AI Research Agent
-* Personal Strategic Advisor
+### 🧠 Smarter AI
+Stronger foundation for everything DepthLens does.
+
+- Smarter conversations with deeper contextual understanding
+- Faster response times across all query types
+- Better memory & multi-session context retention
+- Ongoing UI refinements for a more fluid experience
+
+### 🔭 Reality Intelligence
+Moving from analysis to real-time situational awareness.
+
+- Contextual Scenario Simulation — model outcomes before acting
+- Adaptive Insight Generation — insights that evolve with you
+- Real-Time Situation Awareness — understand what's happening now
+- Cognitive Bias Detection — surface your own blind spots
+
+### 🌐 Universal Intelligence
+Connecting DepthLens to the world's live information.
+
+- Real-Time Data Integration — markets, news, signals
+- Knowledge Graph Expansion — structured understanding at scale
+- Autonomous Research Capabilities — deep dives without prompting
+- Context-Aware Recommendations — right insight, right moment
+
+### 🎯 Personal Intelligence
+A system that knows you and grows with you.
+
+- Goal & Progress Tracking — measure what matters
+- Personalized Insights — patterns unique to your mind
+- Daily Intelligence Reports — your world, synthesized
+- Long-Term Memory — context that compounds over time
+
+<br/>
+
+---
+
+## Privacy by Design
+
+Your conversations are **yours** — not ours.
+
+DepthLens is built around one principle: a tool this powerful should serve the user, not harvest them.
+
+- **User-controlled memory** — export, delete, or disable at any time
+- **Incognito sessions** — conversations that leave no trace
+- **Data isolation** — no user can ever access another's information
+- **Biometric lock** — fingerprint / face lock the app
+- **Auto cleanup** — files auto-delete after sessions
+- **No surveillance defaults** — nothing shared without explicit action
+
+<br/>
+
+---
+
+## Tech Stack
+
+```
+Language          Kotlin
+UI Framework      Jetpack Compose
+Architecture      MVVM + Clean Architecture
+AI Engine         Google Gemini (Flash · Pro · Lite — auto-selected)
+Live AI           Gemini Live WebSocket API (Voice/Video/Screen)
+Backend           Firebase (Auth, Firestore, Storage)
+Local DB          Room
+Async             Kotlin Coroutines + Flow
+```
+
+<br/>
+
+---
+
+## Intelligence Philosophy
+
+> *Information is available everywhere. Understanding is rare.*
+
+DepthLens is designed around a single conviction: most people are drowning in information and starving for clarity.
+
+The platform is built to move users from:
+
+**Information → Insight → Understanding → Better Decisions → Better Outcomes**
+
+Not as a tagline. As an architecture.
+
+<br/>
+
+---
+
+## Download
+
+[![Download APK](https://img.shields.io/badge/Download-Latest%20APK-6C63FF?style=for-the-badge&logo=android&logoColor=white)](https://github.com/madfordiamonds/DEPTHLENS/releases)
+
+> Requires Android 8.0 (API 26) or higher.
+
+<br/>
 
 ---
 
 ## Contributing
 
-Feedback, bug reports, feature suggestions, and improvements are always welcome.
+DepthLens is actively evolving.
 
-Help shape the future of Reality Intelligence.
+Feedback, bug reports, feature suggestions, and edge-case discoveries are always welcome. If you see something that doesn't match the depth this platform is supposed to deliver — say so.
+
+Open an issue. Start a discussion. Help shape what Reality Intelligence becomes.
+
+<br/>
 
 ---
 
-## Tagline
+<div align="center">
 
 ### DEPTHLENS
 
-### SEE BEYOND THE SURFACE
+**SEE BEYOND THE SURFACE**
 
-Most people see the surface.
+*Most people see symptoms. DepthLens reveals patterns.*  
+*Most people see events. DepthLens reveals systems.*  
+*Most people see answers. DepthLens reveals reality.*
 
-DepthLens reveals what lies beneath reality.
+<br/>
 
----
+[Website](https://shorturl.at/TDOZi) · [Download](https://github.com/madfordiamonds/DEPTHLENS/releases) · [Issues](https://github.com/madfordiamonds/DEPTHLENS/issues)
 
-📱 Download APK
+<br/>
 
-https://github.com/madfordiamonds/DEPTHLENS/releases
+*Made with* 👁️ *· © 2026 DepthLens*
 
+</div>

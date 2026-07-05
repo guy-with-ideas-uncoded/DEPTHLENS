@@ -396,7 +396,8 @@ object CloudSyncService {
     suspend fun fetchAndSyncAll(
         userId: String,
         sessionDao: com.example.data.database.SessionDao,
-        messageDao: com.example.data.database.MessageDao
+        messageDao: com.example.data.database.MessageDao,
+        attachmentDao: com.example.data.database.AttachmentDao
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val db = FirebaseFirestore.getInstance()
@@ -408,6 +409,32 @@ object CloudSyncService {
 
             Log.d("SYNC_STATUS", "Starting CloudSync fetchAndSyncAll for user: $userId")
             Log.d("SYNC", "Firestore read start: getting all remote chats for uid=$userId")
+
+            // 0. Fetch tombstones for deleted sessions to sync deletions across devices
+            val deletedSessionIds = mutableSetOf<String>()
+            try {
+                val deletedSnapTask = db.collection("users").document(userId)
+                    .collection("deleted_chats").get()
+                val deletedSnap = com.google.android.gms.tasks.Tasks.await(deletedSnapTask, 8, java.util.concurrent.TimeUnit.SECONDS)
+                Log.i("SYNC_DELETE", "Found ${deletedSnap.size()} deleted session tombstones")
+                for (doc in deletedSnap.documents) {
+                    deletedSessionIds.add(doc.id)
+                }
+            } catch (e: Exception) {
+                Log.e("SYNC_DELETE", "Failed fetching deleted session tombstones: ${e.message}")
+            }
+
+            // Immediately purge any locally cached deleted sessions to sync deletion
+            for (delSessionId in deletedSessionIds) {
+                try {
+                    Log.d("SYNC_DELETE", "Purging locally deleted session: $delSessionId")
+                    attachmentDao.deleteAttachmentsForSession(delSessionId)
+                    messageDao.deleteMessagesForSession(delSessionId)
+                    sessionDao.deleteSessionById(delSessionId)
+                } catch (pe: Exception) {
+                    Log.e("SYNC_DELETE", "Failed purging locally deleted session $delSessionId: ${pe.message}")
+                }
+            }
             
             // 1. Fetch user's chats from remote Firestore (from multiple potential legacy and current collections)
             val allDocuments = mutableListOf<com.google.firebase.firestore.DocumentSnapshot>()
@@ -429,6 +456,10 @@ object CloudSyncService {
                     val snap = com.google.android.gms.tasks.Tasks.await(task, 8, java.util.concurrent.TimeUnit.SECONDS)
                     Log.i("FIRESTORE_READ", "Queried path '${colRef.path}': found ${snap.size()} documents")
                     for (doc in snap.documents) {
+                        if (deletedSessionIds.contains(doc.id)) {
+                            Log.d("SYNC_DELETE", "Skipping document ${doc.id} since it was deleted.")
+                            continue
+                        }
                         if (processedDocIds.add(doc.id)) {
                             allDocuments.add(doc)
                         }
@@ -725,6 +756,20 @@ object CloudSyncService {
                                     Log.e("SYNC", "Error parsing/inserting remote message ${msgDoc.id} under session $sessionId: ${me.message}", me)
                                 }
                             }
+
+                            // Delete local messages for this session that are missing in remote
+                            val remoteMsgIds = msgsSnap.documents.map { it.id }.toSet()
+                            val localMsgs = messageDao.getMessagesForSession(sessionId)
+                            for (localMsg in localMsgs) {
+                                if (!remoteMsgIds.contains(localMsg.id)) {
+                                    // Make sure it's not brand new (e.g., older than 10 seconds to avoid upload race conditions)
+                                    if (System.currentTimeMillis() - localMsg.timestamp > 10000L) {
+                                        Log.d("SYNC_DELETE", "Purging deleted local message: ${localMsg.id}")
+                                        attachmentDao.deleteAttachmentsForMessage(localMsg.id)
+                                        messageDao.deleteMessage(localMsg.id)
+                                    }
+                                }
+                            }
                         } catch (se: Exception) {
                             Log.e("SYNC", "Failed fetching nested message subcollection '$subColName' for session $sessionId: ${se.message}")
                         }
@@ -739,6 +784,10 @@ object CloudSyncService {
             // 3. Sync from Local to Remote (Bidirectional push for unsynced or newer local sessions)
             val currentLocalSessions = sessionDao.getAllSessions()
             for (localSession in currentLocalSessions) {
+                if (deletedSessionIds.contains(localSession.id)) {
+                    Log.d("SYNC_DELETE", "Skipping upload of deleted session: ${localSession.id}")
+                    continue
+                }
                 try {
                     val localMessages = messageDao.getMessagesForSession(localSession.id)
                     if (localMessages.isEmpty()) {
@@ -812,6 +861,18 @@ object CloudSyncService {
         if (userId.isBlank() || userId == "guest_local") return@withContext false
         try {
             val db = FirebaseFirestore.getInstance()
+
+            // Register in the deleted tombstones collection for multi-device sync
+            try {
+                val deletedDocRef = db.collection("users").document(userId)
+                    .collection("deleted_chats").document(sessionId)
+                val writeDeletedTask = deletedDocRef.set(mapOf("deletedAt" to System.currentTimeMillis()))
+                com.google.android.gms.tasks.Tasks.await(writeDeletedTask)
+                Log.d(TAG, "Registered deleted session $sessionId in tombstones")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to register deleted session $sessionId tombstone: ${e.message}")
+            }
+
             val docRef = db.collection("users").document(userId)
                 .collection("chats").document(sessionId)
 
@@ -842,6 +903,26 @@ object CloudSyncService {
             true
         } catch (e: Exception) {
             Log.e(TAG, "Error deleting remote session $sessionId: ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * Delete a single message from Firestore
+     */
+    suspend fun deleteMessage(userId: String, sessionId: String, messageId: String): Boolean = withContext(Dispatchers.IO) {
+        if (userId.isBlank() || userId == "guest_local") return@withContext false
+        try {
+            val db = FirebaseFirestore.getInstance()
+            val docRef = db.collection("users").document(userId)
+                .collection("chats").document(sessionId)
+                .collection("messages").document(messageId)
+            val deleteTask = docRef.delete()
+            com.google.android.gms.tasks.Tasks.await(deleteTask)
+            Log.d(TAG, "Successfully deleted remote message $messageId under session $sessionId")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting remote message $messageId: ${e.message}", e)
             false
         }
     }

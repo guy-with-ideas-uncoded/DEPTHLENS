@@ -453,7 +453,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                     android.util.Log.w("SYNC_STATUS", "runStartupSyncTest: fetchAndSyncFromFirestore returned false")
                 }
 
-                if (_activeSessionId.value == null) {
+                if (_activeSessionId.value == null || _activeSessionId.value == "draft_session_id") {
                     restoreActiveSession()
                 }
                 runAutomatedInsightExtraction()
@@ -534,9 +534,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         
         
         viewModelScope.launch {
-            // Keep the initial startup draft_session_id active to open as a fresh empty draft chat
-            _activeSessionId.value = "draft_session_id"
-            android.util.Log.d("SESSION_RESTORE", "Startup: Opened fresh empty draft chat with draft_session_id")
+            restoreActiveSession()
         }
     }
 
@@ -1179,10 +1177,6 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun restoreActiveSession() {
-        if (_activeSessionId.value == "draft_session_id") {
-            android.util.Log.d("SESSION_RESTORE", "restoreActiveSession: Skipped because draft_session_id is active.")
-            return
-        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val sessionList = repository.getAllSessionsDirect()
             if (sessionList.isNotEmpty()) {

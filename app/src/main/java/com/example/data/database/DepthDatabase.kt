@@ -33,6 +33,9 @@ interface SessionDao {
     @Delete
     suspend fun deleteSession(session: SessionEntity)
 
+    @Query("DELETE FROM sessions WHERE id = :sessionId")
+    suspend fun deleteSessionById(sessionId: String)
+
     @Query("DELETE FROM sessions")
     suspend fun deleteAllSessions()
 
@@ -73,6 +76,9 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE id = :id")
     suspend fun deleteMessage(id: String)
+
+    @Query("SELECT * FROM messages WHERE id = :id LIMIT 1")
+    suspend fun getMessageById(id: String): MessageEntity?
 
     @Query("SELECT * FROM messages WHERE text LIKE '%' || :query || '%'")
     suspend fun searchMessages(query: String): List<MessageEntity>
@@ -121,6 +127,9 @@ interface AttachmentDao {
 
     @Query("DELETE FROM attachments WHERE messageId = :messageId")
     suspend fun deleteAttachmentsForMessage(messageId: String)
+
+    @Query("DELETE FROM attachments WHERE messageId IN (SELECT id FROM messages WHERE sessionId = :sessionId)")
+    suspend fun deleteAttachmentsForSession(sessionId: String)
     
     @Query("SELECT * FROM attachments")
     suspend fun getAllAttachments(): List<AttachmentEntity>

@@ -386,18 +386,24 @@ class IntelligenceRepository(private val context: Context) {
     }
 
     suspend fun deleteSession(sessionId: String) = withContext(Dispatchers.IO) {
-        val sessionItem = sessionDao.getAllSessionsFlow().firstOrNull()?.find { it.id == sessionId }
-        if (sessionItem != null) {
-            sessionDao.deleteSession(sessionItem)
-            messageDao.deleteMessagesForSession(sessionId)
-            triggerUpload { uid ->
-                CloudSyncService.deleteSession(uid, sessionId)
-            }
+        attachmentDao.deleteAttachmentsForSession(sessionId)
+        messageDao.deleteMessagesForSession(sessionId)
+        sessionDao.deleteSessionById(sessionId)
+        triggerUpload { uid ->
+            CloudSyncService.deleteSession(uid, sessionId)
         }
     }
 
     suspend fun deleteMessageById(messageId: String) = withContext(Dispatchers.IO) {
-        messageDao.deleteMessage(messageId)
+        val msg = messageDao.getMessageById(messageId)
+        if (msg != null) {
+            val sessionId = msg.sessionId
+            attachmentDao.deleteAttachmentsForMessage(messageId)
+            messageDao.deleteMessage(messageId)
+            triggerUpload { uid ->
+                CloudSyncService.deleteMessage(uid, sessionId, messageId)
+            }
+        }
     }
 
     suspend fun clearAllData() = withContext(Dispatchers.IO) {
@@ -2657,7 +2663,7 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
     }
 
     suspend fun fetchAndSyncFromFirestore(userId: String): Boolean {
-        return com.example.data.network.CloudSyncService.fetchAndSyncAll(userId, sessionDao, messageDao)
+        return com.example.data.network.CloudSyncService.fetchAndSyncAll(userId, sessionDao, messageDao, attachmentDao)
     }
 
     private fun extractUrls(text: String): List<String> {

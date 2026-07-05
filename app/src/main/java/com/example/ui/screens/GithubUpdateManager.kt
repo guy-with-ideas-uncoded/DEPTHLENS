@@ -116,7 +116,7 @@ object GithubUpdateManager {
         
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "5.8.9.x-1"
+            packageInfo.versionName ?: "6.0.0"
         } catch (e: Exception) {
             "4.0.0"
         }
@@ -245,15 +245,15 @@ object GithubUpdateManager {
                     val localVersion = getInstalledVersion(context)
                     
                     val mockRelease = GitHubRelease(
-                        tagName = "v5.8.9.x-1",
-                        name = "DepthLens v5.8.9.x-1 — Dynamic Follow-up Intelligence & Aesthetics Polish",
-                        publishedAt = "June 9, 2026",
-                        body = "### What's New in v5.8.9.x-1\n" +
-                                "- **Model 2 Follow-Up Intelligence Mode**: Intelligent conversational memory detects follow-up inquiries on the same topic, generating context-aware deep system dynamics continuations instead of redundant visual report frameworks.\n" +
+                        tagName = "v6.0.0",
+                        name = "DepthLens v6.0.0 — Reality Intelligence Upgrade",
+                        publishedAt = "July 5, 2026",
+                        body = "### What's New in v6.0.0\n" +
+                                "- **Polished Attachment Previews**: Rebuilt attachment thumbnail previews with rounded corners and adaptive aspect ratios that wrap content perfectly.\n" +
                                 "- **Diagnostic Card Streamlining**: The Reality Layer Activation diagnostic visualizer card is removed from settings and follow-up threads per client request for an elegant, expert-conversational direct response flow.\n" +
                                 "- **Polished Aesthetics & Layouts**: Smoothed spacing, paddings, and card alignment across conversational screens.",
-                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v5.8.9.x-1/DEPTHLENS.apk",
-                        apkFileName = "DEPTHLENS-v589x-1.apk",
+                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v6.0.0/DepthLens_v6.0.0_Debug.apk",
+                        apkFileName = "DepthLens_v6.0.0_Debug.apk",
                         apkSize = 41943040L
                     )
                     
@@ -264,7 +264,7 @@ object GithubUpdateManager {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                    val isNew = isNewerVersion("v5.8.9.x-1", localVersion)
+                    val isNew = isNewerVersion("v6.0.0", localVersion)
                     onComplete(isNew, mockRelease)
                 }
             }
