@@ -1,412 +1,533 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.text.selection.LocalTextSelectionColors
-import androidx.compose.foundation.text.selection.TextSelectionColors
 import com.example.data.model.SessionEntity
 import com.example.ui.theme.*
+import com.example.ui.components.depthGlass
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalLayoutApi::class)
+import com.example.ui.viewmodel.SessionSearchResult
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalAnimationApi::class)
 @Composable
 fun SessionsScreen(
-    sessions: List<SessionEntity>,
+    searchResults: List<SessionSearchResult>,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
     activeSessionId: String?,
     onSessionSelected: (String) -> Unit,
     onCreateNewSession: () -> Unit,
     onDeleteSession: (String) -> Unit,
     onNavigateToChat: () -> Unit,
     onTogglePinSession: (String) -> Unit,
-    modifier: Modifier = Modifier
+    onRenameSession: (String, String) -> Unit,
+    modifier: Modifier = Modifier,
+    listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    
-    val currentTime = remember { System.currentTimeMillis() }
-    
-    // Sort pinned sessions to the top, then sort by lastUpdatedAt descending
-    val sortedSessions = remember(sessions) {
-        sessions.sortedWith(
-            compareByDescending<SessionEntity> { it.isPinned }
-                .thenByDescending { it.lastUpdatedAt }
-        )
-    }
+    val context = LocalContext.current
+    var renamingSession by remember { mutableStateOf<SessionEntity?>(null) }
+    var renamingTitleText by remember { mutableStateOf("") }
 
-    // Filter sessions matching search term
-    val filteredSessions = remember(sortedSessions, searchQuery) {
-        sortedSessions.filter {
-            it.title.contains(searchQuery, ignoreCase = true)
-        }
-    }
+    val pinnedResults = remember(searchResults) { searchResults.filter { it.session.isPinned } }
+    val unpinnedResults = remember(searchResults) { searchResults.filter { !it.session.isPinned } }
 
-    // Grouping sessions beautifully
-    val groupedSessions = remember(filteredSessions, currentTime) {
-        val today = mutableListOf<SessionEntity>()
-        val yesterday = mutableListOf<SessionEntity>()
-        val earlier = mutableListOf<SessionEntity>()
-
-        filteredSessions.forEach { session ->
-            val diffMs = currentTime - session.lastUpdatedAt
-            val diffDays = diffMs / (1000 * 60 * 60 * 24)
-            when {
-                diffDays < 1 -> today.add(session)
-                diffDays < 2 -> yesterday.add(session)
-                else -> earlier.add(session)
-            }
-        }
-        listOf(
-            Triple("Today", today, today.isNotEmpty()),
-            Triple("Yesterday", yesterday, yesterday.isNotEmpty()),
-            Triple("Earlier", earlier, earlier.isNotEmpty())
-        )
-    }
-
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(DeepMidnight)
-            .statusBarsPadding()
     ) {
-        // App Header section
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(Surface1)
-                .padding(vertical = 12.dp, horizontal = 16.dp)
+                .fillMaxSize()
+                .statusBarsPadding()
         ) {
-            Text(
-                text = "Session Library",
-                fontFamily = DMSerifDisplayFontFamily,
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                fontSize = 20.sp,
-                color = TextPrimaryColor,
-                modifier = Modifier.padding(bottom = 2.dp)
-            )
-
-            val sessionCount = sessions.size
-            Text(
-                text = "ARCHIVE ENGINE · $sessionCount ACTIVE TRACES AVAILABLE",
-                fontSize = 8.sp,
-                fontFamily = DMMonoFontFamily,
-                color = TextMutedColor,
-                letterSpacing = 1.2.sp,
-                modifier = Modifier.padding(bottom = 12.dp)
-            )
-
-            // Glassy Search field
+            // Topbar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Surface2, shape = RoundedCornerShape(22.dp))
-                    .border(1.dp, BorderSubtle, shape = RoundedCornerShape(22.dp))
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .height(60.dp)
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
-                    tint = TextMutedColor,
-                    modifier = Modifier.size(14.dp)
+                // Back Button ‹
+                IconButton(
+                    onClick = onNavigateToChat,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Text(
+                        text = "‹",
+                        color = TextPrimaryColor,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Light
+                    )
+                }
+
+                // Title "History"
+                Text(
+                    text = "History",
+                    color = TextPrimaryColor,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = InstrumentSansFontFamily
                 )
 
-                Spacer(modifier = Modifier.width(6.dp))
-
-                val customTextSelectionColors = TextSelectionColors(
-                    handleColor = ElectricViolet,
-                    backgroundColor = ElectricViolet.copy(alpha = 0.4f)
-                )
-                CompositionLocalProvider(LocalTextSelectionColors provides customTextSelectionColors) {
-                    androidx.compose.foundation.text.BasicTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier.weight(1f),
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            fontFamily = InstrumentSansFontFamily,
-                            fontSize = 11.5.sp,
-                            color = TextPrimaryColor
-                        ),
-                        decorationBox = { innerTextField ->
-                            if (searchQuery.isEmpty()) {
-                                Text(
-                                    text = "Search dynamic profiles and sessions…",
-                                    fontFamily = InstrumentSansFontFamily,
-                                    fontSize = 11.sp,
-                                    color = TextMutedColor
-                                )
-                            }
-                            innerTextField()
-                        }
+                // Create new session ✎
+                IconButton(
+                    onClick = {
+                        onCreateNewSession()
+                        onNavigateToChat()
+                    },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Text(
+                        text = "✎",
+                        color = TextPrimaryColor,
+                        fontSize = 18.sp
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Premium Primary Action New Session Trigger
-            Box(
+            // Sessions List
+            LazyColumn(
+                state = listState,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(38.dp)
-                    .background(ElectricViolet.copy(alpha = 0.12f), shape = RoundedCornerShape(14.dp))
-                    .border(BorderStroke(1.dp, ElectricViolet.copy(alpha = 0.35f)), shape = RoundedCornerShape(14.dp))
-                    .clickable {
-                        onCreateNewSession()
-                        onNavigateToChat()
-                    },
-                contentAlignment = Alignment.Center
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                item(key = "search_header") {
+                    // Search Sessions Input
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .depthGlass(cornerRadius = 14.dp, borderWidth = 1.dp)
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "⌕",
+                            color = ElectricViolet,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = "Search sessions…",
+                                    color = TextMutedColor,
+                                    fontSize = 13.sp,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                            }
+                            BasicTextField(
+                                value = searchQuery,
+                                onValueChange = onSearchQueryChange,
+                                textStyle = TextStyle(
+                                    color = TextPrimaryColor,
+                                    fontSize = 13.sp,
+                                    fontFamily = InstrumentSansFontFamily
+                                ),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                if (searchResults.isEmpty()) {
+                    item(key = "empty_state") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No historic sessions found.",
+                                color = TextMutedColor,
+                                fontSize = 12.sp,
+                                fontFamily = InstrumentSansFontFamily
+                            )
+                        }
+                    }
+                } else {
+                    // 1. PINNED SECTION
+                    if (pinnedResults.isNotEmpty()) {
+                        item(key = "pinned_section_label") {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp)
+                            ) {
+                                Text(
+                                    text = "📌 Pinned",
+                                    color = TextPrimaryColor.copy(alpha = 0.5f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                            }
+                        }
+
+                        items(pinnedResults, key = { "pinned_${it.session.id}" }) { result ->
+                            SessionCard(
+                                result = result,
+                                activeSessionId = activeSessionId,
+                                onSessionSelected = onSessionSelected,
+                                onNavigateToChat = onNavigateToChat,
+                                onTogglePinSession = onTogglePinSession,
+                                onStartRename = { session ->
+                                    renamingSession = session
+                                    renamingTitleText = session.title
+                                },
+                                onDeleteSession = onDeleteSession,
+                                modifier = Modifier.animateItemPlacement(animationSpec = tween(durationMillis = 250))
+                            )
+                        }
+
+                        item(key = "pinned_section_divider") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(1.dp)
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                colors = listOf(
+                                                    Color.Transparent,
+                                                    PremiumCyan.copy(alpha = 0.4f),
+                                                    ElectricViolet.copy(alpha = 0.4f),
+                                                    Color.Transparent
+                                                )
+                                            )
+                                        )
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "All Conversations",
+                                    color = TextPrimaryColor.copy(alpha = 0.5f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = InstrumentSansFontFamily,
+                                    modifier = Modifier.padding(start = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // 2. UNPINNED SECTION
+                    items(unpinnedResults, key = { "unpinned_${it.session.id}" }) { result ->
+                        SessionCard(
+                            result = result,
+                            activeSessionId = activeSessionId,
+                            onSessionSelected = onSessionSelected,
+                            onNavigateToChat = onNavigateToChat,
+                            onTogglePinSession = onTogglePinSession,
+                            onStartRename = { session ->
+                                    renamingSession = session
+                                    renamingTitleText = session.title
+                            },
+                            onDeleteSession = onDeleteSession,
+                            modifier = Modifier.animateItemPlacement(animationSpec = tween(durationMillis = 250))
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Rename Dialog
+    if (renamingSession != null) {
+        AlertDialog(
+            onDismissRequest = { renamingSession = null },
+            containerColor = DeepMidnight,
+            title = {
+                Text(
+                    text = "Rename Conversation",
+                    color = TextPrimaryColor,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = InstrumentSansFontFamily
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = renamingTitleText,
+                        onValueChange = { newValue ->
+                            if (newValue.length <= 80) {
+                                renamingTitleText = newValue
+                            }
+                        },
+                        singleLine = true,
+                        textStyle = TextStyle(
+                            color = TextPrimaryColor,
+                            fontSize = 13.sp,
+                            fontFamily = InstrumentSansFontFamily
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimaryColor,
+                            unfocusedTextColor = TextPrimaryColor,
+                            focusedBorderColor = ElectricViolet,
+                            unfocusedBorderColor = GlassBorder,
+                            cursorColor = ElectricViolet
+                        ),
+                        placeholder = {
+                            Text(
+                                text = "Enter title...",
+                                color = TextMutedColor,
+                                fontSize = 13.sp
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                val clean = renamingTitleText.trim()
+                                if (clean.isNotEmpty()) {
+                                    onRenameSession(renamingSession!!.id, clean)
+                                    renamingSession = null
+                                }
+                            }
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val clean = renamingTitleText.trim()
+                        if (clean.isNotEmpty()) {
+                            onRenameSession(renamingSession!!.id, clean)
+                            renamingSession = null
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ElectricViolet,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    enabled = renamingTitleText.trim().isNotEmpty()
                 ) {
                     Text(
-                        text = "+",
-                        fontSize = 13.sp,
-                        color = ElectricViolet,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(end = 4.dp)
-                    )
-                    Text(
-                        text = "Initialize New Analysis Trace",
-                        fontSize = 11.sp,
+                        text = "Save",
+                        fontSize = 12.sp,
                         fontFamily = InstrumentSansFontFamily,
-                        color = ElectricViolet,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
-            }
-        }
-
-        // Sessions Grouping Scrolling Area
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            groupedSessions.forEach { (title, sList, isVisible) ->
-                if (isVisible) {
-                    item(key = title) {
-                        Text(
-                            text = title.uppercase(),
-                            fontSize = 8.sp,
-                            fontFamily = DMMonoFontFamily,
-                            letterSpacing = 1.3.sp,
-                            color = TextMutedColor,
-                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                        )
-                    }
-
-                    items(sList, key = { it.id }) { session ->
-                        val isActive = session.id == activeSessionId
-                        val createdDateStr = remember(session.createdAt) {
-                            val sdf = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
-                            sdf.format(Date(session.createdAt))
-                        }
-                        val relativeOpened = remember(session.lastUpdatedAt) {
-                            formatRelativeTime(session.lastUpdatedAt)
-                        }
-
-                        // Grid item card following bash.html
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    color = if (isActive) Surface3 else Surface2,
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isActive) ElectricViolet else BorderSubtle,
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .clickable {
-                                    onSessionSelected(session.id)
-                                    onNavigateToChat()
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // PIN indicator button
-                            IconButton(
-                                onClick = { onTogglePinSession(session.id) },
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .padding(end = 4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Star,
-                                    contentDescription = if (session.isPinned) "Unpin" else "Pin",
-                                    tint = if (session.isPinned) WarningColor else TextMutedColor.copy(alpha = 0.35f),
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            }
-
-                            Column(
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = session.title,
-                                        fontSize = 17.sp,
-                                        color = TextPrimaryColor,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-
-                                val modeBadge = getSessionModeBadge(session.title)
-                                if (modeBadge != null) {
-                                    Spacer(modifier = Modifier.height(3.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                color = getBadgeColor(modeBadge).copy(alpha = 0.15f),
-                                                shape = RoundedCornerShape(4.dp)
-                                            )
-                                            .border(0.8.dp, getBadgeColor(modeBadge).copy(alpha = 0.4f), RoundedCornerShape(4.dp))
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = modeBadge.uppercase(),
-                                            fontSize = 11.sp,
-                                            fontFamily = DMMonoFontFamily,
-                                            fontWeight = FontWeight.Bold,
-                                            color = getBadgeColor(modeBadge)
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(4.dp))
-
-                                // Render exact high fidelity 'Created' and 'Last opened' labels
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Created: $createdDateStr",
-                                        fontSize = 12.sp,
-                                        fontFamily = InstrumentSansFontFamily,
-                                        color = TextSecondaryColor
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .size(3.dp)
-                                            .background(BorderActive.copy(alpha = 0.5f), RoundedCornerShape(50))
-                                    )
-                                    Text(
-                                        text = "Opened: $relativeOpened",
-                                        fontSize = 12.sp,
-                                        fontFamily = DMMonoFontFamily,
-                                        color = TextMutedColor
-                                    )
-                                }
-                            }
-
-                            // Interactive Trash Delete Icon matching prompt
-                            IconButton(
-                                onClick = { onDeleteSession(session.id) },
-                                modifier = Modifier
-                                    .padding(start = 6.dp)
-                                    .size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete Thread",
-                                    tint = ErrorColor.copy(alpha = 0.65f),
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (filteredSessions.isEmpty()) {
-                item {
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { renamingSession = null }
+                ) {
                     Text(
-                        text = "No matching analysis profiles found.",
-                        fontSize = 15.sp,
-                        fontFamily = InstrumentSansFontFamily,
+                        text = "Cancel",
                         color = TextMutedColor,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 40.dp),
-                        textAlign = TextAlign.Center
+                        fontSize = 12.sp,
+                        fontFamily = InstrumentSansFontFamily
                     )
                 }
             }
+        )
+    }
+}
+
+@OptIn(ExperimentalAnimationApi::class)
+@Composable
+fun SessionCard(
+    result: SessionSearchResult,
+    activeSessionId: String?,
+    onSessionSelected: (String) -> Unit,
+    onNavigateToChat: () -> Unit,
+    onTogglePinSession: (String) -> Unit,
+    onStartRename: (SessionEntity) -> Unit,
+    onDeleteSession: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val session = result.session
+    val isSelected = session.id == activeSessionId
+    val sdf = remember { SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()) }
+    val dateStr = remember(session.lastUpdatedAt) {
+        try {
+            sdf.format(Date(session.lastUpdatedAt))
+        } catch (e: Exception) {
+            "Yesterday"
         }
     }
-}
 
-// Relative time format utility
-fun formatRelativeTime(time: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - time
-    return when {
-        diff < 60_000 -> "Just now"
-        diff < 3600_000 -> "${diff / 60_000}m ago"
-        diff < 86400_000 -> "${diff / 3600_000}h ago"
-        else -> SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(time))
-    }
-}
+    // Toggle Pin Animation configuration
+    val pinRotation by animateFloatAsState(
+        targetValue = if (session.isPinned) 0f else -45f,
+        animationSpec = tween(durationMillis = 250)
+    )
+    val pinScale by animateFloatAsState(
+        targetValue = if (session.isPinned) 1.2f else 1.0f,
+        animationSpec = tween(durationMillis = 250)
+    )
+    val pinColor by animateColorAsState(
+        targetValue = if (session.isPinned) PremiumCyan else TextMutedColor.copy(alpha = 0.4f),
+        animationSpec = tween(durationMillis = 250)
+    )
 
-fun getSessionModeBadge(title: String): String? {
-    val t = title.lowercase()
-    return when {
-        t.contains("root cause") || t.contains("origin pattern") || t.contains("causal chain") || t.contains("source mapping") || t.contains("root factor") || t.contains("deep cause") || t.contains("foundation analysis") || t.contains("trigger sequence") || t.contains("core driver") || t.contains("underlying force") || t.contains("reality intel") -> "Root Cause"
-        t.contains("psychology") || t.contains("cognitive pattern") || t.contains("behavioral motive") || t.contains("mental model") || t.contains("psychological driver") || t.contains("belief system") || t.contains("emotional trigger") || t.contains("bias detection") || t.contains("subconscious") || t.contains("identity lens") -> "Psychology"
-        t.contains("systems") || t.contains("feedback loop") || t.contains("systems study") || t.contains("system dynamics") || t.contains("incentive") || t.contains("network effect") || t.contains("systemic leverage") || t.contains("loop analysis") || t.contains("equilibrium map") || t.contains("emergent behavior") || t.contains("system blind spot") -> "Systems"
-        t.contains("probability") || t.contains("outcome") || t.contains("timeline") || t.contains("risk scenario") || t.contains("bayesian") || t.contains("expected value") || t.contains("uncertainty") || t.contains("decision probability") -> "Probability"
-        t.contains("business") || t.contains("strategic position") || t.contains("market dynamic") || t.contains("growth") || t.contains("moat") || t.contains("revenue") || t.contains("value chain") || t.contains("organizational") || t.contains("opportunity") -> "Business"
-        t.contains("relationship") || t.contains("interpersonal") || t.contains("attachment") || t.contains("bond structure") || t.contains("relationship driver") || t.contains("communication pattern") || t.contains("trust fabric") || t.contains("social dynamic") || t.contains("conflict") || t.contains("connection") -> "Relationships"
-        t.contains("spiritual") || t.contains("purpose alignment") || t.contains("values clarity") || t.contains("inner growth") || t.contains("meaning pattern") || t.contains("higher principle") || t.contains("life purpose") || t.contains("growth pathway") -> "Spiritual"
-        t.contains("decision making") || t.contains("decision framework") || t.contains("risk-benefit") || t.contains("choice architecture") || t.contains("heuristic") || t.contains("trade-off") || t.contains("decision quality") || t.contains("option evaluation") -> "Decision"
-        t.contains("multi-layer") || t.contains("reality architecture") || t.contains("multi-dimensional") || t.contains("full-spectrum") || t.contains("deep-layer") || t.contains("reality tunnel") || t.contains("ontological") || t.contains("consciousness") || t.contains("meta-pattern") || t.contains("invisible architecture") -> "Multi-Layer"
-        else -> null
-    }
-}
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .depthGlass(
+                cornerRadius = 16.dp,
+                borderWidth = 1.dp,
+                customTint = if (isSelected) ElectricViolet.copy(alpha = 0.25f) else null
+            )
+            .let { m ->
+                if (isSelected) {
+                    m.border(1.2.dp, ElectricViolet, RoundedCornerShape(16.dp))
+                } else m
+            }
+            .bounceClick {
+                onSessionSelected(session.id)
+                onNavigateToChat()
+            }
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Left side: Pin Icon
+        IconButton(
+            onClick = { onTogglePinSession(session.id) },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = if (session.isPinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                contentDescription = "Toggle pin",
+                tint = pinColor,
+                modifier = Modifier
+                    .size(16.dp)
+                    .graphicsLayer(
+                        rotationZ = pinRotation,
+                        scaleX = pinScale,
+                        scaleY = pinScale
+                    )
+            )
+        }
 
-fun getBadgeColor(mode: String): Color {
-    return when (mode) {
-        "Root Cause" -> ElectricViolet
-        "Psychology" -> Color(0xFFFF52AF) // Beautiful Pink
-        "Systems" -> PremiumCyan
-        "Probability" -> Color(0xFFFF9F0A) // Amber/Orange
-        "Business" -> Color(0xFF0A84FF) // Cobalt Blue
-        "Relationships" -> Color(0xFFFF453A) // Salmon/Red
-        "Spiritual" -> Color(0xFFFFD60A) // Gold Yellow
-        "Decision" -> Color(0xFF30D158) // Emerald Green
-        "Multi-Layer" -> Color(0xFFBF5AF2) // Magenta/Violet
-        else -> PremiumCyan
+        Spacer(modifier = Modifier.width(4.dp))
+
+        // Middle Content (Title + Date/Snippet)
+        Column(modifier = Modifier.weight(1f)) {
+            // Title crossfade instead of instantly changing
+            AnimatedContent(
+                targetState = session.title.ifBlank { "Unidentified Analysis" },
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(250)) togetherWith fadeOut(animationSpec = tween(250))
+                },
+                label = "titleCrossfade"
+            ) { targetTitle ->
+                Text(
+                    text = targetTitle,
+                    color = TextPrimaryColor,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = InstrumentSansFontFamily,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (!result.matchingSnippet.isNullOrEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = result.matchingSnippet,
+                    color = PremiumCyan,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal,
+                    fontFamily = InstrumentSansFontFamily,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = dateStr,
+                color = TextMutedColor,
+                fontSize = 10.sp,
+                fontFamily = InstrumentSansFontFamily
+            )
+        }
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        // Right actions: Rename (Pencil) + Delete (Trash)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Rename pencil
+            IconButton(
+                onClick = { onStartRename(session) },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = "Rename session",
+                    tint = TextMutedColor.copy(alpha = 0.6f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            // Delete Session trash
+            IconButton(
+                onClick = { onDeleteSession(session.id) },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete session",
+                    tint = Color(0xFFFF6B8A).copy(alpha = 0.8f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
     }
 }

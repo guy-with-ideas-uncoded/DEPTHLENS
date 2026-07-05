@@ -41,3 +41,7 @@
 -dontwarn retrofit2.**
 -keep class retrofit2.** { *; }
 
+# Fast R8 tree-shaking (shrinking) without slow optimization or obfuscation passes
+-dontobfuscate
+-dontoptimize
+

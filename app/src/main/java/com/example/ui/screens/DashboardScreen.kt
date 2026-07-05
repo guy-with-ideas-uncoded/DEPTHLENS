@@ -9,6 +9,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +34,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -46,30 +50,38 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.offset
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.*
 import com.example.data.repository.ResponseParser
 import com.example.ui.theme.*
 import com.example.ui.components.ThreeDotThinkingIndicator
+import com.example.ui.components.glassScreenBackground
 import com.example.ui.components.IntelligenceOSVisualizer
 import com.example.ui.components.DeepSynthesisPanel
 import com.example.ui.components.SummaryOfInquiryPanel
+import com.example.ui.components.FormattedResponseText
+import com.example.ui.components.DepthLensLogo
 import com.example.ui.viewmodel.IntelligenceViewModel
 import kotlinx.coroutines.launch
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.text.BasicTextField
 import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun DashboardScreen(
     viewModel: IntelligenceViewModel,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val sessions by viewModel.sessions.collectAsState()
     val activeSessionId by viewModel.activeSessionId.collectAsState()
     val activeMessages by viewModel.activeMessages.collectAsState()
@@ -86,6 +98,9 @@ fun DashboardScreen(
     val isDeepThoughtEnabled by viewModel.isDeepThoughtEnabled.collectAsState()
     val isSystemControlsExpanded by viewModel.isSystemControlsExpanded.collectAsState()
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
+    val voiceOutputEnabled by viewModel.voiceOutputEnabled.collectAsState()
+    val wakeWordEnabled by viewModel.wakeWordEnabled.collectAsState()
+    val autoLayerSelection by viewModel.autoLayerSelection.collectAsState()
     val darkModeEnabled by viewModel.darkModeEnabled.collectAsState()
 
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
@@ -97,10 +112,12 @@ fun DashboardScreen(
     val repoOwnerAndName by viewModel.repoOwnerAndName.collectAsState()
     val onboardingCompleted by viewModel.onboardingCompleted.collectAsState()
     val archivedInsights by viewModel.archivedInsights.collectAsState()
+    val probabilityForecast by viewModel.probabilityForecast.collectAsState()
     val deepDiveInsights by viewModel.deepDiveInsights.collectAsState()
     val isDeepDiveLoading by viewModel.isDeepDiveLoading.collectAsState()
     val diagnostics by viewModel.diagnostics.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
+    val voiceAccent by viewModel.voiceAccent.collectAsState()
 
     val syncStatus by viewModel.syncStatus.collectAsState()
     val lastSyncedTime by viewModel.lastSyncedTime.collectAsState()
@@ -110,8 +127,14 @@ fun DashboardScreen(
     val continuityBrief by viewModel.continuityBrief.collectAsState()
     val continuityBriefStatus by viewModel.continuityBriefStatus.collectAsState()
 
+    val selectedMessageId by viewModel.selectedMessageId.collectAsState()
+    val selectedText by viewModel.selectedText.collectAsState()
+    val replyMessageId by viewModel.replyMessageId.collectAsState()
+    val replySelectedText by viewModel.replySelectedText.collectAsState()
+
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    val sessionsListState = rememberLazyListState()
 
     androidx.compose.runtime.LaunchedEffect(activeSessionId) {
         if (activeSessionId != null) {
@@ -135,12 +158,22 @@ fun DashboardScreen(
         }
     }
 
+    var currentTab by rememberSaveable { mutableStateOf("home") }
+    val startVoiceMode by viewModel.startVoiceMode.collectAsState()
+    LaunchedEffect(startVoiceMode) {
+        if (startVoiceMode) {
+            currentTab = "voice_conversation"
+            viewModel.triggerVoiceMode(false)
+        }
+    }
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+
     var showFeedbackDialog by remember { mutableStateOf(false) }
     var showThemeSelectorDialog by remember { mutableStateOf(false) }
     var activeThemeName by remember { mutableStateOf(ThemeManager.themeName) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showReportBugDialog by remember { mutableStateOf(false) }
-    var selectedMode by remember { mutableStateOf("Root Cause") }
+    val selectedMode by viewModel.selectedMode.collectAsState()
     var selectedDepth by remember { mutableStateOf("Standard Analysis") }
     
     var reportBugMessage by remember { mutableStateOf("") }
@@ -201,6 +234,7 @@ fun DashboardScreen(
     }
 
     var showAttachmentSelector by remember { mutableStateOf(false) }
+    var inputFocused by remember { mutableStateOf(false) }
     var isRecordingAudio by remember { mutableStateOf(false) }
     var recordingDuration by remember { mutableStateOf(0) }
     val voiceRecorder = remember { VoiceRecorder(context) }
@@ -211,6 +245,28 @@ fun DashboardScreen(
             while (isRecordingAudio) {
                 kotlinx.coroutines.delay(1000)
                 recordingDuration++
+            }
+        }
+    }
+
+    // Manage background WakeWordService reactively (avoiding mic access conflicts)
+    LaunchedEffect(wakeWordEnabled, currentTab) {
+        val serviceIntent = android.content.Intent(context, com.example.WakeWordService::class.java)
+        if (wakeWordEnabled && currentTab != "voice_conversation") {
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    context.startForegroundService(serviceIntent)
+                } else {
+                    context.startService(serviceIntent)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("WakeWordService", "Error starting foreground service", e)
+            }
+        } else {
+            try {
+                context.stopService(serviceIntent)
+            } catch (e: Exception) {
+                android.util.Log.e("WakeWordService", "Error stopping foreground service", e)
             }
         }
     }
@@ -296,15 +352,28 @@ fun DashboardScreen(
     var showClearConfirm by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
+    var showSignOutConfirm by remember { mutableStateOf(false) }
     var sidebarSearchQuery by remember { mutableStateOf("") }
+    var sidebarSearchOpen by remember { mutableStateOf(false) }
+    var sidebarSearchFocused by remember { mutableStateOf(false) }
+
+    // ── Conversation search + long-press context menu state ────────────────
+    val filteredSessions by viewModel.filteredSessions.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
+    val sessionSearchQuery by viewModel.sessionSearchQuery.collectAsState()
+    var contextMenuSession by remember { mutableStateOf<SessionEntity?>(null) }
+    var renameTargetSession by remember { mutableStateOf<SessionEntity?>(null) }
+    var renameTextFieldValue by remember { mutableStateOf("") }
+    var deleteTargetSession by remember { mutableStateOf<SessionEntity?>(null) }
+
+    LaunchedEffect(sidebarSearchQuery) {
+        viewModel.setSessionSearchQuery(sidebarSearchQuery)
+    }
+
 
     // DEPTHLENS NAVIGATION & BACK BUTTON STANDARD™
     BackHandler(enabled = true) {
         when {
-            // Priority 1: Sidebar Drawer Open -> Close Sidebar
-            drawerState.isOpen -> {
-                coroutineScope.launch { drawerState.close() }
-            }
             // Priority 2: Dialogs/Modals Open -> Close Modal
             showUpdatesDialog -> {
                 showUpdatesDialog = false
@@ -335,6 +404,29 @@ fun DashboardScreen(
             }
             showExitConfirm -> {
                 showExitConfirm = false
+            }
+            showSignOutConfirm -> {
+                showSignOutConfirm = false
+            }
+            contextMenuSession != null -> {
+                contextMenuSession = null
+            }
+            renameTargetSession != null -> {
+                renameTargetSession = null
+            }
+            deleteTargetSession != null -> {
+                deleteTargetSession = null
+            }
+            // Priority 3: Sub-tabs and Sub-views
+            currentTab == "edit_profile" -> {
+                currentTab = "settings"
+            }
+            currentTab == "voice_conversation" -> {
+                // Voice overlay active — let it handle its own back via onDismiss callback
+                // (don't force-exit here; that closes it instantly before it can render)
+            }
+            currentTab != "home" -> {
+                currentTab = "home"
             }
             // Priority 4: Results Feed active -> Return to Landing Screen
             activeMessages.isNotEmpty() -> {
@@ -383,7 +475,7 @@ fun DashboardScreen(
                         text = "Welcome Explorer",
                         fontSize = 20.sp,
                         fontFamily = DMSerifDisplayFontFamily,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                        fontStyle = androidx.compose.ui.text.font.FontStyle.Normal,
                         color = TextPrimaryColor
                     )
                 }
@@ -740,6 +832,101 @@ fun DashboardScreen(
                 label = "alpha"
             )
 
+            // Premium glass exit dialog — matches the app's liquid-glass language.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth(0.86f)
+                    .graphicsLayer(scaleX = scale, scaleY = scale, alpha = alpha)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(SurfaceCardColor.copy(alpha = 0.98f))
+                    .border(1.dp, GlassBorder, RoundedCornerShape(28.dp))
+                    .padding(horizontal = 22.dp, vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Brand mark inside a soft accent glow
+                DepthLensLogo(
+                    size = 60.dp,
+                    showGlow = true
+                )
+
+                Text(
+                    text = "Leave DepthLens?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = TextPrimaryColor,
+                    fontFamily = InstrumentSansFontFamily
+                )
+                Text(
+                    text = "Your current analysis stays saved — pick up right where you left off.",
+                    fontSize = 12.sp,
+                    color = TextSecondaryColor,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 17.sp,
+                    fontFamily = InstrumentSansFontFamily
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // EXIT — accent gradient
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(brush = Brush.linearGradient(listOf(ElectricViolet, GradientEnd)))
+                        .clickable {
+                            showExitConfirm = false
+                            (context as? android.app.Activity)?.finish()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Exit", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = InstrumentSansFontFamily)
+                }
+
+                // STAY — glass
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.White.copy(alpha = if (ThemeManager.isDarkTheme) 0.06f else 0.10f))
+                        .border(1.dp, GlassBorder, RoundedCornerShape(14.dp))
+                        .clickable { showExitConfirm = false },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Stay", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = TextPrimaryColor, fontFamily = InstrumentSansFontFamily)
+                }
+            }
+        }
+    }
+
+    if (showSignOutConfirm) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showSignOutConfirm = false },
+            properties = androidx.compose.ui.window.DialogProperties(
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true
+            )
+        ) {
+            var isMounted by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                isMounted = true
+            }
+            val scale by animateFloatAsState(
+                targetValue = if (isMounted) 1f else 0.92f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMedium
+                ),
+                label = "scale"
+            )
+            val alpha by animateFloatAsState(
+                targetValue = if (isMounted) 1f else 0f,
+                animationSpec = tween(durationMillis = 220),
+                label = "alpha"
+            )
+
             Card(
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
@@ -768,7 +955,7 @@ fun DashboardScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "✦ Leave DepthLens?",
+                            text = "✦ Sign Out?",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.ExtraBold,
                             color = TextPrimaryColor,
@@ -778,7 +965,7 @@ fun DashboardScreen(
                     }
 
                     Text(
-                        text = "Your current analysis will remain saved.",
+                        text = "Are you sure you want to sign out of your DepthLens account?",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondaryColor,
                         textAlign = TextAlign.Center,
@@ -793,12 +980,11 @@ fun DashboardScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // EXIT (Primary Linear Gradient Button)
+                        // SIGN OUT (Primary Linear Gradient Button)
                         Button(
                             onClick = {
-                                showExitConfirm = false
-                                val activity = (context as? android.app.Activity)
-                                activity?.finish()
+                                showSignOutConfirm = false
+                                viewModel.signOut()
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                             contentPadding = PaddingValues(0.dp),
@@ -814,23 +1000,23 @@ fun DashboardScreen(
                                 )
                         ) {
                             Text(
-                                "Exit",
+                                "Sign Out",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
                         }
 
-                        // STAY (Minimal Transparent Text Button)
+                        // CANCEL (Minimal Transparent Text Button)
                         TextButton(
-                            onClick = { showExitConfirm = false },
+                            onClick = { showSignOutConfirm = false },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(46.dp),
                             colors = ButtonDefaults.textButtonColors(contentColor = Color.Transparent)
                         ) {
                             Text(
-                                "Stay",
+                                "Cancel",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = if (ThemeManager.isDarkTheme) Color(0xFF8E8D9F) else Color(0xFF64748B)
@@ -840,6 +1026,257 @@ fun DashboardScreen(
                 }
             }
         }
+    }
+
+    // ── v7: Conversation long-press context menu (Pin / Rename / Delete) ──
+    contextMenuSession?.let { session ->
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { contextMenuSession = null },
+            properties = androidx.compose.ui.window.DialogProperties(
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true
+            )
+        ) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (ThemeManager.isDarkTheme) Color(0xFF14141E) else Color.White
+                ),
+                border = BorderStroke(1.dp, CardBorderColor.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth(0.52f)
+            ) {
+                Column(modifier = Modifier.padding(vertical = 5.dp)) {
+                    // Header: conversation title preview
+                    Column(modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp)) {
+                        Text(
+                            text = session.title.ifEmpty { "Untitled" },
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimaryColor,
+                            fontFamily = InstrumentSansFontFamily,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "Updated " + getRelativeTimeString(session.lastUpdatedAt).lowercase(),
+                            fontSize = 8.sp,
+                            color = TextMutedColor,
+                            fontFamily = DMMonoFontFamily
+                        )
+                    }
+                    HorizontalDivider(color = BorderSubtle, thickness = 0.8.dp)
+
+                    Column(modifier = Modifier.padding(horizontal = 5.dp, vertical = 4.dp)) {
+                        // Pin / Unpin
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(9.dp))
+                                .clickable {
+                                    viewModel.togglePinSession(session.id)
+                                    contextMenuSession = null
+                                }
+                                .padding(horizontal = 5.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .background(PremiumCyan.copy(alpha = 0.1f), RoundedCornerShape(6.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = null,
+                                    tint = PremiumCyan,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                            }
+                            Text(
+                                text = if (session.isPinned) "Unpin" else "Pin conversation",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextPrimaryColor,
+                                fontFamily = InstrumentSansFontFamily
+                            )
+                        }
+
+                        // Rename
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(9.dp))
+                                .clickable {
+                                    renameTextFieldValue = session.title
+                                    renameTargetSession = session
+                                    contextMenuSession = null
+                                }
+                                .padding(horizontal = 5.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .background(ElectricViolet.copy(alpha = 0.1f), RoundedCornerShape(6.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = null,
+                                    tint = ElectricViolet,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                            }
+                            Text(
+                                text = "Rename",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextPrimaryColor,
+                                fontFamily = InstrumentSansFontFamily
+                            )
+                        }
+
+                        // Delete
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(9.dp))
+                                .clickable {
+                                    deleteTargetSession = session
+                                    contextMenuSession = null
+                                }
+                                .padding(horizontal = 5.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .background(ErrorColor.copy(alpha = 0.1f), RoundedCornerShape(6.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = ErrorColor,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                            }
+                            Text(
+                                text = "Delete",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = ErrorColor,
+                                fontFamily = InstrumentSansFontFamily
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── v7: Rename conversation dialog ─────────────────────────────────
+    renameTargetSession?.let { session ->
+        AlertDialog(
+            onDismissRequest = { renameTargetSession = null },
+            containerColor = RichNavy,
+            title = {
+                Text(
+                    text = "Rename Conversation",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimaryColor,
+                    fontFamily = FontFamily.Monospace
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = renameTextFieldValue,
+                    onValueChange = { renameTextFieldValue = it },
+                    singleLine = true,
+                    placeholder = { Text("Conversation title", fontSize = 12.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimaryColor,
+                        unfocusedTextColor = TextPrimaryColor,
+                        focusedBorderColor = ElectricViolet,
+                        unfocusedBorderColor = BorderSubtle,
+                        cursorColor = ElectricViolet
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.renameSession(session.id, renameTextFieldValue)
+                        renameTargetSession = null
+                    },
+                    enabled = renameTextFieldValue.trim().isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ElectricViolet,
+                        disabledContainerColor = SurfaceCardColor
+                    )
+                ) {
+                    Text("Save", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTargetSession = null }) {
+                    Text("Cancel", color = TextSecondaryColor, fontSize = 12.sp)
+                }
+            },
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.border(1.2.dp, ElectricViolet.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+        )
+    }
+
+    // ── v7: Delete conversation confirmation ───────────────────────────
+    deleteTargetSession?.let { session ->
+        AlertDialog(
+            onDismissRequest = { deleteTargetSession = null },
+            containerColor = RichNavy,
+            title = {
+                Text(
+                    text = "Delete Conversation?",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimaryColor,
+                    fontFamily = FontFamily.Monospace
+                )
+            },
+            text = {
+                Text(
+                    text = "\"${session.title.ifEmpty { "Untitled" }}\" and all of its messages will be permanently removed. This cannot be undone.",
+                    fontSize = 12.sp,
+                    color = TextSecondaryColor,
+                    lineHeight = 17.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteSession(session.id)
+                        if (activeSessionId == session.id) {
+                            currentTab = "home"
+                        }
+                        deleteTargetSession = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ErrorColor)
+                ) {
+                    Text("Delete", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTargetSession = null }) {
+                    Text("Cancel", color = PremiumCyan, fontSize = 12.sp)
+                }
+            },
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.border(1.2.dp, ErrorColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+        )
     }
 
     if (showAboutDialog) {
@@ -868,22 +1305,10 @@ fun DashboardScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(64.dp)
-                            .background(
-                                Brush.radialGradient(
-                                    colors = listOf(ElectricViolet.copy(alpha = 0.35f), Color.Transparent)
-                                )
-                            )
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_depthlens_logo),
-                            contentDescription = "DepthLens Logo",
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
+                    DepthLensLogo(
+                        size = 64.dp,
+                        showGlow = true
+                    )
                     
                     Text(
                         text = "DEPTHLENS",
@@ -1187,7 +1612,7 @@ Text(
                             placeholder = { Text("What can we improve?", fontSize = 12.sp, color = TextSecondaryColor) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(100.dp),
+                                .heightIn(min = 100.dp),
                             shape = RoundedCornerShape(8.dp),
                             colors = TextFieldDefaults.colors(
                                 focusedTextColor = TextPrimaryColor,
@@ -1422,7 +1847,7 @@ Text(
                             placeholder = { Text("Describe sequence which triggered unexpected system behaviour...", fontSize = 12.sp, color = TextSecondaryColor) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(100.dp),
+                                .heightIn(min = 100.dp),
                             shape = RoundedCornerShape(8.dp),
                             colors = TextFieldDefaults.colors(
                                 focusedTextColor = TextPrimaryColor,
@@ -1555,7 +1980,7 @@ Text(
                         "DepthLens only accesses files you explicitly choose to analyze.",
                         color = TextSecondaryColor,
                         fontSize = 12.sp,
-                        fontStyle = FontStyle.Italic
+                        fontStyle = FontStyle.Normal
                     )
                 }
             },
@@ -1591,409 +2016,73 @@ Text(
         return
     }
 
-    // Beautiful Premium Sidebar Redesign completely disabled for Bottom Nav ONLY
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = true,
-        drawerContent = {
-        ModalDrawerSheet(
-                drawerContainerColor = RichNavy,
-                drawerContentColor = TextPrimaryColor,
-                modifier = Modifier.width(320.dp)
-            ) {
-                Spacer(modifier = Modifier.statusBarsPadding())
-
-                // Redesigned Brand Header with Neon Violet Accent
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(
-                                        Brush.radialGradient(
-                                            colors = listOf(ElectricViolet.copy(alpha = 0.4f), Color.Transparent)
-                                        )
-                                    )
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.ic_depthlens_logo),
-                                    contentDescription = "DepthLens Logo",
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "DEPTHLENS",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimaryColor,
-                                    letterSpacing = 1.2.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Text(
-                                    text = "See Beyond Surface",
-                                    fontSize = 11.sp,
-                                    color = PremiumCyan,
-                                    fontWeight = FontWeight.SemiBold,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = SurfaceCardColor, modifier = Modifier.padding(horizontal = 20.dp))
-
-                // Primary Quick Action Buttons
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            viewModel.createSession("")
-                            coroutineScope.launch { drawerState.close() }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1.2f)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "New Thread", modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("New Scenario", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-
-                    OutlinedButton(
-                        onClick = { showResetConfirm = true },
-                        border = BorderStroke(1.dp, ErrorColor.copy(alpha = 0.6f)),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorColor),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(0.8f)
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Reset State", modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Reset", fontSize = 11.sp, color = ErrorColor)
-                    }
-                }
-
-                // Highly structured navigation links partition
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    // SEC 1: PINNED SCENARIOS
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.Star, contentDescription = null, tint = WarningColor, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "PINNED FOCUS SCENARIOS",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextSecondaryColor,
-                            letterSpacing = 1.sp
-                        )
-                    }
-
-                    val pinnedTemplates = listOf(
-                        "Macro Systems Feedback Loop" to "Systems Feedback: Outline circular delays.",
-                        "Psychological Incentive Audit" to "Incentives: Map social delays & resource blockades."
-                    )
-                    pinnedTemplates.forEach { (title, queryText) ->
-                        NavigationDrawerItem(
-                            label = {
-                                Text(
-                                    text = title,
-                                    fontSize = 12.sp,
-                                    color = SidebarTextColor.copy(alpha = 0.9f)
-                                )
-                            },
-                            selected = false,
-                            onClick = {
-                                viewModel.createSession(title)
-                                viewModel.sendQuery(queryText)
-                                coroutineScope.launch { drawerState.close() }
-                            },
-                            icon = { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = PremiumCyan.copy(alpha = 0.7f), modifier = Modifier.size(12.dp)) },
-                            colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 1.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Search Conversations Box per User Intent
-                    androidx.compose.foundation.text.BasicTextField(
-                        value = sidebarSearchQuery,
-                        onValueChange = { sidebarSearchQuery = it },
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            color = SidebarTextColor,
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.SansSerif
-                        ),
-                        singleLine = true,
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(PremiumCyan),
-                        decorationBox = { innerTextField ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(DeepMidnight)
-                                    .border(1.dp, if (ThemeManager.themeName == "Polar Dawn") Color(0xFFCBD5E1) else SurfaceCardColor, RoundedCornerShape(10.dp))
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Search",
-                                    tint = PremiumCyan,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                                    if (sidebarSearchQuery.isEmpty()) {
-                                        Text(
-                                            text = "Search conversations...",
-                                            fontSize = 13.sp,
-                                            color = PlaceholderColor
-                                        )
-                                    }
-                                    innerTextField()
-                                }
-                                if (sidebarSearchQuery.isNotEmpty()) {
-                                    IconButton(
-                                        onClick = { sidebarSearchQuery = "" },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Clear",
-                                            tint = TextSecondaryColor,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // SEC 2: RECENT CONVERSATIONS
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.List, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "RECENT CONVERSATIONS",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextSecondaryColor,
-                            letterSpacing = 1.sp
-                        )
-                    }
-
-                    // Filtering Logic
-                    val filteredSessions = remember(sessions, sidebarSearchQuery) {
-                        if (sidebarSearchQuery.isBlank()) {
-                            sessions
-                        } else {
-                            sessions.filter { session ->
-                                session.title.contains(sidebarSearchQuery, ignoreCase = true)
-                            }
-                        }
-                    }
-
-                    if (filteredSessions.isEmpty()) {
-                        Text(
-                            text = if (sidebarSearchQuery.isEmpty()) "No conversation history." else "No matches found.",
-                            fontSize = 11.sp,
-                            color = TextSecondaryColor,
-                            modifier = Modifier.padding(horizontal = 25.dp, vertical = 8.dp),
-                            fontStyle = FontStyle.Italic
-                        )
-                    } else {
-                        filteredSessions.forEach { session ->
-                            val isSelected = session.id == activeSessionId
-                            val relativeTime = getRelativeTimeString(session.lastUpdatedAt)
-                            
-                            val isPolarDawn = ThemeManager.themeName == "Polar Dawn"
-                            val containerBackground = if (isSelected) {
-                                if (isPolarDawn) Color(0xFFEDE8FB) else SurfaceCardColor
-                            } else {
-                                Color.Transparent
-                            }
-                            val containerTitleColor = if (isSelected) {
-                                if (isPolarDawn) Color(0xFF0F172A) else Color.White
-                            } else {
-                                TextSecondaryColor
-                            }
-                            val containerTimeColor = if (isPolarDawn) {
-                                Color(0xFF64748B)
-                            } else {
-                                TextSecondaryColor.copy(alpha = 0.7f)
-                            }
-
-                            androidx.compose.material3.Surface(
-                                onClick = {
-                                    viewModel.selectSession(session.id)
-                                    coroutineScope.launch { drawerState.close() }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 2.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                color = containerBackground,
-                                border = if (isSelected) BorderStroke(1.dp, ElectricViolet.copy(alpha = 0.5f)) else null
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Custom Star Pin / Unpin button toggles isPinned locally with aesthetic response
-                                    IconButton(
-                                        onClick = { viewModel.togglePinSession(session.id) },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Star,
-                                            contentDescription = if (session.isPinned) "Unpin" else "Pin",
-                                            tint = if (session.isPinned) WarningColor else Color.Gray.copy(alpha = 0.5f),
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                    
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = session.title,
-                                            maxLines = 1,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            fontSize = 12.sp,
-                                            color = containerTitleColor
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = relativeTime,
-                                            fontSize = 10.sp,
-                                            color = containerTimeColor
-                                        )
-                                    }
-                                    
-                                    // Close / Delete Session button
-                                    IconButton(
-                                        onClick = { viewModel.deleteSession(session.id) },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Delete",
-                                            tint = ErrorColor.copy(alpha = 0.7f),
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // SEC 3: SYSTEM WORKSPACES
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.Home, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "ACTIVE ENTERPRISE WORKSPACES",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextSecondaryColor,
-                            letterSpacing = 1.sp
-                        )
-                    }
-
-                    val workspaceNodes = listOf("Cognitive Forensics Lab", "Strategic Alignment Workspace")
-                    workspaceNodes.forEach { ws ->
-                        NavigationDrawerItem(
-                            label = { Text(ws, fontSize = 12.sp, color = TextSecondaryColor) },
-                            selected = false,
-                            onClick = {
-                                Toast.makeText(context, "$ws activated locally.", Toast.LENGTH_SHORT).show()
-                            },
-                            icon = { Box(modifier = Modifier.size(6.dp).background(ElectricViolet, CircleShape)) },
-                            colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = Color.Transparent),
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 1.dp)
-                        )
-                    }
-                }
-            }
-        }
+    // Old navigation drawer / sidebar completely removed
+    // Themed background spans the WHOLE screen (incl. behind the top bar & bottom nav),
+    // so the header/nav float over the gradient like the preview — no opaque dark bands.
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .glassScreenBackground()
     ) {
         // Active visual state controllers
-        var currentTab by remember { mutableStateOf("home") }
 
+        // Apply the theme ONLY when the user actively changes it — not on first
+        // composition. setTheme() resets the accent to the theme default, so running
+        // it on every launch was wiping the user's saved accent → theme/color appeared
+        // to "revert to default" after reopening the app.
+        var themeApplyReady by remember { mutableStateOf(false) }
         LaunchedEffect(activeThemeName) {
-            ThemeManager.setTheme(context, activeThemeName)
+            if (themeApplyReady) {
+                ThemeManager.setTheme(context, activeThemeName)
+            } else {
+                themeApplyReady = true
+            }
         }
 
         Scaffold(
-            containerColor = DeepMidnight,
+            containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                if (!WindowInsets.isImeVisible && currentTab != "edit_profile") {
-                    Row(
+                if (currentTab != "voice_conversation" && !WindowInsets.isImeVisible) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Surface1)
-                            .border(1.dp, BorderSubtle)
                             .navigationBarsPadding()
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceAround,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(top = 0.dp, bottom = 12.dp, start = 24.dp, end = 24.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        BottomTabItem(
-                            tabId = "home",
-                            label = "Home",
-                            isActive = currentTab == "home",
-                            onClick = { currentTab = "home" }
-                        )
-                        BottomTabItem(
-                            tabId = "sessions",
-                            label = "Sessions",
-                            isActive = currentTab == "sessions",
-                            onClick = { currentTab = "sessions" }
-                        )
-                        BottomTabItem(
-                            tabId = "settings",
-                            label = "Settings",
-                            isActive = currentTab == "settings",
-                            onClick = { currentTab = "settings" }
-                        )
+                        Row(
+                            modifier = Modifier
+                                .wrapContentWidth()
+                                .height(78.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            listOf(
+                                Triple("home", "Chat", "home"),
+                                Triple("insights", "Insights", "insights"),
+                                Triple("settings", "Settings", "settings")
+                            ).forEach { (tabId, label, _) ->
+                                val isActive = currentTab == tabId
+                                BottomTabItem(
+                                    tabId = tabId,
+                                    label = label,
+                                    isActive = isActive,
+                                    onClick = { 
+                                        currentTab = tabId 
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
         ) { innerPadding ->
+            val bottomPadding = if (WindowInsets.isImeVisible) {
+                0.dp
+            } else {
+                (innerPadding.calculateBottomPadding() - 10.dp).coerceAtLeast(0.dp)
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -2001,93 +2090,171 @@ Text(
                         start = innerPadding.calculateStartPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
                         top = 0.dp,
                         end = innerPadding.calculateEndPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
-                        bottom = innerPadding.calculateBottomPadding()
+                        bottom = bottomPadding
                     )
             ) {
-                // Multi-screen routing
-                when (currentTab) {
-                    "home" -> {
-                        HomeScreen(
-                            sessions = sessions,
-                            selectedMode = selectedMode,
-                            onModeSelected = { selectedMode = it; viewModel.setSelectedMode(it) },
-                            selectedDepth = selectedDepth,
-                            onDepthSelected = { selectedDepth = it; viewModel.setSelectedDepth(it) },
-                            isDeepThoughtEnabled = isDeepThoughtEnabled,
-                            onDeepThoughtToggle = { viewModel.setDeepThoughtEnabled(it) },
-                            onSessionSelected = { sessionId -> viewModel.selectSession(sessionId) },
-                            onSubmitQuery = { text -> viewModel.sendQuery(text) },
-                            onNavigateToChat = { /* no-op: results shown on home */ },
-                            onNavigateToAnalysis = { /* no-op: removed */ },
-                            archivedInsights = archivedInsights,
-                            onDeleteArchivedInsight = { id -> viewModel.deleteArchivedInsight(id) },
-                            activeMessages = activeMessages,
-                            isLoading = isLoading,
-                            onRetryLastAnalysis = { msgId -> viewModel.retryLastAnalysis(msgId) },
-                            onRegenerateLastAnalysis = { msgId -> viewModel.regenerateLastAnalysis(msgId) },
-                            onOpenDrawer = { coroutineScope.launch { drawerState.open() } },
-                            onCreateNewSession = { viewModel.createSession("") },
-                            onDeleteMessage = { id -> viewModel.deleteMessage(id) },
-                            isPrivacyModeEnabled = isPrivacyModeEnabled
-                        )
-                    }
-                    "sessions" -> {
-                        SessionsScreen(
-                            sessions = sessions,
-                            activeSessionId = activeSessionId,
-                            onSessionSelected = { sessionId -> viewModel.selectSession(sessionId) },
-                            onCreateNewSession = { viewModel.createSession("") },
-                            onDeleteSession = { sessionId -> viewModel.deleteSession(sessionId) },
-                            onNavigateToChat = { currentTab = "home" },
-                            onTogglePinSession = { sessionId -> viewModel.togglePinSession(sessionId) }
-                        )
-                    }
-                    "settings" -> {
-                        SettingsScreen(
-                            isMemoryEnabled = isMemoryEnabled,
-                            onMemoryEnabledChanged = { viewModel.setMemoryEnabled(it) },
-                            notificationsEnabled = notificationsEnabled,
-                            onNotificationsEnabledChanged = { viewModel.setNotificationsEnabled(it) },
-                            isCollectiveOptIn = isCollectiveOptIn,
-                            onCollectiveOptInChanged = { viewModel.setCollectiveIntelligenceOptIn(it) },
-                            isPrivacyModeEnabled = isPrivacyModeEnabled,
-                            onPrivacyModeEnabledChanged = { viewModel.setPrivacyModeEnabled(it) },
-                            activeThemeName = activeThemeName,
-                            onThemeSelected = { activeThemeName = it },
-                            onShowMemoryDetails = { showMemoryDialog = true },
-                            onShowUpdateDetails = { showUpdatesDialog = true },
-                            onWipeAllUserData = { showResetConfirm = true },
-                            onShowAbout = { showAboutDialog = true },
-                            onReportBug = { showReportBugDialog = true },
-                            isLoggedIn = isLoggedIn,
-                            isGuest = isGuest,
-                            userName = userName,
-                            userEmail = userEmail,
-                            userPhotoUrl = userPhotoUrl,
-                            onNavigateToEditProfile = { currentTab = "edit_profile" },
-                            githubToken = githubToken,
-                            repoOwnerAndName = repoOwnerAndName,
-                            onSaveGithubSettings = { token, repo -> viewModel.saveGithubSettings(token, repo) },
-                            onSignOut = { viewModel.signOut() },
-                            onLoginWithGoogle = { email, name -> viewModel.loginWithGoogle(email, name) },
-                            onLoginAsGuest = { name -> viewModel.loginAsGuest(name) },
-                            diagnostics = diagnostics,
-                            onRefreshDiagnostics = { viewModel.refreshDiagnostics() },
-                            selectedModel = selectedModel,
-                            onModelSelected = { viewModel.setSelectedModel(it) },
-                            syncStatus = syncStatus,
-                            lastSyncedTime = lastSyncedTime,
-                            chatsSyncedCount = chatsSyncedCount,
-                            pendingUploadsCount = pendingUploadsCount
-                        )
-                    }
-                    "edit_profile" -> {
-                        EditProfileScreen(
-                            viewModel = viewModel,
-                            onNavigateBack = { currentTab = "settings" }
-                        )
+                // Multi-screen routing with smooth fade + subtle slide-up transition
+                AnimatedContent(
+                    targetState = currentTab,
+                    transitionSpec = {
+                        val premiumEasing = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
+                        (fadeIn(animationSpec = tween(300, easing = premiumEasing)) + slideInVertically(
+                            animationSpec = tween(300, easing = premiumEasing),
+                            initialOffsetY = { (it * 0.05f).toInt() }
+                        )).togetherWith(fadeOut(animationSpec = tween(250, easing = premiumEasing)) + slideOutVertically(
+                            animationSpec = tween(250, easing = premiumEasing),
+                            targetOffsetY = { (it * -0.02f).toInt() }
+                        ))
+                    },
+                    label = "screen_routing_transition",
+                    modifier = Modifier.fillMaxSize()
+                ) { targetTab ->
+                    when (targetTab) {
+                        "home" -> {
+                            HomeScreen(
+                                sessions = sessions,
+                                selectedMode = selectedMode,
+                                onModeSelected = { viewModel.setSelectedMode(it) },
+                                selectedDepth = selectedDepth,
+                                onDepthSelected = { selectedDepth = it; viewModel.setSelectedDepth(it) },
+                                isDeepThoughtEnabled = isDeepThoughtEnabled,
+                                onDeepThoughtToggle = { viewModel.setDeepThoughtEnabled(it) },
+                                onSessionSelected = { sessionId -> viewModel.selectSession(sessionId) },
+                                onSubmitQuery = { text -> viewModel.sendQuery(text) },
+                                onNavigateToChat = { /* no-op: results shown on home */ },
+                                onNavigateToAnalysis = { /* no-op: removed */ },
+                                onAddAttachment = { uri -> viewModel.setAttachment(uri) },
+                                onRemoveAttachment = { viewModel.clearAttachment() },
+                                onRemoveAttachmentUri = { uri -> viewModel.removeAttachmentUri(uri) },
+                                attachedImageUri = attachedImageUri,
+                                archivedInsights = archivedInsights,
+                                onDeleteArchivedInsight = { id -> viewModel.deleteArchivedInsight(id) },
+                                activeMessages = activeMessages,
+                                isLoading = isLoading,
+                                onStopGeneration = { viewModel.stopActiveGeneration() },
+                                onRetryLastAnalysis = { msgId -> viewModel.retryLastAnalysis(msgId) },
+                                onRegenerateLastAnalysis = { msgId -> viewModel.regenerateLastAnalysis(msgId) },
+                                onOpenDrawer = { currentTab = "sessions" },
+                                onCreateNewSession = { viewModel.createSession("") },
+                                onDeleteMessage = { id -> viewModel.deleteMessage(id) },
+                                isPrivacyModeEnabled = isPrivacyModeEnabled,
+                                onGetAttachmentsFlow = { msgId, uriField -> viewModel.getAttachmentsForMessageFlow(msgId, uriField) },
+                                speechManager = viewModel.speechManager,
+                                onNavigateToVoiceMode = { currentTab = "voice_conversation" },
+                                onDigDeeper = { originalPrompt, responseText -> viewModel.digDeeper(originalPrompt, responseText) },
+                                selectedMessageId = selectedMessageId,
+                                selectedText = selectedText,
+                                replyMessageId = replyMessageId,
+                                replySelectedText = replySelectedText,
+                                onEnterSelectionMode = { msgId, txt -> viewModel.enterSelectionMode(msgId, txt) },
+                                onClearSelectionMode = { viewModel.clearSelectionMode() },
+                                onSetReplyState = { msgId, txt -> viewModel.setReplyState(msgId, txt) },
+                                onClearReplyState = { viewModel.clearReplyState() }
+                            )
+                        }
+                        "sessions" -> {
+                            SessionsScreen(
+                                searchResults = searchResults,
+                                searchQuery = sessionSearchQuery,
+                                onSearchQueryChange = { viewModel.setSessionSearchQuery(it) },
+                                activeSessionId = activeSessionId,
+                                onSessionSelected = { sessionId -> viewModel.selectSession(sessionId) },
+                                onCreateNewSession = { viewModel.createSession("") },
+                                onDeleteSession = { sessionId -> viewModel.deleteSession(sessionId) },
+                                onNavigateToChat = { currentTab = "home" },
+                                onTogglePinSession = { sessionId -> viewModel.togglePinSession(sessionId) },
+                                onRenameSession = { sessionId, newTitle -> viewModel.renameSession(sessionId, newTitle) },
+                                listState = sessionsListState
+                            )
+                        }
+                        "insights" -> {
+                            AnalysisScreen(
+                                activeMessages = activeMessages,
+                                selectedMode = selectedMode,
+                                onBackToHome = { currentTab = "home" },
+                                onSubmitQuery = { text -> viewModel.sendQuery(text) },
+                                deepDiveInsights = deepDiveInsights,
+                                isDeepDiveLoading = isDeepDiveLoading,
+                                onGenerateDeepDive = { originalPrompt, responseText -> viewModel.digDeeper(originalPrompt, responseText) },
+                                sessions = sessions,
+                                memoryInsights = memoryInsights,
+                                archivedInsights = archivedInsights,
+                                probabilityForecast = probabilityForecast
+                            )
+                        }
+                        "settings" -> {
+                            SettingsScreen(
+                                isMemoryEnabled = isMemoryEnabled,
+                                onMemoryEnabledChanged = { viewModel.setMemoryEnabled(it) },
+                                notificationsEnabled = notificationsEnabled,
+                                onNotificationsEnabledChanged = { viewModel.setNotificationsEnabled(it) },
+                                voiceOutputEnabled = voiceOutputEnabled,
+                                onVoiceOutputEnabledChanged = { viewModel.setVoiceOutputEnabled(it) },
+                                wakeWordEnabled = wakeWordEnabled,
+                                onWakeWordEnabledChanged = { viewModel.setWakeWordEnabled(it) },
+                                isCollectiveOptIn = isCollectiveOptIn,
+                                onCollectiveOptInChanged = { viewModel.setCollectiveIntelligenceOptIn(it) },
+                                isPrivacyModeEnabled = isPrivacyModeEnabled,
+                                onPrivacyModeEnabledChanged = { viewModel.setPrivacyModeEnabled(it) },
+                                activeThemeName = activeThemeName,
+                                onThemeSelected = { activeThemeName = it },
+                                onShowMemoryDetails = { showMemoryDialog = true },
+                                onShowUpdateDetails = { showUpdatesDialog = true },
+                                onWipeAllUserData = { showResetConfirm = true },
+                                onShowAbout = { showAboutDialog = true },
+                                onReportBug = { showReportBugDialog = true },
+                                isLoggedIn = isLoggedIn,
+                                isGuest = isGuest,
+                                userName = userName,
+                                userEmail = userEmail,
+                                userPhotoUrl = userPhotoUrl,
+                                onNavigateToEditProfile = { currentTab = "edit_profile" },
+                                githubToken = githubToken,
+                                repoOwnerAndName = repoOwnerAndName,
+                                onSaveGithubSettings = { token, repo -> viewModel.saveGithubSettings(token, repo) },
+                                onSignOut = { showSignOutConfirm = true },
+                                onLoginWithGoogle = { email, name -> viewModel.loginWithGoogle(email, name) },
+                                onLoginAsGuest = { name -> viewModel.loginAsGuest(name) },
+                                diagnostics = diagnostics,
+                                onRefreshDiagnostics = { viewModel.refreshDiagnostics() },
+                                selectedModel = selectedModel,
+                                onModelSelected = { viewModel.setSelectedModel(it) },
+                                selectedVoiceAccent = voiceAccent,
+                                onVoiceAccentSelected = { viewModel.setVoiceAccent(it) },
+                                syncStatus = syncStatus,
+                                lastSyncedTime = lastSyncedTime,
+                                chatsSyncedCount = chatsSyncedCount,
+                                pendingUploadsCount = pendingUploadsCount,
+                                onNavigateBack = { currentTab = "home" }
+                            )
+                        }
+                        "edit_profile" -> {
+                            EditProfileScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { currentTab = "settings" }
+                            )
+                        }
                     }
                 }
+
+                VoiceConversationOverlay(
+                    visible = currentTab == "voice_conversation",
+                    onDismiss = {
+                        viewModel.speechManager.stop()
+                        currentTab = "home"
+                    },
+                    onSubmitQuery = { text, attachedUri -> 
+                        if (attachedUri != null) {
+                            viewModel.setAttachment(attachedUri)
+                        }
+                        viewModel.sendQuery(text)
+                    },
+                    onUserInterrupt = { viewModel.stopActiveGeneration() },
+                    isLoading = isLoading,
+                    speechManager = viewModel.speechManager,
+                    activeMessages = activeMessages,
+                    voiceOutputEnabled = voiceOutputEnabled
+                )
 
                 if (isDownloadingUpdate) {
                     SoftwareDownloadProgressBarCard(
@@ -2133,12 +2300,12 @@ Text(
                     ) {
                         // Hamburger menu removed as per bottom-nav constraint
 
-                        // App icon area: violet tint background, border
+                        // App icon area: theme accent tint background, border
                         Box(
                             modifier = Modifier
                                 .size(30.dp)
-                                .background(Color(0x2E7E65FF), shape = RoundedCornerShape(8.dp))
-                                .border(1.dp, Color(0x667E65FF), shape = RoundedCornerShape(8.dp)),
+                                .background(ThemeManager.accentColor.copy(alpha = 0.18f), shape = RoundedCornerShape(8.dp))
+                                .border(1.dp, ThemeManager.accentColor.copy(alpha = 0.45f), shape = RoundedCornerShape(8.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Canvas(modifier = Modifier.size(16.dp)) {
@@ -2150,7 +2317,7 @@ Text(
                                     cubicTo(w * 0.65f, h * 0.75f, w * 0.35f, h * 0.75f, w * 0.15f, h * 0.5f)
                                     close()
                                 }
-                                drawPath(path = outerPath, color = Color(0xFF7E65FF), style = Stroke(width = 1.2.dp.toPx()))
+                                drawPath(path = outerPath, color = ThemeManager.accentColor, style = Stroke(width = 1.2.dp.toPx()))
                                 drawCircle(color = Color(0xFF00D4FF), radius = w * 0.18f, style = Stroke(width = 1.dp.toPx()))
                             }
                         }
@@ -2169,17 +2336,17 @@ Text(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        // Mode badge: violet text #7E65FF, violet-dim background Color(0x2E7E65FF), rounded pill shape
+                        // Mode badge: theme accent text, theme accent-dim background, rounded pill shape
                         Box(
                             modifier = Modifier
-                                .background(Color(0x2E7E65FF), shape = RoundedCornerShape(20.dp))
-                                .border(1.dp, Color(0x667E65FF), shape = RoundedCornerShape(20.dp))
+                                .background(ThemeManager.accentColor.copy(alpha = 0.18f), shape = RoundedCornerShape(20.dp))
+                                .border(1.dp, ThemeManager.accentColor.copy(alpha = 0.45f), shape = RoundedCornerShape(20.dp))
                                 .padding(horizontal = 8.dp, vertical = 3.dp)
                         ) {
                             Text(
                                 text = selectedMode.uppercase(),
                                 fontSize = 9.sp,
-                                color = Color(0xFF7E65FF),
+                                color = ThemeManager.accentColor,
                                 fontFamily = DMMonoFontFamily,
                                 fontWeight = FontWeight.Bold
                             )
@@ -2218,11 +2385,18 @@ Text(
                                 onQuerySelected = { query -> viewModel.sendQuery(query) },
                                 onAddAttachment = { showAttachmentSelector = true },
                                 onRemoveAttachment = { viewModel.clearAttachment() },
+                                onRemoveAttachmentUri = { uri -> viewModel.removeAttachmentUri(uri) },
                                 attachedImageUri = attachedImageUri,
                                 isLoading = isLoading
                             )
                         } else {
                             // Comfortably padded scrolling Chat Feed
+                            val onGetAttachmentsFlowCached = remember(viewModel) {
+                                { msgId: String, uriField: String -> viewModel.getAttachmentsForMessageFlow(msgId, uriField) }
+                            }
+                            val onPromptSelectedCached = remember(viewModel) {
+                                { query: String -> viewModel.sendQuery(query) }
+                            }
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
@@ -2230,64 +2404,43 @@ Text(
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 items(activeMessages, key = { it.id }) { message ->
-                                        if (message.role == "user") {
-                                            UserMessageBubble(message)
+                                    if (message.role == "user") {
+                                        UserMessageBubble(message, onGetAttachmentsFlowCached)
+                                    } else {
+                                        if (message.text.startsWith("Error:") || message.text.contains("Error invoking DepthLens")) {
+                                            val onRetryCached = remember(message.id, viewModel) {
+                                                { viewModel.retryLastAnalysis(message.id) }
+                                            }
+                                            val onCancelCached = remember(message.id, viewModel) {
+                                                { viewModel.deleteMessage(message.id) }
+                                            }
+                                            val onReportBugCached = remember {
+                                                { showReportBugDialog = true }
+                                            }
+                                            AnalysisFailureErrorCard(
+                                                errorMessage = message.text,
+                                                onRetry = onRetryCached,
+                                                onReportBug = onReportBugCached,
+                                                onCancel = onCancelCached
+                                            )
                                         } else {
-                                            if (message.text.startsWith("Error:") || message.text.contains("Error invoking DepthLens")) {
-                                                AnalysisFailureErrorCard(
-                                                    errorMessage = message.text,
-                                                    onRetry = { viewModel.retryLastAnalysis(message.id) },
-                                                    onReportBug = { showReportBugDialog = true },
-                                                    onCancel = { viewModel.deleteMessage(message.id) }
-                                                )
-                                            } else {
-                                                val parsed = remember(message.text) { ResponseParser.parse(message.text) }
-                                                Column(modifier = Modifier.fillMaxWidth()) {
-                                                    // AI label: violet color #7E65FF, DM Mono font, uppercase, 8sp, with a 6dp violet dot prefix
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier.padding(bottom = 6.dp)
-                                                    ) {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(6.dp)
-                                                                .background(Color(0xFF7E65FF), CircleShape)
-                                                        )
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Text(
-                                                            text = "DEPTHLENS" + (if (parsed.depthLayers.isNotEmpty()) " · ${parsed.depthLayers.size} LAYERS" else ""),
-                                                            fontSize = 8.sp,
-                                                            color = Color(0xFF7E65FF),
-                                                            fontFamily = DMMonoFontFamily,
-                                                            fontWeight = FontWeight.Bold,
-                                                            letterSpacing = 1.sp
-                                                        )
-                                                    }
-
-                                                    // AI bubble background: Color(0xFF141420), border: Color(0x0FFFFFFF), corner radius 14dp (top-left 3dp)
-                                                    Card(
-                                                        shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),
-                                                        colors = CardDefaults.cardColors(containerColor = SurfaceCardColor),
-                                                        border = BorderStroke(1.dp, CardBorderColor),
-                                                        modifier = Modifier.fillMaxWidth()
-                                                    ) {
-                                                        Column(modifier = Modifier.padding(12.dp)) {
-                                                            val associatedUserQuery = remember(message.id, activeMessages) {
-                                                                activeMessages
-                                                                    .subList(0, activeMessages.indexOfFirst { it.id == message.id }.coerceAtLeast(0))
-                                                                    .findLast { it.role == "user" }?.text ?: ""
-                                                            }
-                                                            DepthLensDiagnosticCard(
-                                                                parsed = parsed,
-                                                                userQuery = associatedUserQuery,
-                                                                onPromptSelected = { query -> viewModel.sendQuery(query) },
-                                                                messageId = message.id,
-                                                                onRegenerate = { viewModel.regenerateLastAnalysis(message.id) }
-                                                            )
-                                                        }
-                                                    }
+                                            val associatedUserQuery = remember(message.id) {
+                                                val idx = activeMessages.indexOfFirst { it.id == message.id }
+                                                if (idx > 0) {
+                                                     activeMessages.subList(0, idx).findLast { it.role == "user" }?.text ?: ""
+                                                } else {
+                                                     ""
                                                 }
                                             }
+                                            val onRegenerateCached = remember(message.id, viewModel) {
+                                                { viewModel.regenerateLastAnalysis(message.id) }
+                                            }
+                                            AssistantMessageBubble(
+                                                message = message,
+                                                associatedUserQuery = associatedUserQuery,
+                                                onPromptSelected = onPromptSelectedCached,
+                                                onRegenerate = onRegenerateCached
+                                            )
                                         }
                                     }
                                 }
@@ -2311,23 +2464,28 @@ Text(
                         )
                     } else if (activeMessages.isNotEmpty()) {
                         BottomInputPanel(
+                            selectedMode = selectedMode,
                             attachedImageUri = attachedImageUri,
                             isLoading = isLoading,
                             onAddAttachment = { showAttachmentSelector = true },
                             onRemoveAttachment = { viewModel.clearAttachment() },
                             onSubmit = { text -> viewModel.sendQuery(text) },
-                            onModeChanged = { selectedMode = it }
+                            onModeChanged = { viewModel.setSelectedMode(it) },
+                            onInputFocusChanged = { inputFocused = it }
                         )
                     }
                 }
 
-                // Floating Navigation Buttons (▲ Scroll to Top, ▼ Scroll to Bottom)
+                // Floating Navigation Buttons — hidden when keyboard is open
                 if (activeMessages.isNotEmpty()) {
-                    Box(
+                    AnimatedVisibility(
+                        visible = !inputFocused,
+                        enter = scaleIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
+                        exit = scaleOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(bottom = 100.dp, end = 16.dp),
-                        contentAlignment = Alignment.BottomEnd
+                            .wrapContentSize(Alignment.BottomEnd)
+                            .padding(bottom = 100.dp, end = 16.dp)
                     ) {
                         Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -2373,6 +2531,7 @@ Text(
                             }
                         }
                     }
+                }
                 }
 
                 if (showAttachmentSelector) {
@@ -2484,6 +2643,7 @@ fun LandingScreen(
     onQuerySelected: (String) -> Unit,
     onAddAttachment: () -> Unit,
     onRemoveAttachment: () -> Unit,
+    onRemoveAttachmentUri: (String) -> Unit = {},
     attachedImageUri: String?,
     isLoading: Boolean,
     modifier: Modifier = Modifier
@@ -2508,32 +2668,11 @@ fun LandingScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Glowing Iris Core Logo
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(96.dp)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(ElectricViolet.copy(alpha = 0.35f), Color.Transparent)
-                    )
-                )
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(RichNavy)
-                    .border(2.dp, PremiumCyan, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_depthlens_logo),
-                    contentDescription = "DepthLens Iris Core",
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-        }
+        // Glowing Iris Core Logo using the single shared component
+        DepthLensLogo(
+            size = 96.dp,
+            showGlow = true
+        )
 
         Spacer(modifier = Modifier.height(18.dp))
 
@@ -2568,13 +2707,22 @@ fun LandingScreen(
                 .padding(bottom = 24.dp)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                // If there's an active attached preview in center
-                attachedImageUri?.let { uri ->
-                    AttachmentPreviewItem(
-                        uri = uri,
-                        onRemove = onRemoveAttachment,
-                        modifier = Modifier.padding(bottom = 10.dp)
-                    )
+                // If there's active attached previews in center
+                attachedImageUri?.let { uriString ->
+                    val uris = uriString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    uris.forEach { singleUri ->
+                        AttachmentPreviewItem(
+                            uri = singleUri,
+                            onRemove = {
+                                if (uris.size <= 1) {
+                                    onRemoveAttachment()
+                                } else {
+                                    onRemoveAttachmentUri(singleUri)
+                                }
+                            },
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        )
+                    }
                 }
 
                 // Spacious multiline text input area
@@ -2723,8 +2871,60 @@ fun LandingScreen(
 }
 
 @Composable
+fun AssistantMessageBubble(
+    message: MessageEntity,
+    associatedUserQuery: String,
+    onPromptSelected: (String) -> Unit,
+    onRegenerate: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val parsed = remember(message.text) { ResponseParser.parse(message.text) }
+    Column(modifier = modifier.fillMaxWidth()) {
+        // AI label: theme accent color, DM Mono font, uppercase, 8sp, with a 6dp theme accent dot prefix
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(bottom = 6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(ThemeManager.accentColor, CircleShape)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "DEPTHLENS" + (if (parsed.depthLayers.isNotEmpty()) " · ${parsed.depthLayers.size} LAYERS" else ""),
+                fontSize = 8.sp,
+                color = ThemeManager.accentColor,
+                fontFamily = DMMonoFontFamily,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+        }
+
+        // AI bubble background: Color(0xFF141420), border: Color(0x0FFFFFFF), corner radius 14dp (top-left 3dp)
+        Card(
+            shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceCardColor),
+            border = BorderStroke(1.dp, CardBorderColor),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                DepthLensDiagnosticCard(
+                    parsed = parsed,
+                    userQuery = associatedUserQuery,
+                    onPromptSelected = onPromptSelected,
+                    messageId = message.id,
+                    onRegenerate = onRegenerate
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun UserMessageBubble(
     message: MessageEntity,
+    onGetAttachmentsFlow: (String, String) -> kotlinx.coroutines.flow.Flow<List<com.example.data.model.AttachmentEntity>>,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -2737,40 +2937,53 @@ fun UserMessageBubble(
             modifier = Modifier.fillMaxWidth(0.85f)
         ) {
             Column(horizontalAlignment = Alignment.End) {
-                if (!message.imageUri.isNullOrEmpty()) {
-                    val context = LocalContext.current
-                    val mimeType = remember(message.imageUri) { getUriMimeType(context, message.imageUri) }
-                    
-                    when {
-                        mimeType.startsWith("image/") -> {
-                            Card(
-                                border = BorderStroke(1.dp, SurfaceCardColor),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .padding(bottom = 6.dp)
-                                    .size(130.dp)
-                            ) {
-                                AsyncImage(
-                                    model = message.imageUri,
-                                    contentDescription = "Source thumbnail",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                val attachmentsState = remember(message.id, message.imageUri) {
+                    onGetAttachmentsFlow(message.id, message.imageUri ?: "")
+                }.collectAsState(initial = emptyList())
+                val attachments = attachmentsState.value
+
+                if (attachments.isNotEmpty()) {
+                    attachments.forEach { attachment ->
+                        val context = LocalContext.current
+                        val mimeType = attachment.mimeType
+                        val modelToLoad = if (!attachment.remoteUrl.isNullOrBlank()) attachment.remoteUrl else attachment.localUri
+                        
+                        when {
+                            mimeType.startsWith("image/") -> {
+                                Card(
+                                    border = BorderStroke(1.dp, SurfaceCardColor),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .padding(bottom = 6.dp)
+                                        .size(130.dp)
+                                ) {
+                                    AsyncImage(
+                                        model = modelToLoad,
+                                        contentDescription = "Source thumbnail",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                             }
-                        }
-                        mimeType.startsWith("audio/") -> {
-                            AudioPlayBubble(uriString = message.imageUri)
-                        }
-                        else -> {
-                            FileDocumentBubble(uriString = message.imageUri, mimeType = mimeType)
+                            mimeType.startsWith("audio/") -> {
+                                AudioPlayBubble(uriString = modelToLoad)
+                            }
+                            else -> {
+                                FileDocumentBubble(uriString = modelToLoad, mimeType = mimeType)
+                            }
                         }
                     }
                 }
 
                 Card(
                     shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomEnd = 3.dp, bottomStart = 14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0x2E7E65FF)),
-                    border = BorderStroke(1.dp, Color(0x667E65FF)),
+                    colors = CardDefaults.cardColors(
+                        containerColor = ThemeManager.accentColor.copy(alpha = if (ThemeManager.isDarkTheme) 0.90f else 0.92f)
+                    ),
+                    border = BorderStroke(
+                        width = 1.dp,
+                        color = ThemeManager.accentColor.copy(alpha = 0.8f)
+                    ),
                     modifier = Modifier.padding(bottom = 2.dp)
                 ) {
                     androidx.compose.foundation.text.selection.SelectionContainer {
@@ -2815,11 +3028,11 @@ fun DepthLensDiagnosticCard(
                 .padding(bottom = 12.dp)
         ) {
             androidx.compose.foundation.text.selection.SelectionContainer {
-                Text(
+                FormattedResponseText(
                     text = parsed.introduction,
                     fontSize = 13.sp,
-                    color = TextPrimaryColor,
                     lineHeight = 20.sp,
+                    color = TextPrimaryColor,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
             }
@@ -2866,11 +3079,11 @@ fun DepthLensDiagnosticCard(
         // Conversation overview context
         if (cleanIntroDisplay.isNotEmpty()) {
             androidx.compose.foundation.text.selection.SelectionContainer {
-                Text(
+                FormattedResponseText(
                     text = cleanIntroDisplay,
                     fontSize = 13.sp,
-                    color = TextPrimaryColor,
                     lineHeight = 20.sp,
+                    color = TextPrimaryColor,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
             }
@@ -3803,30 +4016,23 @@ fun DiagnosticIndicatorBlock(label: String, content: String) {
 
 @Composable
 fun BottomInputPanel(
+    selectedMode: String,
     attachedImageUri: String?,
     isLoading: Boolean,
     onAddAttachment: () -> Unit,
     onRemoveAttachment: () -> Unit,
     onSubmit: (String) -> Unit,
     onModeChanged: (String) -> Unit = {},
+    onInputFocusChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var rawText by remember { mutableStateOf("") }
-    val modes = listOf("Root Cause", "Deep Synthesis", "Psychology", "Systems", "Probability", "Multi-Layer")
-    var selectedMode by remember { mutableStateOf("Root Cause") }
+    val modes = listOf("Multi-Layer", "Deep Synthesis", "Psychology", "Systems", "Probability", "Root Cause")
 
     var isListeningForSpeech by remember { mutableStateOf(false) }
     val speechContext = LocalContext.current
     val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
     
-    val speechRecognizer = remember {
-        try {
-            android.speech.SpeechRecognizer.createSpeechRecognizer(speechContext)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
     val recognitionListener = remember {
         object : android.speech.RecognitionListener {
             override fun onReadyForSpeech(params: android.os.Bundle?) {}
@@ -3852,25 +4058,22 @@ fun BottomInputPanel(
         }
     }
 
-    LaunchedEffect(speechRecognizer) {
-        speechRecognizer?.setRecognitionListener(recognitionListener)
-    }
-
     DisposableEffect(Unit) {
         onDispose {
-            speechRecognizer?.destroy()
+            com.example.ui.viewmodel.SharedSpeechRecognizerManager.setListener(null, "DASHBOARD_SCREEN_MIC")
+            com.example.ui.viewmodel.SharedSpeechRecognizerManager.releaseOwnership("DASHBOARD_SCREEN_MIC")
         }
     }
 
     val audioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (isGranted && speechRecognizer != null) {
+        if (isGranted) {
             isListeningForSpeech = true
             val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             }
-            speechRecognizer.startListening(intent)
+            com.example.ui.viewmodel.SharedSpeechRecognizerManager.startListening(speechContext, intent, recognitionListener, "DASHBOARD_SCREEN_MIC")
         }
     }
 
@@ -3890,10 +4093,11 @@ fun BottomInputPanel(
             .navigationBarsPadding()
             .padding(12.dp)
     ) {
-        // Mode chips row: inactive chip has border Color(0x0FFFFFFF), text Color(0x4DF0EEFF). Active mode chip: border #7E65FF, text #7E65FF, background Color(0x2E7E65FF)
+        // Mode chips row: inactive chip has border Color(0x0FFFFFFF), text Color(0x4DF0EEFF). Active mode chip: theme accent border, theme accent text, theme accent-dim background
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .padding(bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -3903,16 +4107,15 @@ fun BottomInputPanel(
                 Box(
                     modifier = Modifier
                         .clickable { 
-                            selectedMode = mode 
                             onModeChanged(mode)
                         }
                         .background(
-                            color = if (isActive) Color(0x2E7E65FF) else Color.Transparent,
+                            color = if (isActive) ThemeManager.accentColor.copy(alpha = 0.18f) else Color.Transparent,
                             shape = RoundedCornerShape(20.dp)
                         )
                         .border(
                             width = 1.dp,
-                            color = if (isActive) Color(0xFF7E65FF) else Color(0x0FFFFFFF),
+                            color = if (isActive) ThemeManager.accentColor else Color(0x0FFFFFFF),
                             shape = RoundedCornerShape(20.dp)
                         )
                         .padding(horizontal = 10.dp, vertical = 4.dp)
@@ -3922,7 +4125,7 @@ fun BottomInputPanel(
                         fontSize = 8.5.sp,
                         fontFamily = DMMonoFontFamily,
                         fontWeight = FontWeight.Bold,
-                        color = if (isActive) Color(0xFF7E65FF) else Color(0x4DF0EEFF)
+                        color = if (isActive) ThemeManager.accentColor else Color(0x4DF0EEFF)
                     )
                 }
             }
@@ -3974,7 +4177,8 @@ fun BottomInputPanel(
                     .clip(RoundedCornerShape(28.dp))
                     .background(Surface2) // Surface 2
                     .border(1.dp, BorderSubtle, RoundedCornerShape(28.dp)) // Border subtle
-                    .heightIn(min = 40.dp, max = 110.dp),
+                    .heightIn(min = 40.dp, max = 110.dp)
+                    .onFocusChanged { onInputFocusChanged(it.isFocused) },
                 maxLines = 4,
                 colors = TextFieldDefaults.colors(
                     focusedTextColor = TextPrimaryColor, // ink-1 dynamic
@@ -3994,7 +4198,8 @@ fun BottomInputPanel(
                 onClick = {
                     hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                     if (isListeningForSpeech) {
-                        speechRecognizer?.stopListening()
+                        com.example.ui.viewmodel.SharedSpeechRecognizerManager.stopListening("DASHBOARD_SCREEN_MIC")
+                        com.example.ui.viewmodel.SharedSpeechRecognizerManager.releaseOwnership("DASHBOARD_SCREEN_MIC")
                         isListeningForSpeech = false
                     } else {
                         val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
@@ -4007,7 +4212,7 @@ fun BottomInputPanel(
                             val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                 putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                             }
-                            speechRecognizer?.startListening(intent)
+                            com.example.ui.viewmodel.SharedSpeechRecognizerManager.startListening(speechContext, intent, recognitionListener, "DASHBOARD_SCREEN_MIC")
                         } else {
                             audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
                         }
@@ -4047,7 +4252,7 @@ fun BottomInputPanel(
                 enabled = !isLoading && (rawText.trim().isNotBlank() || attachedImageUri != null),
                 modifier = Modifier
                     .size(40.dp)
-                    .background(Color(0xFF7E65FF), CircleShape) // Violet Send Button
+                    .background(ThemeManager.accentColor, CircleShape) // Theme-dependent Send Button
                     .clip(CircleShape)
             ) {
                 Icon(
@@ -4168,6 +4373,7 @@ fun AudioPlayBubble(uriString: String) {
 
 @Composable
 fun FileDocumentBubble(uriString: String, mimeType: String) {
+    val context = LocalContext.current
     val (typeName, color) = remember(mimeType) {
         when {
             mimeType == "application/pdf" -> "PDF Source Document" to ErrorColor
@@ -4180,6 +4386,7 @@ fun FileDocumentBubble(uriString: String, mimeType: String) {
         modifier = Modifier
             .padding(vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
+            .clickable { openAttachment(context, uriString, mimeType) }
             .background(RichNavy)
             .border(1.dp, SurfaceCardColor, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -4481,7 +4688,7 @@ fun ConversationContinuityDashboard(
                             text = "Continuity summary minimized. Tap arrow to expand.",
                             fontSize = 10.sp,
                             color = PremiumCyan,
-                            fontStyle = FontStyle.Italic
+                            fontStyle = FontStyle.Normal
                         )
                     }
                 }
@@ -5212,109 +5419,308 @@ fun BottomTabItem(
     isActive: Boolean,
     onClick: () -> Unit
 ) {
-    val tint = if (isActive) ElectricViolet else TextMutedColor
-    Column(
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    
+    val transitionDuration = 280
+    val cubicBezierEasing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+
+    // Press scale shrinks button down slightly (active press: scale(.95))
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.95f else 1.0f,
+        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        label = "press_scale"
+    )
+
+    // popIn Animatable for scale and opacity matching HTML @keyframes popIn exactly
+    val popInScale = remember { Animatable(if (isActive) 1f else 1f) }
+    val popInOpacity = remember { Animatable(if (isActive) 1f else 1f) }
+
+    LaunchedEffect(isActive) {
+        if (isActive) {
+            popInOpacity.snapTo(0.75f)
+            popInScale.snapTo(0.88f)
+            // Parallel execution of opacity and scale
+            launch {
+                popInOpacity.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 340, easing = cubicBezierEasing)
+                )
+            }
+            launch {
+                popInScale.animateTo(
+                    targetValue = 1.06f,
+                    animationSpec = tween(durationMillis = 204, easing = cubicBezierEasing)
+                )
+                popInScale.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 136, easing = cubicBezierEasing)
+                )
+            }
+        } else {
+            popInScale.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 280, easing = cubicBezierEasing)
+            )
+            popInOpacity.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 280, easing = cubicBezierEasing)
+            )
+        }
+    }
+
+    val finalScale = pressScale * popInScale.value
+
+    // Icon scale (scales icon up slightly when active, matching HTML's popIn scale on svg)
+    val iconScale by animateFloatAsState(
+        targetValue = if (isActive) 1.08f else 1.0f,
+        animationSpec = tween(durationMillis = transitionDuration, easing = cubicBezierEasing),
+        label = "icon_scale"
+    )
+
+    // Tint for icon/label
+    val tint by animateColorAsState(
+        targetValue = when {
+            isActive -> Color.White
+            else -> TextMutedColor
+        },
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "content_tint"
+    )
+
+    // Glow alpha transition for the Neon Halo outer glow
+    val glowAlpha by animateFloatAsState(
+        targetValue = if (isActive) 1.0f else 0.0f,
+        animationSpec = tween(durationMillis = transitionDuration, easing = cubicBezierEasing),
+        label = "glow_alpha"
+    )
+
+    Box(
         modifier = Modifier
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .width(64.dp)
+            .height(54.dp),
+        contentAlignment = Alignment.Center
     ) {
+        // Double-layer Neon Halo Glow behind the active button
+        if (glowAlpha > 0.01f) {
+            // Layer 1: Tight halo (20px glow, 75% intensity of Theme accent color)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(1.3f)
+                    .background(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.0f to ElectricViolet.copy(alpha = glowAlpha * 0.75f),
+                                0.4f to ElectricViolet.copy(alpha = glowAlpha * 0.35f),
+                                1.0f to Color.Transparent
+                            )
+                        )
+                    )
+            )
+
+            // Layer 2: Wide bloom (44px halo, 38% intensity of Theme accent color)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(2.2f)
+                    .background(
+                        brush = Brush.radialGradient(
+                            colorStops = arrayOf(
+                                0.0f to ElectricViolet.copy(alpha = glowAlpha * 0.38f),
+                                0.5f to ElectricViolet.copy(alpha = glowAlpha * 0.12f),
+                                1.0f to Color.Transparent
+                            )
+                        )
+                    )
+            )
+        }
+
+        // Content layer - active tab is a contained rounded-corner glossy 3D button
         Box(
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .scale(finalScale)
+                .then(
+                    if (isActive) Modifier.clip(RoundedCornerShape(17.dp))
+                    else Modifier
+                )
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick
+                )
+                .graphicsLayer {
+                    alpha = if (isActive) popInOpacity.value else 1f
+                }
+                .drawBehind {
+                    if (isActive) {
+                        val cornerRadiusPx = 17.dp.toPx()
+                        val cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
+
+                        // 1. Glossy gradient background
+                        // linear-gradient(160deg, color-mix(in srgb, var(--accent) 90%, white 14%), var(--accent) 45%, var(--accent3))
+                        val glossyBrush = Brush.linearGradient(
+                            colorStops = arrayOf(
+                                0.0f to lerp(ElectricViolet, Color.White, 0.14f),
+                                0.45f to ElectricViolet,
+                                1.0f to GradientEnd
+                            ),
+                            start = Offset(size.width * 0.2f, 0f),
+                            end = Offset(size.width * 0.8f, size.height)
+                        )
+                        drawRoundRect(brush = glossyBrush, cornerRadius = cornerRadius)
+
+                        // 2. Inset top highlight: inset 0 1.5px 0 rgba(255,255,255,.55)
+                        val topHighlightBrush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.55f),
+                                Color.Transparent
+                            ),
+                            startY = 0f,
+                            endY = 1.5.dp.toPx()
+                        )
+                        drawRoundRect(brush = topHighlightBrush, cornerRadius = cornerRadius)
+
+                        // 3. Inset bottom shading: inset 0 -11px 18px color-mix(in srgb, var(--accent3) 65%, transparent)
+                        val bottomShadeBrush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                GradientEnd.copy(alpha = 0.65f)
+                            ),
+                            startY = (size.height - 24.dp.toPx()).coerceAtLeast(0f),
+                            endY = size.height
+                        )
+                        drawRoundRect(brush = bottomShadeBrush, cornerRadius = cornerRadius)
+                    }
+                },
             contentAlignment = Alignment.Center
         ) {
-            when (tabId) {
-                "home" -> {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val path = Path().apply {
-                            moveTo(size.width * 0.15f, size.height * 0.85f)
-                            lineTo(size.width * 0.15f, size.height * 0.45f)
-                            lineTo(size.width * 0.5f, size.height * 0.15f)
-                            lineTo(size.width * 0.85f, size.height * 0.45f)
-                            lineTo(size.width * 0.85f, size.height * 0.85f)
-                            close()
-                            
-                            moveTo(size.width * 0.4f, size.height * 0.85f)
-                            lineTo(size.width * 0.4f, size.height * 0.55f)
-                            lineTo(size.width * 0.6f, size.height * 0.55f)
-                            lineTo(size.width * 0.6f, size.height * 0.85f)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(19.dp)
+                        .scale(iconScale),
+                    contentAlignment = Alignment.Center
+                ) {
+                    when (tabId) {
+                        "home", "chat" -> {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val w = size.width
+                                val h = size.height
+                                val cx = w / 2f
+                                val cy = h / 2f
+
+                                val peakOffset = h * 0.24f
+                                val eyePath = Path().apply {
+                                    moveTo(w * 0.15f, cy)
+                                    cubicTo(w * 0.35f, cy - peakOffset, w * 0.65f, cy - peakOffset, w * 0.85f, cy)
+                                    cubicTo(w * 0.65f, cy + peakOffset, w * 0.35f, cy + peakOffset, w * 0.15f, cy)
+                                    close()
+                                }
+                                drawPath(
+                                    path = eyePath,
+                                    color = tint,
+                                    style = Stroke(width = 1.7.dp.toPx(), cap = StrokeCap.Round)
+                                )
+
+                                val irisR = w * 0.17f
+                                drawArc(
+                                    color = if (isActive) PremiumCyan else tint,
+                                    startAngle = -90f,
+                                    sweepAngle = 360f,
+                                    useCenter = false,
+                                    topLeft = Offset(cx - irisR, cy - irisR),
+                                    size = Size(irisR * 2, irisR * 2),
+                                    style = Stroke(width = 1.7.dp.toPx(), cap = StrokeCap.Round)
+                                )
+                            }
                         }
-                        drawPath(path, color = tint, style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                        "insights" -> {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val w = size.width
+                                val h = size.height
+                                val cx = w / 2f
+                                val cy = h / 2f
+
+                                val path = Path().apply {
+                                    moveTo(cx, h * 0.15f)
+                                    lineTo(w * 0.85f, cy)
+                                    lineTo(cx, h * 0.85f)
+                                    lineTo(w * 0.15f, cy)
+                                    close()
+                                }
+                                drawPath(
+                                    path = path,
+                                    color = tint,
+                                    style = Stroke(width = 1.7.dp.toPx(), cap = StrokeCap.Round)
+                                )
+
+                                drawCircle(
+                                    color = if (isActive) PremiumCyan else tint,
+                                    radius = 2.2.dp.toPx(),
+                                    center = Offset(cx, cy)
+                                )
+                            }
+                        }
+                        "settings" -> {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val w = size.width
+                                val h = size.height
+                                val cx = w / 2f
+                                val cy = h / 2f
+
+                                val outerR = w * 0.32f
+                                val innerR = w * 0.16f
+
+                                drawCircle(
+                                    color = tint,
+                                    radius = outerR,
+                                    style = Stroke(width = 1.7.dp.toPx())
+                                )
+                                drawCircle(
+                                    color = if (isActive) PremiumCyan else tint,
+                                    radius = innerR,
+                                    style = Stroke(width = 1.4.dp.toPx())
+                                )
+
+                                val teethCount = 8
+                                for (i in 0 until teethCount) {
+                                    val angleRad = Math.toRadians((i * 360.0 / teethCount))
+                                    val cosV = Math.cos(angleRad).toFloat()
+                                    val sinV = Math.sin(angleRad).toFloat()
+
+                                    val startX = cx + outerR * cosV
+                                    val startY = cy + outerR * sinV
+                                    val endX = cx + (outerR + 2.dp.toPx()) * cosV
+                                    val endY = cy + (outerR + 2.dp.toPx()) * sinV
+
+                                    drawLine(
+                                        color = tint,
+                                        start = Offset(startX, startY),
+                                        end = Offset(endX, endY),
+                                        strokeWidth = 1.8.dp.toPx(),
+                                        cap = StrokeCap.Round
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-                "chat" -> {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val path = Path().apply {
-                            moveTo(size.width * 0.15f, size.height * 0.25f)
-                            lineTo(size.width * 0.85f, size.height * 0.25f)
-                            lineTo(size.width * 0.85f, size.height * 0.7f)
-                            lineTo(size.width * 0.55f, size.height * 0.7f)
-                            lineTo(size.width * 0.35f, size.height * 0.88f)
-                            lineTo(size.width * 0.35f, size.height * 0.7f)
-                            lineTo(size.width * 0.15f, size.height * 0.7f)
-                            close()
-                        }
-                        drawPath(path, color = tint, style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        
-                        val sparkleColor = if (isActive) PremiumCyan else tint
-                        drawCircle(color = sparkleColor, radius = 1.8.dp.toPx(), center = Offset(size.width * 0.75f, size.height * 0.15f))
-                        drawCircle(color = sparkleColor, radius = 1.0.dp.toPx(), center = Offset(size.width * 0.88f, size.height * 0.25f))
-                    }
-                }
-                "sessions" -> {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val path = Path().apply {
-                            moveTo(size.width * 0.15f, size.height * 0.25f)
-                            lineTo(size.width * 0.85f, size.height * 0.25f)
-                            lineTo(size.width * 0.85f, size.height * 0.85f)
-                            lineTo(size.width * 0.15f, size.height * 0.85f)
-                            close()
-                            
-                            moveTo(size.width * 0.15f, size.height * 0.55f)
-                            lineTo(size.width * 0.85f, size.height * 0.55f)
-                        }
-                        drawPath(path, color = tint, style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                        
-                        val handlePath = Path().apply {
-                            moveTo(size.width * 0.42f, size.height * 0.4f)
-                            lineTo(size.width * 0.58f, size.height * 0.4f)
-                            
-                            moveTo(size.width * 0.42f, size.height * 0.7f)
-                            lineTo(size.width * 0.58f, size.height * 0.7f)
-                        }
-                        drawPath(handlePath, color = tint, style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round))
-                    }
-                }
-                "settings" -> {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        drawLine(color = tint, start = Offset(size.width * 0.15f, size.height * 0.35f), end = Offset(size.width * 0.85f, size.height * 0.35f), strokeWidth = 1.5.dp.toPx())
-                        drawLine(color = tint, start = Offset(size.width * 0.15f, size.height * 0.65f), end = Offset(size.width * 0.85f, size.height * 0.65f), strokeWidth = 1.5.dp.toPx())
-                        
-                        drawRoundRect(
-                            color = if (isActive) PremiumCyan else tint,
-                            topLeft = Offset(size.width * 0.3f, size.height * 0.22f),
-                            size = Size(8.dp.toPx(), 6.dp.toPx()),
-                            cornerRadius = CornerRadius(1.5.dp.toPx())
-                        )
-                        drawRoundRect(
-                            color = if (isActive) PremiumCyan else tint,
-                            topLeft = Offset(size.width * 0.6f, size.height * 0.52f),
-                            size = Size(8.dp.toPx(), 6.dp.toPx()),
-                            cornerRadius = CornerRadius(1.5.dp.toPx())
-                        )
-                    }
-                }
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = label,
+                    fontSize = 10.sp,
+                    fontFamily = InstrumentSansFontFamily,
+                    fontWeight = FontWeight.Bold,
+                    color = tint
+                )
             }
         }
-        Spacer(modifier = Modifier.height(3.dp))
-        Text(
-            text = label,
-            fontSize = 7.5.sp,
-            fontFamily = DMMonoFontFamily,
-            color = tint,
-            letterSpacing = 0.08.sp
-        )
     }
 }
 

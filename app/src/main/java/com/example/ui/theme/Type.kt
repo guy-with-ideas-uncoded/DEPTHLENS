@@ -17,11 +17,10 @@ val fontProvider = GoogleFont.Provider(
     certificates = R.array.com_google_android_gms_fonts_certs
 )
 
-// 1. DM Serif Display (italic style by default is what we load)
+// 1. DM Serif Display (standard upright style)
 val DMSerifDisplayFont = GoogleFont("DM Serif Display")
 val DMSerifDisplayFontFamily = FontFamily(
-    Font(googleFont = DMSerifDisplayFont, fontProvider = fontProvider, weight = FontWeight.Normal),
-    Font(googleFont = DMSerifDisplayFont, fontProvider = fontProvider, weight = FontWeight.Normal, style = FontStyle.Italic)
+    Font(googleFont = DMSerifDisplayFont, fontProvider = fontProvider, weight = FontWeight.Normal)
 )
 
 // 2. DM Mono for monospace labels, badges, metadata
@@ -43,13 +42,13 @@ val InstrumentSansFontFamily = FontFamily(
 )
 
 // Create the Typography object mapped to display, body, and label text configurations:
-// - displayLarge/displayMedium/displaySmall -> DM Serif Display (Italic)
+// - displayLarge/displayMedium/displaySmall -> DM Serif Display (Normal)
 // - labelLarge/labelMedium/labelSmall -> DM Mono
 // - bodyLarge/bodyMedium/bodySmall -> Instrument Sans
 val Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = DMSerifDisplayFontFamily,
-        fontStyle = FontStyle.Italic,
+        fontStyle = FontStyle.Normal,
         fontWeight = FontWeight.Normal,
         fontSize = 57.sp,
         lineHeight = 64.sp,
@@ -57,7 +56,7 @@ val Typography = Typography(
     ),
     displayMedium = TextStyle(
         fontFamily = DMSerifDisplayFontFamily,
-        fontStyle = FontStyle.Italic,
+        fontStyle = FontStyle.Normal,
         fontWeight = FontWeight.Normal,
         fontSize = 45.sp,
         lineHeight = 52.sp,
@@ -65,7 +64,7 @@ val Typography = Typography(
     ),
     displaySmall = TextStyle(
         fontFamily = DMSerifDisplayFontFamily,
-        fontStyle = FontStyle.Italic,
+        fontStyle = FontStyle.Normal,
         fontWeight = FontWeight.Normal,
         fontSize = 36.sp,
         lineHeight = 44.sp,

@@ -1,4 +1,5 @@
 import java.util.Base64
+import java.util.Random
 
 plugins {
   alias(libs.plugins.android.application)
@@ -9,80 +10,73 @@ plugins {
   id("com.google.gms.google-services")
 }
 
-tasks.register("repairHomeScreen") {
-    doLast {
-        val homeScreenFile = file("src/main/java/com/example/ui/screens/HomeScreen.kt")
-        if (homeScreenFile.exists()) {
-            var text = homeScreenFile.readText()
-            val nl = if (text.contains("\r\n")) "\r\n" else "\n"
-            
-            // 1. Strip comment block DEAD_CODE
-            text = text.replace(Regex("/\\* DEAD_CODE.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
-            
-            // 2. Remove the exact 5 mismatched braces block specifically (both Unix and CRLF)
-            val bracesUnix = "                                                                                               }\n                                             }\n                                         }\n                                     }\n                                 }"
-            val bracesCRLF = "                                                                                               }\r\n                                             }\r\n                                         }\r\n                                     }\r\n                                 }"
-            text = text.replace(bracesUnix, "")
-            text = text.replace(bracesCRLF, "")
-            
-            // 3. Update the fallback container with Card wrapper (both Unix and CRLF)
-            val findUnix = "                                 } else {\n                                        shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),\n                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF141420)),\n                                         border = BorderStroke(1.dp, Color(0x0FFFFFFF)),\n                                         modifier = Modifier.fillMaxWidth()\n                                     ) {"
-            val replUnix = "                                 } else {\n                                     Card(\n                                         shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),\n                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF141420)),\n                                         border = BorderStroke(1.dp, Color(0x0FFFFFFF)),\n                                         modifier = Modifier.fillMaxWidth()\n                                     ) {"
-            text = text.replace(findUnix, replUnix)
-            
-            val findCRLF = "                                 } else {\r\n                                        shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),\r\n                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF141420)),\r\n                                         border = BorderStroke(1.dp, Color(0x0FFFFFFF)),\r\n                                         modifier = Modifier.fillMaxWidth()\r\n                                     ) {"
-            val replCRLF = "                                 } else {\r\n                                     Card(\r\n                                         shape = RoundedCornerShape(topStart = 3.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 14.dp),\r\n                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF141420)),\r\n                                         border = BorderStroke(1.dp, Color(0x0FFFFFFF)),\r\n                                         modifier = Modifier.fillMaxWidth()\r\n                                     ) {"
-            text = text.replace(findCRLF, replCRLF)
-
-            // 4. Repair the three corrupted joined sections space-independently
-            val pat1 = Regex("lineHeight = 16\\.sp\\s+\\)\\s+}\\s+}\\s+else\\s*\\{\\s+Spacer\\(modifier = Modifier\\.weight\\(1f\\)\\)")
-            val pat2 = Regex("modifier = Modifier\\.size\\(10\\.dp\\)\\s+\\)\\s+}\\s+}\\s+}\\s+else\\s*\\{\\s+val parsedResponse = remember\\(message\\.text\\)")
-            val pat3 = Regex("fontWeight = FontWeight\\.Bold\\s+\\)\\s+}\\s+else\\s*\\{\\s+if \\(rawText\\.isEmpty\\(\\)\\)")
-            val pat4 = Regex("modifier = Modifier\\.weight\\(1f\\)\\s+\\)\\s+\\}\\s+else\\s*\\{\\s+Card\\(")
-            
-            println("PAT1 MATCHES: ${pat1.containsMatchIn(text)}")
-            println("PAT2 MATCHES: ${pat2.containsMatchIn(text)}")
-            println("PAT3 MATCHES: ${pat3.containsMatchIn(text)}")
-            println("PAT4 MATCHES: ${pat4.containsMatchIn(text)}")
-
-            text = text.replace(
-                pat1,
-                "lineHeight = 16.sp${nl}                                        )${nl}                                    }${nl}                                }${nl}                            } else {${nl}                                Spacer(modifier = Modifier.weight(1f))"
-            )
-
-            text = text.replace(
-                pat2,
-                "modifier = Modifier.size(10.dp)${nl}                                        )${nl}                                    }${nl}                                }${nl}                            } else {${nl}                            val parsedResponse = remember(message.text)"
-            )
-
-            text = text.replace(
-                pat4,
-                "modifier = Modifier.weight(1f)${nl}                                                              )${nl}                                                          }${nl}                                                      }${nl}                                                  }${nl}                                              }${nl}                                                }${nl}                                            }${nl}                                        }${nl}                                    }${nl}                                } else {${nl}                                    Card("
-            )
-
-            text = text.replace(
-                pat3,
-                "fontWeight = FontWeight.Bold${nl}                                )${nl}                            } else {${nl}                            if (rawText.isEmpty())"
-            )
-            
-            text = text.replace(
-                "// Helper to parse archived JSON — kept for any legacy calls",
-                "}${nl}${nl}// Helper to parse archived JSON — kept for any legacy calls"
-            )
-            
-            homeScreenFile.writeText(text)
+// Ensure Google Services JSON exists before the plugin is evaluated to avoid build failure
+val googleServicesFile = File(projectDir, "google-services.json")
+if (!googleServicesFile.exists()) {
+    try {
+        val dummyContent = """
+        {
+          "project_info": {
+            "project_number": "123456789012",
+            "project_id": "dummy-project-id",
+            "storage_bucket": "dummy-project-id.appspot.com"
+          },
+          "client": [
+            {
+              "client_info": {
+                "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef012345",
+                "android_client_info": {
+                  "package_name": "com.aistudio.depthlens.uqmzkx"
+                }
+              },
+              "oauth_client": [],
+              "api_key": [
+                {
+                  "current_key": "dummy-api-key"
+                }
+              ],
+              "services": {
+                "appinvite_service": {
+                  "other_platform_oauth_client": []
+                }
+              }
+            }
+          ],
+          "configuration_version": "1"
         }
+        """.trimIndent()
+        googleServicesFile.writeText(dummyContent)
+        println("Generated dummy google-services.json at ${googleServicesFile.absolutePath}")
+    } catch (e: Exception) {
+        println("Warning: failed to generate dummy google-services.json: ${e.message}")
+    }
+}
+
+// Decode debug.keystore.base64 to debug.keystore if missing
+val rootDirFile = project.rootDir
+val debugKeystoreFile = File(rootDirFile, "debug.keystore")
+val debugKeystoreBase64File = File(rootDirFile, "debug.keystore.base64")
+if (!debugKeystoreFile.exists() && debugKeystoreBase64File.exists()) {
+    try {
+        val base64Text = debugKeystoreBase64File.readText().trim()
+        if (base64Text.isNotEmpty()) {
+            val decodedBytes = Base64.getDecoder().decode(base64Text)
+            debugKeystoreFile.writeBytes(decodedBytes)
+            println("Successfully restored debug.keystore from debug.keystore.base64 during configuration!")
+        }
+    } catch (e: Exception) {
+        println("Warning: failed to restore debug.keystore: ${e.message}")
     }
 }
 
 android {
   namespace = "com.example"
-  compileSdk = 36
+  compileSdk = 35
 
   defaultConfig {
     applicationId = "com.aistudio.depthlens.uqmzkx"
     minSdk = 24
-    targetSdk = 36
+    targetSdk = 35
     versionCode = 5892
     versionName = "5.8.9.x-1"
 
@@ -91,11 +85,20 @@ android {
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      val keystorePath = System.getenv("KEYSTORE_PATH") ?: ""
+      val storePwd = System.getenv("STORE_PASSWORD") ?: ""
+      if (keystorePath.isNotEmpty() && storePwd.isNotEmpty()) {
+        storeFile = file(keystorePath)
+        storePassword = storePwd
+        keyAlias = "upload"
+        keyPassword = System.getenv("KEY_PASSWORD")
+      } else {
+        // Fallback to debug signature so that builds in AI Studio are always validly signed and installable
+        storeFile = file("${rootDir}/debug.keystore")
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
     }
     create("debugConfig") {
       storeFile = file("${rootDir}/debug.keystore")
@@ -107,7 +110,7 @@ android {
 
   buildTypes {
     release {
-      isCrunchPngs = false
+      isCrunchPngs = true
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -126,6 +129,35 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  androidResources {
+    noCompress.add("tflite")
+  }
+  sourceSets {
+    getByName("main") {
+      assets.directories.add("src/main/assets")
+    }
+  }
+}
+
+// Build-time helper: automatically generate .env file from host environment variables
+// prior to secrets-gradle-plugin evaluation so that injected secrets are correctly compiled.
+val rootEnvFileSetting = rootProject.file(".env")
+if (!rootEnvFileSetting.exists()) {
+    val geminiKey = System.getenv("GEMINI_API_KEY") ?: ""
+    val firebaseKey = System.getenv("FIREBASE_API_KEY") ?: ""
+    val firebaseProjectId = System.getenv("FIREBASE_PROJECT_ID") ?: ""
+    val firebaseAppId = System.getenv("FIREBASE_APP_ID") ?: ""
+    
+    if (geminiKey.isNotEmpty() || firebaseKey.isNotEmpty() || firebaseProjectId.isNotEmpty()) {
+        val content = """
+            GEMINI_API_KEY=${if (geminiKey.isNotEmpty()) geminiKey else "MY_GEMINI_API_KEY"}
+            FIREBASE_API_KEY=${if (firebaseKey.isNotEmpty()) firebaseKey else "PLACEHOLDER_FIREBASE_API_KEY"}
+            FIREBASE_PROJECT_ID=${if (firebaseProjectId.isNotEmpty()) firebaseProjectId else "PLACEHOLDER_FIREBASE_PROJECT_ID"}
+            FIREBASE_APP_ID=${if (firebaseAppId.isNotEmpty()) firebaseAppId else "PLACEHOLDER_FIREBASE_APP_ID"}
+        """.trimIndent()
+        rootEnvFileSetting.writeText(content)
+        println("Generated root .env file from System environment variables successfully.")
+    }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
@@ -169,7 +201,7 @@ tasks.register("generateFirebaseConfigs") {
 
         if (targetFile.exists()) {
             val content = targetFile.readText()
-            if (content.contains("AIzaSyMockKeyForCompilationOnly123456") || content.contains("PLACEHOLDER_FIREBASE_API_KEY") || content.trim().isEmpty()) {
+            if (content.contains("dummy-project-id") || content.contains("dummy-api-key") || content.contains("PLACEHOLDER_FIREBASE_API_KEY") || content.trim().isEmpty()) {
                 if (envApiKey.isNotEmpty()) {
                     shouldOverwrite = true
                 }
@@ -222,7 +254,7 @@ tasks.register("generateFirebaseConfigs") {
             }
             """.trimIndent()
             targetFile.writeText(jsonTemplate)
-            println("Dynamically resolved /app/google-services.json contents")
+            println("Dynamically resolved /app/google-services.json contents successfully.")
         }
     }
 }
@@ -232,108 +264,120 @@ tasks.matching { it.name.contains("GoogleServices") }.configureEach {
     dependsOn("generateFirebaseConfigs")
 }
 
-// Some unused dependencies are commented out below instead of being removed.
-// This makes it easy to add them back in the future if needed.
+androidComponents {
+    onVariants { variant ->
+        val vName = variant.name
+        val variantName = variant.name.replaceFirstChar { it.uppercaseChar() }
+        
+        // Resolve file paths at configure time to comply with Configuration Cache requirements
+        val buildDirFile = layout.buildDirectory.get().asFile
+        val apkDirResolved = File(buildDirFile, "outputs/apk/$vName")
+        val originalApkResolved = File(apkDirResolved, "app-$vName.apk")
+        
+        val bundleDirResolved = File(buildDirFile, "outputs/bundle/$vName")
+        val originalAabResolved = File(bundleDirResolved, "app-$vName.aab")
+        
+        val rootDirResolved = rootProject.rootDir
+        val buildOutputDirResolved = File(rootDirResolved, "build-outputs")
+        val dotBuildOutputDirResolved = File(rootDirResolved, ".build-outputs")
+
+        tasks.matching { it.name == "package$variantName" }.configureEach {
+            doLast {
+                if (originalApkResolved.exists()) {
+                    if (!buildOutputDirResolved.exists()) buildOutputDirResolved.mkdirs()
+                    if (!dotBuildOutputDirResolved.exists()) dotBuildOutputDirResolved.mkdirs()
+                    
+                    val apkName = if (vName == "release") "DepthLens_Release.apk" else "DepthLens_Debug.apk"
+                    
+                    // Copy to build-outputs
+                    originalApkResolved.copyTo(File(buildOutputDirResolved, apkName), overwrite = true)
+                    
+                    // Copy to .build-outputs
+                    originalApkResolved.copyTo(File(dotBuildOutputDirResolved, apkName), overwrite = true)
+                    
+                    val sizeMB = originalApkResolved.length() / (1024.0 * 1024.0)
+                    println("Successfully copied full APK to /build-outputs and /.build-outputs as $apkName (${String.format("%.2f", sizeMB)} MB)")
+                }
+            }
+        }
+    }
+}
+
 dependencies {
-  implementation(platform(libs.androidx.compose.bom))
-  implementation(platform(libs.firebase.bom))
-  implementation("com.google.firebase:firebase-analytics")
-  implementation("com.google.firebase:firebase-auth")
-  implementation("com.google.firebase:firebase-firestore")
-  implementation("com.google.firebase:firebase-storage")
-  implementation("com.google.android.gms:play-services-auth:21.2.0")
-  // implementation(libs.accompanist.permissions)
-  implementation(libs.androidx.activity.compose)
-  // implementation(libs.androidx.camera.camera2)
-  // implementation(libs.androidx.camera.core)
-  // implementation(libs.androidx.camera.lifecycle)
-  // implementation(libs.androidx.camera.view)
-  implementation(libs.androidx.compose.material.icons.core)
-  implementation(libs.androidx.compose.material.icons.extended)
-  implementation(libs.androidx.compose.material3)
-  implementation(libs.androidx.compose.ui)
-  implementation(libs.androidx.compose.ui.graphics)
-  implementation(libs.androidx.compose.ui.text.google.fonts)
-  implementation(libs.androidx.compose.ui.tooling.preview)
+  // Core Android / Ktx
   implementation(libs.androidx.core.ktx)
-  // implementation(libs.androidx.datastore.preferences)
-  implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
-  // implementation("androidx.navigation:navigation-compose")
-  implementation(libs.androidx.room.ktx)
+  implementation(libs.androidx.lifecycle.runtime.compose)
+  implementation(libs.androidx.activity.compose)
+
+  // Compose Bom & UI
+  implementation(platform(libs.androidx.compose.bom))
+  implementation(libs.androidx.compose.ui)
+  implementation(libs.androidx.compose.ui.graphics)
+  implementation(libs.androidx.compose.ui.tooling.preview)
+  implementation(libs.androidx.compose.ui.text.google.fonts)
+  implementation(libs.androidx.compose.material3)
+  implementation(libs.androidx.compose.material.icons.core)
+  implementation(libs.androidx.compose.material.icons.extended)
+
+  // Navigation
+  implementation(libs.androidx.navigation.compose)
+
+  // Room
   implementation(libs.androidx.room.runtime)
-  implementation(libs.coil.compose)
+  implementation(libs.androidx.room.ktx)
+  ksp(libs.androidx.room.compiler)
+
+  // Retrofit / OkHttp / Moshi
+  implementation(libs.retrofit)
   implementation(libs.converter.moshi)
-  // implementation(libs.firebase.ai)
-  implementation(libs.kotlinx.coroutines.android)
-  implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.okhttp)
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
-  implementation(libs.okhttp)
-  // implementation(libs.play.services.location)
-  implementation(libs.retrofit)
-  testImplementation(libs.androidx.compose.ui.test.junit4)
-  testImplementation(libs.androidx.core)
-  testImplementation(libs.androidx.junit)
+  ksp(libs.moshi.kotlin.codegen)
+
+  // Coil (Image Loading)
+  implementation(libs.coil.compose)
+
+  // Datastore
+  implementation(libs.androidx.datastore.preferences)
+
+  // Biometric
+  implementation("androidx.biometric:biometric:1.1.0")
+
+  // CameraX
+  implementation(libs.androidx.camera.core)
+  implementation(libs.androidx.camera.camera2)
+  implementation(libs.androidx.camera.lifecycle)
+  implementation(libs.androidx.camera.view)
+
+  // Firebase Code & Google SDKs
+  implementation("com.google.android.gms:play-services-auth:21.2.0")
+  implementation(platform("com.google.firebase:firebase-bom:34.12.0"))
+  implementation("com.google.firebase:firebase-firestore")
+  implementation("com.google.firebase:firebase-auth")
+  implementation("com.google.firebase:firebase-storage")
+
+  // Coroutines
+  implementation(libs.kotlinx.coroutines.core)
+  implementation(libs.kotlinx.coroutines.android)
+
+  // Testing
   testImplementation(libs.junit)
-  testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
   testImplementation(libs.roborazzi.junit.rule)
+  testImplementation(libs.androidx.core)
+  testImplementation(libs.androidx.runner)
+  testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.androidx.compose.ui.test.junit4)
+  androidTestImplementation(libs.androidx.junit)
+  androidTestImplementation(libs.androidx.espresso.core)
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-  androidTestImplementation(libs.androidx.espresso.core)
-  androidTestImplementation(libs.androidx.junit)
-  androidTestImplementation(libs.androidx.runner)
-  debugImplementation(libs.androidx.compose.ui.test.manifest)
   debugImplementation(libs.androidx.compose.ui.tooling)
-  "ksp"(libs.androidx.room.compiler)
-  "ksp"(libs.moshi.kotlin.codegen)
-}
-val projectBuildDir = project.layout.buildDirectory.asFile.get()
-val projectRootDir = project.rootDir
-
-androidComponents {
-    onVariants { variant ->
-        val variantName = variant.name.replaceFirstChar { it.uppercaseChar() }
-        val vName = variant.name
-        tasks.register<Copy>("copyApkToBuildOutputs${variantName}") {
-            dependsOn("assemble${variantName}")
-            from(File(projectBuildDir, "outputs/apk/$vName")) {
-                include("**/*.apk")
-                rename { "app-$vName.apk" }
-            }
-            into(File(projectRootDir, "build-outputs"))
-        }
-        tasks.matching { it.name == "assemble${variantName}" }.configureEach {
-            finalizedBy("copyApkToBuildOutputs${variantName}")
-        }
-    }
+  debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
-tasks.register("encodeKeystoreToBase64") {
-    doLast {
-        val keystoreFile = File(projectRootDir, "debug.keystore")
-        val base64File = File(projectRootDir, "debug.keystore.base64")
-        if (keystoreFile.exists()) {
-            val bytes = keystoreFile.readBytes()
-            val base64 = Base64.getEncoder().encodeToString(bytes)
-            base64File.writeText(base64)
-            println("Encoded debug.keystore to debug.keystore.base64 successfully!")
-        } else {
-            println("debug.keystore does not exist in rootDir!")
-            val homeDir = System.getProperty("user.home")
-            val defaultKey = File(homeDir, ".android/debug.keystore")
-            if (defaultKey.exists()) {
-                val bytes = defaultKey.readBytes()
-                val base64 = Base64.getEncoder().encodeToString(bytes)
-                base64File.writeText(base64)
-                println("Encoded default ~/.android/debug.keystore to debug.keystore.base64!")
-            } else {
-                println("Also could not find ~/.android/debug.keystore")
-            }
-        }
-    }
-}

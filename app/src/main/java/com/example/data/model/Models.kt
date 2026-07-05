@@ -1,9 +1,11 @@
 package com.example.data.model
 
+import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.squareup.moshi.JsonClass
 
+@Immutable
 @Entity(tableName = "sessions")
 data class SessionEntity(
     @PrimaryKey val id: String,
@@ -13,6 +15,7 @@ data class SessionEntity(
     val isPinned: Boolean = false
 )
 
+@Immutable
 @Entity(tableName = "messages")
 data class MessageEntity(
     @PrimaryKey val id: String,
@@ -20,9 +23,24 @@ data class MessageEntity(
     val role: String, // "user" or "model"
     val text: String,
     val imageUri: String? = null, // Path to attached image if any
-    val timestamp: Long
+    val timestamp: Long,
+    val replyToMessageId: String? = null,
+    val selectedText: String? = null
 )
 
+@Immutable
+@Entity(tableName = "attachments")
+data class AttachmentEntity(
+    @PrimaryKey val attachmentId: String,
+    val messageId: String,
+    val mimeType: String,
+    val localUri: String,
+    val remoteUrl: String? = null,
+    val thumbnailUrl: String? = null,
+    val fileName: String
+)
+
+@Immutable
 @Entity(tableName = "memory_insights")
 data class MemoryInsight(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -31,6 +49,7 @@ data class MemoryInsight(
     val timestamp: Long
 )
 
+@Immutable
 @Entity(tableName = "archived_insights")
 data class ArchivedInsightEntity(
     @PrimaryKey val id: String,
@@ -42,6 +61,7 @@ data class ArchivedInsightEntity(
 )
 
 // UI and Business models below
+@Immutable
 data class ProbabilityMetrics(
     val confidence: Int = 78,
     val likelihood: Int = 65,
@@ -49,12 +69,14 @@ data class ProbabilityMetrics(
     val opportunity: Int = 71
 )
 
+@Immutable
 data class ProbabilityAssessment(
     val likelihood: Int = 65,
     val confidence: String = "High",
     val reasoningFactors: List<String> = emptyList()
 )
 
+@Immutable
 data class FuturePathway(
     val title: String,
     val probability: Int,
@@ -64,6 +86,7 @@ data class FuturePathway(
     val opportunities: String = ""
 )
 
+@Immutable
 data class TimelineForecast(
     val shortTermProb: Int = 80,
     val shortTermDesc: String = "",
@@ -74,6 +97,7 @@ data class TimelineForecast(
     val explanation: String = ""
 )
 
+@Immutable
 data class DecisionImpact(
     val statusQuoProb: Int = 80,
     val statusQuoDesc: String = "",
@@ -85,6 +109,7 @@ data class DecisionImpact(
     val tradeoffs: String = ""
 )
 
+@Immutable
 data class ForecastSummary(
     val mostLikelyOutcome: Int = 75,
     val keyRisk: Int = 60,
@@ -92,6 +117,7 @@ data class ForecastSummary(
     val predictionConfidence: String = "High"
 )
 
+@Immutable
 data class ParsedResponse(
     val introduction: String = "",
     val executiveSummary: String? = null,
@@ -207,12 +233,14 @@ data class ParsedResponse(
     }
 }
 
+@Immutable
 data class DepthLayerInsight(
     val layerNumber: Int,
     val layerName: String,
     val description: String
 )
 
+@Immutable
 data class RootCauseReport(
     val symptom: String = "",
     val immediateCause: String = "",
@@ -224,6 +252,7 @@ data class RootCauseReport(
     val alternativeExplanation: String = ""
 )
 
+@Immutable
 data class HumanDriversReport(
     val surfaceIntention: String = "",
     val emotionalDriver: String = "",
@@ -235,6 +264,7 @@ data class HumanDriversReport(
     val rawContent: String = ""
 )
 
+@Immutable
 data class FutureScenario(
     val codeName: String, // e.g. "Scenario A"
     val displayName: String, // e.g. "Most Likely Path"

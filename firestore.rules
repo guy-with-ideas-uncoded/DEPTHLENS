@@ -1,16 +1,69 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId} {
+    // Matches any document or subcollection under /users/{userId}
+    match /users/{userId}/{allPaths=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
-      
-      match /chats/{chatId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-        
-        match /messages/{messageId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
-        }
-      }
+    }
+    
+    // Matches any document or subcollection under /chatHistory/{userId}
+    match /chatHistory/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Matches any document or subcollection under /sessions/{userId}
+    match /sessions/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Matches any document or subcollection under /profiles/{userId}
+    match /profiles/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Matches any document or subcollection under /analyses/{userId}
+    match /analyses/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Matches root collection /chats/ with filters
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null && (
+        resource == null || 
+        resource.data.userId == request.auth.uid || 
+        resource.data.uid == request.auth.uid || 
+        resource.data.user_id == request.auth.uid
+      );
+    }
+
+    // Matches root collection /sessions/ with filters
+    match /sessions/{sessionId} {
+      allow read, write: if request.auth != null && (
+        resource == null || 
+        resource.data.userId == request.auth.uid || 
+        resource.data.uid == request.auth.uid || 
+        resource.data.user_id == request.auth.uid
+      );
+    }
+
+    // Matches root collection /conversations/ with filters
+    match /conversations/{conversationId} {
+      allow read, write: if request.auth != null && (
+        resource == null || 
+        resource.data.userId == request.auth.uid || 
+        resource.data.uid == request.auth.uid || 
+        resource.data.user_id == request.auth.uid
+      );
+    }
+
+    // Matches root collection /chatHistory/ with filters
+    match /chatHistory/{historyId} {
+      allow read, write: if request.auth != null && (
+        resource == null || 
+        resource.data.userId == request.auth.uid || 
+        resource.data.uid == request.auth.uid || 
+        resource.data.user_id == request.auth.uid
+      );
     }
 
     match /feedback/{feedbackId} {

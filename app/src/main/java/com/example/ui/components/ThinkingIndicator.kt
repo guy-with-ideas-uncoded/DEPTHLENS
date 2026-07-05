@@ -1,99 +1,112 @@
 package com.example.ui.components
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.ui.theme.DMMonoFontFamily
+import com.example.ui.theme.GlassDark
+import com.example.ui.theme.GlassBorder
 import com.example.ui.theme.ElectricViolet
-import kotlin.math.abs
+import com.example.ui.theme.PremiumCyan
+import kotlin.math.sin
+
+// ─────────────────────────────────────────────────────────────
+// DEPTHLENS · THINKING INDICATOR  v6.0
+//
+// Neural wave design — animated eye icon + 5 sine-wave dots
+// matching JSX v6 ThinkingIndicator design exactly.
+// ─────────────────────────────────────────────────────────────
 
 @Composable
 fun ThreeDotThinkingIndicator(
     modifier: Modifier = Modifier,
-    text: String = "ANALYZING DEEPER..."
+    text: String = "Analyzing..."
 ) {
+    // Tick counter for sine wave animation (60fps equivalent)
+    var tick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        val interval = 16L // ~60fps
+        while (true) {
+            kotlinx.coroutines.delay(interval)
+            tick++
+        }
+    }
+
     Row(
-        modifier = modifier.padding(vertical = 12.dp, horizontal = 4.dp),
+        modifier = modifier
+            .wrapContentWidth()
+            .depthGlass(
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 6.dp, bottomEnd = 20.dp),
+                borderWidth = 1.dp
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Start
     ) {
-        val infiniteTransition = rememberInfiniteTransition(label = "ThinkingWave")
-        val pulseIndex by infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 3f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1000, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "pulseIndex"
-        )
+        // ── Animated eye icon ─────────────────────────
+        val eyePulseAlpha = (0.7f + 0.3f * sin(tick * 0.12f).toFloat()).coerceIn(0f, 1f)
 
-        // Monospace glowing text
-        Text(
-            text = text.uppercase(),
-            fontSize = 11.sp,
-            fontFamily = DMMonoFontFamily,
-            color = ElectricViolet,
-            letterSpacing = 1.2.sp,
-            modifier = Modifier.padding(end = 12.dp)
-        )
+        Canvas(modifier = Modifier.size(width = 16.dp, height = 10.dp)) {
+            val w = size.width
+            val h = size.height
+            val cx = w / 2f
+            val cy = h / 2f
 
-        // Row of 3 sequential pulsing dots (● ○ ○ -> ○ ● ○ -> ○ ○ ●)
+            // Eye outline path
+            val eyePath = Path().apply {
+                moveTo(0f, cy)
+                quadraticBezierTo(cx, 0f, w, cy)
+                quadraticBezierTo(cx, h, 0f, cy)
+                close()
+            }
+            drawPath(
+                path = eyePath,
+                color = ElectricViolet,
+                style = Stroke(width = 1.2.dp.toPx(), cap = StrokeCap.Round)
+            )
+            // Iris dot — pulses
+            drawCircle(
+                color = PremiumCyan.copy(alpha = eyePulseAlpha),
+                radius = w * 0.13f,
+                center = Offset(cx, cy)
+            )
+        }
+
+        Spacer(Modifier.width(8.dp))
+
+        // ── Neural wave dots (5 nodes, sine wave propagation) ─
+        val nodes = 5
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            for (i in 0..2) {
-                // Piecewise linear interpolation to create perfect sequential pulse
-                val dotAlpha = remember(pulseIndex) {
-                    val rawAlpha = when {
-                        i == 0 -> {
-                            if (pulseIndex < 1f) 1.0f - pulseIndex 
-                            else if (pulseIndex > 2f) pulseIndex - 2f 
-                            else 0.15f
-                        }
-                        i == 1 -> {
-                            if (pulseIndex in 0f..2f) 1.0f - abs(pulseIndex - 1f) 
-                            else 0.15f
-                        }
-                        i == 2 -> {
-                            if (pulseIndex > 1f) 1.0f - abs(pulseIndex - 2f) 
-                            else 0.15f
-                        }
-                        else -> 0.15f
-                    }
-                    rawAlpha.coerceIn(0.15f, 1.0f)
-                }
-
-                val scale = 0.8f + (dotAlpha * 0.4f)
-                val hoverOffsetY = -((dotAlpha - 0.15f) / 0.85f * 5f) // translate up by 5dp when fully active
+            for (i in 0 until nodes) {
+                val phase = (tick * 0.15f) - (i * 0.7f)
+                val y = sin(phase.toDouble()).toFloat()
+                val sizeDp = (3.5f + y * 1.5f).coerceIn(1.5f, 6f).dp
+                val opacity = (0.4f + (y + 1f) * 0.3f).coerceIn(0.2f, 1f)
+                val color = if (i % 2 == 0) ElectricViolet else PremiumCyan
+                val offsetY = (y * -2f).dp
 
                 Box(
                     modifier = Modifier
-                        .size(7.dp)
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                            translationY = hoverOffsetY
-                            alpha = dotAlpha
-                        }
-                        .drawBehind {
-                            // Radial glow effect matching cyber OS style
-                            drawCircle(
-                                color = ElectricViolet.copy(alpha = 0.45f * dotAlpha),
-                                radius = size.width * 1.8f
-                            )
-                        }
-                        .background(ElectricViolet, CircleShape)
+                        .offset(y = offsetY)
+                        .size(sizeDp)
+                        .background(
+                            color = color.copy(alpha = opacity),
+                            shape = RoundedCornerShape(50)
+                        )
                 )
             }
         }

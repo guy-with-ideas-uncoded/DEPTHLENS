@@ -97,84 +97,98 @@ fun IntelligenceOSVisualizer(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
             // 1. EXECUTIVE SUMMARY CARD (Always visible summary brief)
-            ExecutiveSummaryCard(
-                summaryText = parsed.executiveSummary?.ifBlank { null } ?: calculatedData.executiveSummary
-            )
+            var animateSummary by remember { mutableStateOf(false) }
+            LaunchedEffect(messageId) {
+                animateSummary = true
+            }
+            RevealSection(visible = animateSummary, delayMillis = 50) {
+                ExecutiveSummaryCard(
+                    summaryText = parsed.executiveSummary?.ifBlank { null } ?: calculatedData.executiveSummary
+                )
+            }
 
             // Reality Layer Activation Panel removed from analysis per user request
 
             // ── SMART ADAPTIVE CHIPS ROW ──
-            Text(
-                text = "INTELLIGENCE DEEP DIVE PANELS (CHIP CONTROL)",
-                fontSize = 9.sp,
-                letterSpacing = 1.2.sp,
-                fontFamily = DMMonoFontFamily,
-                fontWeight = FontWeight.Bold,
-                color = TextMutedColor,
-                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-            )
+            var animateChips by remember { mutableStateOf(false) }
+            LaunchedEffect(messageId) {
+                animateChips = true
+            }
+            RevealSection(visible = animateChips, delayMillis = 100) {
+                Column {
+                    Text(
+                        text = "INTELLIGENCE DEEP DIVE PANELS (CHIP CONTROL)",
+                        fontSize = 9.sp,
+                        letterSpacing = 1.2.sp,
+                        fontFamily = DMMonoFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = TextMutedColor,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                    )
 
-            androidx.compose.foundation.layout.FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                relevantChips.forEach { chipName ->
-                    val isUnlocked = unlockedSections[chipName] == true
-                    val isGenerating = generatingSections[chipName] == true
-                    val activeColor = when (chipName) {
-                        "Future Outcomes" -> ElectricViolet
-                        "Risk Analysis" -> ErrorColor
-                        "Probability" -> PremiumCyan
-                        "Hidden Factors" -> WarningColor
-                        "Strategic View" -> SuccessColor
-                        else -> ElectricViolet
-                    }
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        relevantChips.forEach { chipName ->
+                            val isUnlocked = unlockedSections[chipName] == true
+                            val isGenerating = generatingSections[chipName] == true
+                            val activeColor = when (chipName) {
+                                "Future Outcomes" -> ElectricViolet
+                                "Risk Analysis" -> ErrorColor
+                                "Probability" -> PremiumCyan
+                                "Hidden Factors" -> WarningColor
+                                "Strategic View" -> SuccessColor
+                                else -> ElectricViolet
+                            }
 
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isUnlocked) activeColor.copy(alpha = 0.15f) else Surface2)
-                            .border(
-                                width = 1.dp,
-                                color = if (isUnlocked) activeColor else BorderSubtle,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .clickable(enabled = !isGenerating) {
-                                if (isUnlocked) {
-                                    unlockedSections[chipName] = false
-                                } else {
-                                    generatingSections[chipName] = true
-                                    coroutineScope.launch {
-                                        kotlinx.coroutines.delay(1200)
-                                        generatingSections[chipName] = false
-                                        unlockedSections[chipName] = true
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isUnlocked) activeColor.copy(alpha = 0.15f) else Surface2)
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isUnlocked) activeColor else BorderSubtle,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable(enabled = !isGenerating) {
+                                        if (isUnlocked) {
+                                            unlockedSections[chipName] = false
+                                        } else {
+                                            generatingSections[chipName] = true
+                                            coroutineScope.launch {
+                                                kotlinx.coroutines.delay(1200)
+                                                generatingSections[chipName] = false
+                                                unlockedSections[chipName] = true
+                                            }
+                                        }
                                     }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    .minimumInteractiveComponentSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    if (isGenerating) {
+                                        CircularProgressIndicator(
+                                            color = activeColor,
+                                            strokeWidth = 1.5.dp,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
+                                    Text(
+                                        text = chipName.uppercase(),
+                                        fontSize = 11.sp,
+                                        fontFamily = DMMonoFontFamily,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isUnlocked) activeColor else TextPrimaryColor
+                                    )
                                 }
                             }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                            .minimumInteractiveComponentSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            if (isGenerating) {
-                                CircularProgressIndicator(
-                                    color = activeColor,
-                                    strokeWidth = 1.5.dp,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                            }
-                            Text(
-                                text = chipName.uppercase(),
-                                fontSize = 11.sp,
-                                fontFamily = DMMonoFontFamily,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (isUnlocked) activeColor else TextPrimaryColor
-                            )
                         }
                     }
                 }

@@ -12,6 +12,7 @@ import com.example.BuildConfig
 import android.content.Intent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
+import kotlinx.coroutines.ensureActive
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import com.example.data.network.CloudSyncService
@@ -30,55 +32,82 @@ class IntelligenceRepository(private val context: Context) {
         // Ordered: best/newest first, lightweight last as final fallback.
         // "gemini-flash-latest" always points to the newest Flash release automatically.
         val ALL_MODELS: List<Pair<String, String>> = listOf(
-            Pair("Gemini Flash Latest (Auto)",   "gemini-flash-latest"),
+            Pair("Default (Gemini 3.5 Flash)",   "gemini-3.5-flash"),
             Pair("Gemini 3.5 Flash",             "gemini-3.5-flash"),
-            Pair("Gemini 3.1 Flash Lite",        "gemini-3.1-flash-lite"),
-            Pair("Gemini 3 Flash Preview",       "gemini-3-flash-preview"),
-            Pair("Gemini 3.1 Pro Preview",       "gemini-3.1-pro-preview"),
-            Pair("Gemini Pro Latest (Auto)",     "gemini-pro-latest"),
-            Pair("Gemini Flash-Lite Latest (Auto)", "gemini-flash-lite-latest")
+            Pair("Gemini 3.1 Pro (Precision)",   "gemini-3.1-pro-preview"),
+            Pair("Gemini 3.1 Flash Lite",        "gemini-3.1-flash-lite-preview")
         )
 
-        // Default preferred model — "gemini-flash-latest" auto-tracks the newest Flash
-        const val DEFAULT_MODEL = "gemini-flash-latest"
+        // Default preferred model — gemini-3.5-flash for maximum response speed and intelligence
+        const val DEFAULT_MODEL = "gemini-3.5-flash"
         const val PREF_KEY_MODEL = "selected_gemini_model"
         const val PREFS_NAME     = "depthlens_prefs"
 
         // Build the fallback chain starting from the user's chosen model,
         // then appending all others so the app never fully fails.
         fun buildModelFallbackChain(preferredModel: String): List<String> {
-            val all = ALL_MODELS.map { it.second }
-            val ordered = mutableListOf(preferredModel)
+            val cleanPreferred = preferredModel.removePrefix("models/")
+            val ordered = mutableListOf(cleanPreferred)
             // Always ensure these reliable fallbacks are in the chain
             val fallbacks = listOf(
-                "gemini-flash-latest",
                 "gemini-3.5-flash",
-                "gemini-3.1-flash-lite",
-                "gemini-3-flash-preview",
                 "gemini-3.1-pro-preview",
-                "gemini-pro-latest",
-                "gemini-flash-lite-latest"
+                "gemini-3.1-flash-lite-preview"
             )
             for (m in fallbacks) {
-                if (m != preferredModel) ordered.add(m)
+                if (m != cleanPreferred) ordered.add(m)
             }
             return ordered
         }
 
         private val _runningAnalyses = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
         val runningAnalyses: kotlinx.coroutines.flow.StateFlow<Set<String>> = _runningAnalyses.asStateFlow()
+
+        fun markAnalysisRunning(sessionId: String) {
+            _runningAnalyses.value = _runningAnalyses.value + sessionId
+        }
+
+        fun markAnalysisComplete(sessionId: String) {
+            _runningAnalyses.value = _runningAnalyses.value - sessionId
+        }
+
+        // Sessions whose NEXT analysis should force live web grounding
+        // (user tapped "Search the Web" on a reply). Consumed once, then cleared.
+        private val _forceWebSessions = kotlinx.coroutines.flow.MutableStateFlow<Set<String>>(emptySet())
+        fun markForceWeb(sessionId: String) {
+            _forceWebSessions.value = _forceWebSessions.value + sessionId
+        }
+        fun consumeForceWeb(sessionId: String): Boolean {
+            val on = _forceWebSessions.value.contains(sessionId)
+            if (on) _forceWebSessions.value = _forceWebSessions.value - sessionId
+            return on
+        }
     }
 
     private val db = DepthDatabase.getDatabase(context)
-    private val sessionDao = db.sessionDao()
-    private val messageDao = db.messageDao()
-    private val memoryInsightDao = db.memoryInsightDao()
+    val sessionDao = db.sessionDao()
+    val messageDao = db.messageDao()
+    private val attachmentDao = db.attachmentDao()
+    val memoryInsightDao = db.memoryInsightDao()
     private val archivedInsightDao = db.archivedInsightDao()
     private val apiService = RetrofitClient.service
+
+    private val activeJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+
+    private val urlOkHttpClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
 
     val allSessionsFlow: Flow<List<SessionEntity>> = sessionDao.getAllSessionsFlow()
     val allMemoryInsightsFlow: Flow<List<MemoryInsight>> = memoryInsightDao.getAllInsightsFlow()
     val allArchivedInsightsFlow: Flow<List<ArchivedInsightEntity>> = archivedInsightDao.getAllArchivedInsightsFlow()
+
+    suspend fun getAllSessionsDirect(): List<SessionEntity> {
+        return sessionDao.getAllSessions()
+    }
 
     suspend fun insertArchivedInsight(insight: ArchivedInsightEntity) {
         archivedInsightDao.insertArchivedInsight(insight)
@@ -92,12 +121,18 @@ class IntelligenceRepository(private val context: Context) {
         archivedInsightDao.deleteAllArchivedInsights()
     }
 
+    suspend fun clearLocalData() = withContext(Dispatchers.IO) {
+        val db = com.example.data.database.DepthDatabase.getDatabase(context)
+        db.clearAllTables()
+    }
+
     private val backgroundScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO)
 
     /** Read the user-selected model from SharedPrefs; falls back to DEFAULT_MODEL */
     private fun getPreferredModel(): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString(PREF_KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
+        val rawModel = prefs.getString(PREF_KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
+        return rawModel.removePrefix("models/")
     }
 
     private fun triggerUpload(block: suspend (userId: String) -> Unit) {
@@ -117,6 +152,54 @@ class IntelligenceRepository(private val context: Context) {
 
     fun getMessagesFlow(sessionId: String): Flow<List<MessageEntity>> {
         return messageDao.getMessagesForSessionFlow(sessionId)
+    }
+
+    suspend fun getMessagesDirect(sessionId: String): List<MessageEntity> {
+        return messageDao.getMessagesForSession(sessionId)
+    }
+
+    fun getAttachmentsForMessageFlow(messageId: String, imageUriField: String): Flow<List<AttachmentEntity>> {
+        return attachmentDao.getAttachmentsForMessageFlow(messageId).map { dbList ->
+            if (dbList.isNotEmpty()) {
+                dbList
+            } else if (!imageUriField.isNullOrBlank()) {
+                imageUriField.split(",").map { uriString ->
+                    val uri = uriString.trim()
+                    AttachmentEntity(
+                        attachmentId = UUID.randomUUID().toString(),
+                        messageId = messageId,
+                        mimeType = getUriMimeType(context, uri),
+                        localUri = uri,
+                        remoteUrl = if (uri.startsWith("http")) uri else null,
+                        fileName = if (uri.startsWith("http")) uri.substringAfterLast("/") else (Uri.parse(uri).path?.let { java.io.File(it).name } ?: "attachment")
+                    )
+                }
+            } else {
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun getAttachmentsForMessage(messageId: String): List<AttachmentEntity> {
+        return attachmentDao.getAttachmentsForMessage(messageId)
+    }
+
+    private fun getUriMimeType(context: Context, uriString: String): String {
+        val uri = Uri.parse(uriString)
+        if (uri.scheme == "content" || uri.scheme == "android.resource") {
+            return context.contentResolver.getType(uri) ?: "application/octet-stream"
+        }
+        val ext = android.webkit.MimeTypeMap.getFileExtensionFromUrl(uriString)
+        if (!ext.isNullOrEmpty()) {
+            return android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.lowercase()) ?: "application/octet-stream"
+        }
+        return when {
+            uriString.endsWith(".pdf", ignoreCase = true) -> "application/pdf"
+            uriString.endsWith(".mp3", ignoreCase = true) || uriString.endsWith(".m4a", ignoreCase = true) || uriString.endsWith(".aac", ignoreCase = true) || uriString.endsWith(".wav", ignoreCase = true) -> "audio/mpeg"
+            uriString.endsWith(".mp4", ignoreCase = true) || uriString.endsWith(".mov", ignoreCase = true) -> "video/mp4"
+            uriString.endsWith(".png", ignoreCase = true) || uriString.endsWith(".jpg", ignoreCase = true) || uriString.endsWith(".jpeg", ignoreCase = true) || uriString.endsWith(".webp", ignoreCase = true) -> "image/png"
+            else -> "application/octet-stream"
+        }
     }
 
     suspend fun createNewSession(title: String): SessionEntity = withContext(Dispatchers.IO) {
@@ -156,12 +239,50 @@ class IntelligenceRepository(private val context: Context) {
         }
     }
 
+    // ── ADDITIONS ──────────────────────────────────────────────────────────────
+
+    /**
+     * Search-aware flow that filters sessions by title OR message content.
+     * Used by the search bar in the session list screen.
+     */
+    fun searchSessionsFlow(query: String): Flow<List<SessionEntity>> {
+        return sessionDao.searchSessionsFlow(query)
+    }
+
+    suspend fun searchMessages(query: String): List<MessageEntity> = withContext(Dispatchers.IO) {
+        return@withContext messageDao.searchMessages(query)
+    }
+
+    /**
+     * Rename a session — used by the long-press "Rename" context menu action.
+     */
+    suspend fun renameSession(sessionId: String, newTitle: String) = withContext(Dispatchers.IO) {
+        val sessionItem = sessionDao.getAllSessions().find { it.id == sessionId }
+        if (sessionItem != null) {
+            val updated = sessionItem.copy(title = newTitle, lastUpdatedAt = System.currentTimeMillis())
+            sessionDao.insertSession(updated)
+            triggerUpload { uid ->
+                CloudSyncService.uploadSession(uid, updated.id, updated.title, updated.isPinned, updated.createdAt, updated.lastUpdatedAt)
+            }
+        } else {
+            sessionDao.renameSession(sessionId, newTitle)
+        }
+    }
+
+    // ── END ADDITIONS ──────────────────────────────────────────────────────────
+
     suspend fun generateTitleForSession(sessionId: String, queryText: String) = withContext(Dispatchers.IO) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") return@withContext
 
+        val currentDateTimeStr = java.text.SimpleDateFormat("EEEE, MMMM dd, yyyy, hh:mm:ss a (z)", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getDefault()
+        }.format(java.util.Date())
+
         // Generate a 3-8 word high-quality title using Gemini
         val prompt = """
+            Current date and time: $currentDateTimeStr.
+            
             Create an exceptionally elegant, professional, 3-8 word human-friendly title summarizing this user message.
             Format Rules:
             - Capture the main topic, user intent, or core question.
@@ -179,7 +300,7 @@ class IntelligenceRepository(private val context: Context) {
 
         val modelsToTry = buildModelFallbackChain(getPreferredModel())
         var generatedTitle: String? = null
-        val retryDelays = listOf(3000L, 10000L, 30000L)
+        val retryDelays = listOf(100L)
 
         for (modelName in modelsToTry) {
             for ((attempt, delay) in retryDelays.withIndex()) {
@@ -269,6 +390,9 @@ class IntelligenceRepository(private val context: Context) {
         if (sessionItem != null) {
             sessionDao.deleteSession(sessionItem)
             messageDao.deleteMessagesForSession(sessionId)
+            triggerUpload { uid ->
+                CloudSyncService.deleteSession(uid, sessionId)
+            }
         }
     }
 
@@ -286,13 +410,84 @@ class IntelligenceRepository(private val context: Context) {
         memoryInsightDao.deleteAllInsights()
     }
 
-    suspend fun insertUserMessage(sessionId: String, text: String, imageUri: String? = null) = withContext(Dispatchers.IO) {
+    suspend fun insertUserMessage(sessionId: String, text: String, imageUri: String? = null, replyToMessageId: String? = null, selectedText: String? = null) = withContext(Dispatchers.IO) {
         val userMsg = MessageEntity(
             id = UUID.randomUUID().toString(),
             sessionId = sessionId,
             role = "user",
             text = text,
             imageUri = imageUri,
+            timestamp = System.currentTimeMillis(),
+            replyToMessageId = replyToMessageId,
+            selectedText = selectedText
+        )
+        messageDao.insertMessage(userMsg)
+
+        if (!imageUri.isNullOrEmpty()) {
+            val uris = imageUri.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            uris.forEach { uriStr ->
+                try {
+                    val uri = Uri.parse(uriStr)
+                    val mime = getUriMimeType(context, uriStr)
+                    val name = if (uri.scheme == "file") {
+                        java.io.File(uri.path ?: "").name
+                    } else {
+                        "attachment_${System.currentTimeMillis()}"
+                    }
+                    val attachment = AttachmentEntity(
+                        attachmentId = UUID.randomUUID().toString(),
+                        messageId = userMsg.id,
+                        mimeType = mime,
+                        localUri = uriStr,
+                        remoteUrl = if (uriStr.startsWith("http")) uriStr else null,
+                        thumbnailUrl = null,
+                        fileName = name
+                    )
+                    attachmentDao.insertAttachment(attachment)
+
+                    triggerUpload { uid ->
+                        try {
+                            if (uri.scheme == "file") {
+                                val file = java.io.File(uri.path ?: "")
+                                if (file.exists()) {
+                                    val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
+                                    val storageRef = storage.reference.child("chats/$sessionId/messages/${userMsg.id}/${attachment.attachmentId}_$name")
+                                    val uploadTask = storageRef.putFile(uri)
+                                    com.google.android.gms.tasks.Tasks.await(uploadTask)
+                                    val downloadUrl = com.google.android.gms.tasks.Tasks.await(storageRef.downloadUrl).toString()
+                                    
+                                    val updatedAttachment = attachment.copy(remoteUrl = downloadUrl)
+                                    attachmentDao.insertAttachment(updatedAttachment)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        sessionDao.updateLastUsed(sessionId, System.currentTimeMillis())
+        triggerUpload { uid ->
+            val savedAttachments = attachmentDao.getAttachmentsForMessage(userMsg.id)
+            val finalImageUris = if (savedAttachments.isNotEmpty()) {
+                savedAttachments.map { it.remoteUrl ?: it.localUri }.joinToString(",")
+            } else {
+                userMsg.imageUri
+            }
+            CloudSyncService.uploadMessage(uid, userMsg.id, userMsg.sessionId, userMsg.role, userMsg.text, finalImageUris, userMsg.timestamp, userMsg.replyToMessageId, userMsg.selectedText)
+        }
+    }
+
+    suspend fun runConversationContinuityFlow(sessionId: String, cleanQuery: String) = withContext(Dispatchers.IO) {
+        val userMsg = MessageEntity(
+            id = java.util.UUID.randomUUID().toString(),
+            sessionId = sessionId,
+            role = "user",
+            text = cleanQuery,
             timestamp = System.currentTimeMillis()
         )
         messageDao.insertMessage(userMsg)
@@ -300,6 +495,83 @@ class IntelligenceRepository(private val context: Context) {
         triggerUpload { uid ->
             CloudSyncService.uploadMessage(uid, userMsg.id, userMsg.sessionId, userMsg.role, userMsg.text, userMsg.imageUri, userMsg.timestamp)
         }
+
+        val briefText = generateContinuityBrief(sessionId)
+
+        val assistantMsg = MessageEntity(
+            id = java.util.UUID.randomUUID().toString(),
+            sessionId = sessionId,
+            role = "model",
+            text = briefText,
+            timestamp = System.currentTimeMillis()
+        )
+        messageDao.insertMessage(assistantMsg)
+        triggerUpload { uid ->
+            CloudSyncService.uploadMessage(uid, assistantMsg.id, assistantMsg.sessionId, assistantMsg.role, assistantMsg.text, assistantMsg.imageUri, assistantMsg.timestamp)
+        }
+    }
+
+    fun detectLanguage(text: String): String {
+        val cleanedText = text.trim()
+        if (cleanedText.isEmpty()) return "ENGLISH"
+        
+        // Skip system/internal messages
+        if (cleanedText.startsWith("🔍") || cleanedText.startsWith("Memory Insight")) {
+            return "UNKNOWN"
+        }
+
+        var countHi = 0 // Devanagari (\u0900 - \u097F)
+        var countGu = 0 // Gujarati (\u0A80 - \u0AFF)
+        var countLatin = 0 // Latin/English
+
+        for (char in cleanedText) {
+            val code = char.code
+            when {
+                code in 0x0900..0x097F -> countHi++
+                code in 0x0A80..0x0AFF -> countGu++
+                char.isLetter() && char.toString().matches(Regex("[a-zA-Z]")) -> countLatin++
+            }
+        }
+
+        if (countGu > 1) {
+            return "GUJARATI_SCRIPT"
+        }
+        if (countHi > 1) {
+            return "HINDI_DEVANAGARI"
+        }
+
+        if (countLatin > 0) {
+            val lower = " $cleanedText ".lowercase().replace(Regex("[.,?!()\\-]"), " ")
+            
+            // Check for Gujlish (Romanized Gujarati) keywords
+            val gujlishKeywords = listOf(
+                " kem ", " tame ", " karo ", " maza ", " maru ", " chale ", " nathi ", " thayu ", 
+                " chhe ", " shu ", " shum ", " aavjo ", " jo ", " badhu ", " barabar ", " nava ", 
+                " khabar ", " tamaru ", " amaru ", " bapu ", " motabhai ", " patel ", " su ",
+                " che ", " cho ", " sathe ", " ane ", " pan ", " nthi ", " thai ", " jaye ", " thase "
+            )
+            val gujlishCount = gujlishKeywords.count { lower.contains(it) }
+            if (gujlishCount >= 1 || lower.contains(" kem cho ") || lower.contains(" maza ma ") || lower.contains(" nathi th") || lower.contains(" thai jay ")) {
+                return "GUJLISH"
+            }
+
+            // Check for Hinglish keywords written in English alphabet
+            val hinglishKeywords = listOf(
+                " hai ", " hain ", " aap ", " kaise ", " tum ", " kya ", " kar ", " rahe ", " mai ", " mera ", 
+                " apka ", " achha ", " accha ", " shukriya", " bhai ", " namaste", " bahut ", " theek ", 
+                " thik ", " kiya ", " diya ", " hoga ", " yaar ", " chal ", " gaya ", " kuch ", " samjhe ", 
+                " samajh ", " aaya ", " hua ", " mujhe ", " tujhe ", " apne ", " liye ", " karke ", 
+                " sath ", " saath ", " log ", " rha ", " rhi ", " rhey ", " rhen ", " didi ", " bhaiya ", " dost ",
+                " ko ", " ki ", " ke ", " ka ", " se ", " aur ", " bhi ", " ek ", " ye ", " toh ", " kiske ", " banaya ",
+                " banayi ", " bada ", " dosto ", " ruko ", " ruk ", " ruko ", " bas ", " band ", " samjhao ", " btao ", " batao "
+            )
+            val hinglishCount = hinglishKeywords.count { lower.contains(it) }
+            if (hinglishCount >= 1 || lower.contains(" haan ") || lower.contains(" kya hai ") || lower.contains(" samjhao ") || lower.contains(" samjhe ")) {
+                return "HINGLISH"
+            }
+        }
+
+        return "ENGLISH"
     }
 
     suspend fun generateAnalysis(
@@ -308,102 +580,139 @@ class IntelligenceRepository(private val context: Context) {
         depth: String? = null,
         customInstructionOverride: String? = null
     ): ParsedResponse = withContext(Dispatchers.IO) {
-        val sessionCategory = category ?: "Root Cause"
-        val sessionDepth = depth ?: "Standard Analysis"
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-            val errorMsg = "Error: Missing Gemini API Key. Please add your key to the Secrets panel in Google AI Studio to unlock DepthLens's operations."
-            try {
-                val assistantMsg = MessageEntity(
-                    id = UUID.randomUUID().toString(),
-                    sessionId = sessionId,
-                    role = "model",
-                    text = errorMsg,
-                    timestamp = System.currentTimeMillis()
-                )
-                messageDao.insertMessage(assistantMsg)
-            } catch (dbEx: Exception) {
-                dbEx.printStackTrace()
+        // Active job tracking is managed at startBackgroundAnalysis level.
+        val currentJob = coroutineContext[kotlinx.coroutines.Job]
+        try {
+            val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+            val isDeepThought = prefs.getBoolean("is_deep_thought_enabled", false)
+            val sessionCategory = category ?: "Root Cause"
+            val sessionDepth = depth ?: "Standard Analysis"
+            val apiKey = BuildConfig.GEMINI_API_KEY
+            if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
+                val errorMsg = "Error: Missing Gemini API Key. Please add your key to the Secrets panel in Google AI Studio to unlock DepthLens's operations."
+                try {
+                    val assistantMsg = MessageEntity(
+                        id = UUID.randomUUID().toString(),
+                        sessionId = sessionId,
+                        role = "model",
+                        text = errorMsg,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    messageDao.insertMessage(assistantMsg)
+                } catch (dbEx: Exception) {
+                    dbEx.printStackTrace()
+                }
+                return@withContext ResponseParser.parse(errorMsg)
             }
-            return@withContext ResponseParser.parse(errorMsg)
-        }
 
-        // Fetch session history for Conversation Continuity
-        val history = messageDao.getMessagesForSession(sessionId)
-        if (history.isEmpty()) {
-            val errorMsg = "Error: Session history is empty."
-            try {
-                val assistantMsg = MessageEntity(
-                    id = UUID.randomUUID().toString(),
-                    sessionId = sessionId,
-                    role = "model",
-                    text = errorMsg,
-                    timestamp = System.currentTimeMillis()
-                )
-                messageDao.insertMessage(assistantMsg)
-            } catch (dbEx: Exception) {
-                dbEx.printStackTrace()
+            // Parallel Preprocessing (Fetch session history and memory insights in parallel)
+            val historyDeferred = async { messageDao.getMessagesForSession(sessionId) }
+            val memoryDeferred = async { memoryInsightDao.getAllInsightsFlow().firstOrNull() ?: emptyList() }
+
+            val history = historyDeferred.await()
+            if (history.isEmpty()) {
+                val errorMsg = "Error: Session history is empty."
+                try {
+                    val assistantMsg = MessageEntity(
+                        id = UUID.randomUUID().toString(),
+                        sessionId = sessionId,
+                        role = "model",
+                        text = errorMsg,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    messageDao.insertMessage(assistantMsg)
+                } catch (dbEx: Exception) {
+                    dbEx.printStackTrace()
+                }
+                return@withContext ResponseParser.parse(errorMsg)
             }
-            return@withContext ResponseParser.parse(errorMsg)
-        }
 
-        // Prepare context memory insights
-        val memoryInsightsList = memoryInsightDao.getAllInsightsFlow().firstOrNull() ?: emptyList()
-        val memoryBlock = if (memoryInsightsList.isNotEmpty()) {
-            "### REVERSED SYSTEM MEMORY\n" +
-            "The following goals, patterns, and insights have been compiled from the user's permanent memory logs across sessions. Use this to adapt to their background and avoid surface explanations:\n" +
-            memoryInsightsList.joinToString("\n") { "- [Category: ${it.category}] ${it.content}" }
-        } else {
-            "No historical memories compiled yet."
-        }
+            val memoryInsightsList = memoryDeferred.await()
+            val memoryBlock = if (memoryInsightsList.isNotEmpty()) {
+                "### REVERSED SYSTEM MEMORY\n" +
+                "The following goals, patterns, and insights have been compiled from the user's permanent memory logs across sessions. Use this to adapt to their background and avoid surface explanations:\n" +
+                memoryInsightsList.joinToString("\n") { "- [Category: ${it.category}] ${it.content}" }
+            } else {
+                "No historical memories compiled yet."
+            }
 
-        // Compile clean, adaptive system instructions
-        val latestUserMsgText = history.lastOrNull { it.role == "user" }?.text ?: ""
-        val hasPreviousAnalysis = history.filter { it.role == "model" }.any {
+            // Compile clean, adaptive system instructions
+            val latestUserMsgText = history.lastOrNull { it.role == "user" }?.text ?: ""
+            val detectedLang = detectLanguage(latestUserMsgText)
+            if (detectedLang != "UNKNOWN") {
+                prefs.edit().putString("language_session_$sessionId", detectedLang).apply()
+            }
+            val currentSessionLang = prefs.getString("language_session_$sessionId", "ENGLISH") ?: "ENGLISH"
+
+            // UNIVERSAL LINK INTEGRATION (Web Links & YouTube Video Processing)
+            val urls = this@IntelligenceRepository.extractUrls(latestUserMsgText)
+            val fetchedLinkContexts = if (urls.isNotEmpty()) {
+                urls.map { url ->
+                    async { this@IntelligenceRepository.fetchUrlContent(url) }
+                }.map { it.await() }.joinToString("\n\n")
+            } else {
+                ""
+            }
+
+            val hasPreviousAnalysis = history.filter { it.role == "model" }.any {
             it.text.contains("<summary>") || it.text.contains("<depth>") || it.text.contains("<root_cause>")
         }
         val detectedLevel = detectIntentLevel(latestUserMsgText, hasPreviousAnalysis)
 
         val level1Text = """
-You are DepthLens, an exceptionally intelligent, empathetic, direct, and objective systems-thinking expert.
-The user is having a simple or casual conversation with you, or asking a quick question.
-You MUST adapt to the user's intent:
-- Respond naturally, warmly, and conversationally, just like a supportive and highly intelligent human advisor.
-- Do not generate reports, dashboards, JSON/XML tags, or structured 13-section analyses.
-- Do not output tags like <summary>, <depth>, <confidence>, <root_cause>, or <future_prob>.
-- Keep your formatting clean, clear, and direct. Use spacing-optimized readable paragraphs.
-- Avoid raw markdown asterisks, bold hashes, or dashes unless writing very simple notes.
-- CRITICAL: Never mention internal structure mandates (like "13 sections", "XML tags", "depth layers are mandatory", "confidence engine") to the user. Speak completely naturally.
-- Mirror the user's language, script, and style automatically.
+You are DepthLens, an exceptionally intelligent, direct, and objective systems-thinking analyst.
+The user is asking a direct, simple, or quick conversational question.
+
+### ADAPTIVE INTELLIGENCE LAW: FAST MODE
+1. ANSWER THE QUESTION DIRECTLY AND CONCISELY: Offer a clear, highly insightful, and direct answer. Reveal reality with neutral, clinical, and compassionate clarity.
+2. NO MARKUP: Under absolutely no circumstances should you generate:
+   - Section headers like "SECTION: ..." or "REALITY ASSESSMENT: ...", etc.
+   - Formatting structures like "PERSPECTIVE MATRIX:", "ROOT CAUSE:", "CONTRIBUTING FACTORS:", "VISIBLE SYMPTOMS:", "LEVERAGE POINT:", "PROBABILITY MATRIX:", "SYSTEMIC ANALYSIS:".
+   - Emphasis tags or internal markup like "[EMPHASIS:HIGH]", "[EMPHASIS:MEDIUM]", "[EMPHASIS:LOW]", or "[/EMPHASIS]".
+   - Markdown headings (e.g., #, ##, ###) or code blocks.
+3. NO SCIENTIFIC/THEATER METRICS OR INTERNAL REPORTING: Never expose or mention reasoning allocation, processing time, tokens used, cognitive depth, depth score, reality layers, perspectives evaluated, analysis complexity, reasoning metrics, internal confidence, system diagnostics, engine status, or any artificial intelligence theater. Keep all machinery invisible.
+4. RESPONSE STRUCTURE: Write only 1 to 3 concise paragraphs of highly polished, fluent natural language. Simple, clear, and exceptionally direct.
+5. NO XML TAGS: Do NOT output any XML tags (such as <summary>, <questions>, <exploration>, etc.). Just return plain paragraphs directly.
+
+### LANGUAGE MIRRORING (MANDATORY — HIGHEST PRIORITY)
+Automatically detect the EXACT language, script, and style of the user's latest message and reply in the SAME language and script:
+- If the user writes in Hinglish (romanized Hindi, e.g. "mujhe confidence improve karna hai"), reply in Hinglish — NEVER switch to clean Devanagari Hindi.
+- If the user writes in Hindi (Devanagari), reply in Hindi (Devanagari).
+- If the user writes in Gujarati or Gujlish (romanized Gujarati, e.g. "kem cho"), reply in that same form.
+- If the user writes in English, reply in English.
+- For any other language, mirror that language and script exactly.
+Mirror the user's language mixture, vocabulary and tone. If the user changes language mid-conversation, adapt instantly from the next reply. Never add translation notes or say "I will now speak in...". Just respond naturally in the user's language.
 
 ### SYSTEM MEMORY CACHE
 $memoryBlock
         """.trimIndent()
 
         val level2Text = """
-You are DepthLens, an exceptionally intelligent elite systems-thinking and strategic analyst.
-The user is continuing a conversation on the previously discussed topic.
-You are now operating in STRICT FOLLOW-UP INTELLIGENCE MODE (Mode 2).
+You are DepthLens, an exceptionally intelligent, direct, and objective systems-thinking analyst.
+The user is asking an analytical "Why?", comparison, or reasoning-based question.
 
-### CRITICAL RULES & BEHAVIOR:
-1. DO NOT GENERATE ANY XML OR FORMATTING TAGS. No <summary>, <deep_synthesis>, <root_cause>, <depth>, <future_prob>, etc.
-2. DO NOT output headers like "ROOT CAUSE IDENTIFIED", "REALITY LAYER ACTIVATION", "DEEP DIVE", "DEEP SYNTHESIS", or "INTRODUCTION".
-3. DO NOT repeat, summarize, or restate the previous analysis. Assume the foundation is already fully established and the user knows it.
-4. Go straight into CONTEXT-AWARE DEEP CONTINUATION. Continue from previous reasoning, pushing deeper into the system dynamics.
-5. PUSH TO A DEEPER COGNITIVE LEVEL. Analyze:
-   - Hidden/unstated assumptions
-   - Unconscious psychological drivers & incentive structures
-   - Systemic contradictions & double-bind paradoxes
-   - Second-order and third-order branching consequences
-   - System dynamics & hidden risks/opportunities
-6. Adopt the tone of a world-class, penetrative systems expert having a high-intelligence, continuous, direct conversation. Speak directly to the core of the issue.
-7. Be concise, sharp, and highly insightful. No fluff, no scene-setting, no greetings. Focus on revelatory depth.
+### ADAPTIVE INTELLIGENCE LAW: FAST MODE
+1. UNDERSTAND CORE INTENT: Focus entirely on the root patterns and core reality of the situation. Deliver the sharpest possible objective analysis without fluff.
+2. NO MARKUP: Under absolutely no circumstances should you generate:
+   - Section headers like "SECTION: ..." or "REALITY ASSESSMENT: ...", etc.
+   - Formatting structures like "PERSPECTIVE MATRIX:", "ROOT CAUSE:", "CONTRIBUTING FACTORS:", "VISIBLE SYMPTOMS:", "LEVERAGE POINT:", "PROBABILITY MATRIX:", "SYSTEMIC ANALYSIS:".
+   - Emphasis tags or internal markup like "[EMPHASIS:HIGH]", "[EMPHASIS:MEDIUM]", "[EMPHASIS:LOW]", or "[/EMPHASIS]".
+   - Markdown headings (e.g., #, ##, ###) or code blocks.
+3. NO SCIENTIFIC/THEATER METRICS OR INTERNAL REPORTING: Never expose or mention reasoning allocation, processing time, tokens used, cognitive depth, depth score, reality layers, perspectives evaluated, analysis complexity, reasoning metrics, internal confidence, system diagnostics, engine status, or any artificial intelligence theater. Keep all machinery invisible.
+4. RESPONSE STRUCTURE: Write only 1 to 3 concise paragraphs of highly polished, fluent natural language. Simple, clear, and exceptionally direct.
+5. NO XML TAGS: Do NOT output any XML tags (such as <summary>, <questions>, <exploration>, etc.). Just return plain paragraphs directly.
+
+### LANGUAGE MIRRORING (MANDATORY — HIGHEST PRIORITY)
+Automatically detect the EXACT language, script, and style of the user's latest message and reply in the SAME language and script:
+- If the user writes in Hinglish (romanized Hindi, e.g. "mujhe confidence improve karna hai"), reply in Hinglish — NEVER switch to clean Devanagari Hindi.
+- If the user writes in Hindi (Devanagari), reply in Hindi (Devanagari).
+- If the user writes in Gujarati or Gujlish (romanized Gujarati, e.g. "kem cho"), reply in that same form.
+- If the user writes in English, reply in English.
+- For any other language, mirror that language and script exactly.
+Mirror the user's language mixture, vocabulary and tone. If the user changes language mid-conversation, adapt instantly from the next reply. Never add translation notes or say "I will now speak in...". Just respond naturally in the user's language.
 
 ### SYSTEM MEMORY CACHE
 $memoryBlock
-
-### ADVANCED MULTI-LANGUAGE INTELLIGENCE
-Automatically respond in the same language, script, and style as the user's prompt.
         """.trimIndent()
 
         val level4Text = """
@@ -469,7 +778,12 @@ You must utilize a smart language adaptation and mirroring system. Automatically
 ### ULTRA-STRICT CLEAN-TEXT & FORMAT PROTOCOL
 MOBILE BREVITY LAW: This app renders on a 6-inch mobile screen. Every section must be scannable in under 10 seconds. If you write more than 2 sentences for any single field, you are breaking the UI. Prioritize insight density over explanation length. Say more with less.
 
-You are strictly forbidden from outputting raw markdown symbol accents. Use spacing-optimized visual paragraphs.
+### ULTRA-STRICT VISUAL EMPHASIS PROTOCOL (MANDATORY)
+1. SECTION HEADERS: You are STRICTLY FORBIDDEN from generating markdown headings (e.g., #, ##, ###, ####). Instead, use the format:
+SECTION: Heading Name
+2. STYLING & BOLDING: You are STRICTLY FORBIDDEN from using markdown bold elements like '**' or '__', and code tags like '`'. Write in fluid, raw plain-text.
+3. NO INTERNAL METRIC TAGS: Under absolutely no circumstances should you generate emphasis markup such as [EMPHASIS:HIGH], [EMPHASIS:MEDIUM], [EMPHASIS:LOW], or [/EMPHASIS]. No markdown of any format should be visible to the user.
+
 To enable rich visual widgets in the Android terminal, you MUST encapsulate each diagnostic dimension in standard, lowercase, XML-like bracket tags.
 
 INSIGHT DENSITY TEST: Before outputting any sentence, ask: "Does this sentence reveal
@@ -558,11 +872,13 @@ Early Warning Signals: [2 indicators/signals total, each 3-5 words only, 1 line]
 </memory_insight>
 
 <questions>
-[Question 1 starting with '?', 1 line only, no sub-text, no explanation]
-[Question 2 starting with '?', 1 line only, no sub-text, no explanation]
-[Question 3 starting with '?', 1 line only, no sub-text, no explanation]
-[Question 4 starting with '?', 1 line only, no sub-text, no explanation]
-[Question 5 starting with '?', 1 line only, no sub-text, no explanation]
+Generate 5 to 10 personalized, intelligent follow-up questions tailored to the current discussion, user goals, identified patterns, hidden assumptions, and root causes discovered. You MUST categorize each question into one of these exact prefixes (at least one question for each category):
+Go Deeper: ? [Question details]
+Challenge Assumptions: ? [Question details]
+Strategic Questions: ? [Question details]
+Relationship Questions: ? [Question details]
+Personal Growth Questions: ? [Question details]
+Specify at least 5-10 suggested questions total (e.g., 1-2 per category). Ensure each question occupies exactly one line, starting with the category prefix, and has no other sub-text or explanation. Do NOT use numbers, hyphens, or other bullet points.
 </questions>
 
 <exploration>
@@ -575,36 +891,33 @@ Follow this format meticulously. Wrap each visual module within its respective t
         """.trimIndent()
 
         val qClean = latestUserMsgText.lowercase().trim()
-        val isExplicitNewAnalysisRequest = qClean.contains("analyze") || 
-                qClean.contains("diagnose") || 
-                qClean.contains("breakdown") || 
-                qClean.contains("break down") || 
-                qClean.contains("root cause") || 
-                qClean.contains("full report") || 
-                qClean.contains("full analysis") || 
-                qClean.contains("new topic") || 
-                qClean.contains("new analysis") ||
-                qClean.contains("start over") ||
-                qClean.contains("reset analysis")
 
-        val isFollowUpSession = hasPreviousAnalysis && !isExplicitNewAnalysisRequest
+        val chosenLevel = run {
+            val q = qClean
+            val fullDepthKeywords = listOf(
+                "full depthlens analysis", "deep dive", "multi-perspective analysis", 
+                "future probability map", "complete assessment", "full report", "complete analysis", "maximum depth"
+            )
+            val deepKeywords = listOf(
+                "deep analysis", "deep thought", "analyze deeply", "root cause", "full reasoning"
+            )
+            val highStakesKeywords = listOf(
+                "suicide", "collapse", "bankruptcy", "crisis", "lawsuit", "fraud", "fatal"
+            )
 
-        val chosenLevel = if (isFollowUpSession) {
-            IntentLevel.LEVEL_2_FOCUSED
-        } else {
-            when (sessionDepth) {
-                "Quick Insight" -> IntentLevel.LEVEL_1_SIMPLE
-                "Standard Analysis" -> IntentLevel.LEVEL_3_DEEP
-                "Deep Analysis" -> IntentLevel.LEVEL_3_DEEP
-                "Full Investigation" -> IntentLevel.LEVEL_4_STRATEGIC
-                else -> detectedLevel
+            if (fullDepthKeywords.any { q.contains(it) } || sessionDepth == "Full Investigation") {
+                IntentLevel.LEVEL_4_FULL
+            } else if (deepKeywords.any { q.contains(it) } || highStakesKeywords.any { q.contains(it) } || sessionDepth == "Deep Analysis") {
+                IntentLevel.LEVEL_3_DEEP
+            } else {
+                IntentLevel.LEVEL_1_DIRECT
             }
         }
 
         val systemInstructionText = when (chosenLevel) {
-            IntentLevel.LEVEL_1_SIMPLE -> level1Text
-            IntentLevel.LEVEL_2_FOCUSED -> level2Text
-            IntentLevel.LEVEL_4_STRATEGIC -> level4Text
+            IntentLevel.LEVEL_1_DIRECT -> level1Text
+            IntentLevel.LEVEL_2_ANALYTICAL -> level2Text
+            IntentLevel.LEVEL_4_FULL -> level4Text
             IntentLevel.LEVEL_3_DEEP -> """
 CORE INTELLIGENCE LAW — READ THIS FIRST:
 Deep analysis is NOT long analysis. A 3-word insight that shatters a comfortable assumption
@@ -702,7 +1015,11 @@ Identify and mirror the user's communication style:
 ### ULTRA-STRICT CLEAN-TEXT & FORMAT PROTOCOL
 MOBILE BREVITY LAW: This app renders on a 6-inch mobile screen. Every section must be scannable in under 10 seconds. If you write more than 2 sentences for any single field, you are breaking the UI. Prioritize insight density over explanation length. Say more with less.
 
-You are strictly forbidden from outputting raw markdown symbol accents like '**', '__', '##', '###', '---', '***', or '>' blockquotes. Raw markdown formatting ruins the native DepthLens terminal. Output clean, spacing-optimized visual paragraphs.
+### ULTRA-STRICT VISUAL EMPHASIS PROTOCOL (MANDATORY)
+1. SECTION HEADERS: You are STRICTLY FORBIDDEN from generating markdown headings (e.g., #, ##, ###, ####). Instead, use the format:
+SECTION: Heading Name
+2. STYLING & BOLDING: You are STRICTLY FORBIDDEN from using markdown bold elements like '**' or '__', and code tags like '`'. Write in fluid, raw plain-text.
+3. NO INTERNAL METRIC TAGS: Under absolutely no circumstances should you generate emphasis markup such as [EMPHASIS:HIGH], [EMPHASIS:MEDIUM], [EMPHASIS:LOW], or [/EMPHASIS]. No markdown of any format should be visible to the user.
 
 To enable rich visual widget components in the Android terminal, you MUST encapsulate each diagnostic dimension in standard, lowercase, XML-like bracket tags. Any generic introductory comment must go printed at the top-level outside/before these tags.
 
@@ -830,11 +1147,13 @@ Early Warning Signals: [2 indicators/signals total, each 3-5 words only, 1 line]
 </memory_insight>
 
 <questions>
-[Question 1 starting with '?', 1 line only, no sub-text, no explanation]
-[Question 2 starting with '?', 1 line only, no sub-text, no explanation]
-[Question 3 starting with '?', 1 line only, no sub-text, no explanation]
-[Question 4 starting with '?', 1 line only, no sub-text, no explanation]
-[Question 5 starting with '?', 1 line only, no sub-text, no explanation]
+Generate 5 to 10 personalized, intelligent follow-up questions tailored to the current discussion, user goals, identified patterns, hidden assumptions, and root causes discovered. You MUST categorize each question into one of these exact prefixes (at least one question for each category):
+Go Deeper: ? [Question details]
+Challenge Assumptions: ? [Question details]
+Strategic Questions: ? [Question details]
+Relationship Questions: ? [Question details]
+Personal Growth Questions: ? [Question details]
+Specify at least 5-10 suggested questions total (e.g., 1-2 per category). Ensure each question occupies exactly one line, starting with the category prefix, and has no other sub-text or explanation. Do NOT use numbers, hyphens, or other bullet points.
 </questions>
 
 <exploration>
@@ -848,20 +1167,46 @@ Follow this format meticulously. Wrap each visual module within its respective t
         }
 
         // Build API contents payload
+        val latestUserMsgId = history.lastOrNull { it.role == "user" }?.id
         val contentsPayload = mutableListOf<Content>()
         for (msg in history) {
             val partsList = mutableListOf<Part>()
             
-            // If any media/file attachment is present, attach it using its detected MIME type!
+            // Supporting multiple comma-separated media/file attachments as first-class inputs!
             if (!msg.imageUri.isNullOrEmpty() && msg.role == "user") {
-                val mediaData = loadUriAsMediaData(msg.imageUri)
-                if (mediaData != null) {
-                    partsList.add(Part(inlineData = InlineData(mimeType = mediaData.mimeType, data = mediaData.base64)))
+                val uris = msg.imageUri.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                for (uri in uris) {
+                    if (uri.startsWith("content://simulated_voice_input")) {
+                        // Insert robust simulated inline audio representation
+                        partsList.add(Part(inlineData = InlineData(mimeType = "audio/m4a", data = Base64.encodeToString("simulated audio content".toByteArray(), Base64.NO_WRAP))))
+                    } else {
+                        val mediaData = loadUriAsMediaData(uri)
+                        if (mediaData != null) {
+                            partsList.add(Part(inlineData = InlineData(mimeType = mediaData.mimeType, data = mediaData.base64)))
+                        }
+                    }
                 }
             }
             
             // Add text part
-            partsList.add(Part(text = msg.text))
+            var msgText = msg.text
+            
+            // Inject reply context if this message is a reply to another message
+            if (!msg.replyToMessageId.isNullOrEmpty() && !msg.selectedText.isNullOrEmpty()) {
+                val repliedMsg = history.find { it.id == msg.replyToMessageId }
+                val repliedRoleName = if (repliedMsg?.role == "user") "You" else "DepthLens"
+                msgText = "[Context: This message is a reply to a selected excerpt from a previous message.\n" +
+                          "The selected text was: \"${msg.selectedText}\"\n" +
+                          "originally sent by $repliedRoleName.\n" +
+                          "Full text of that original message: \"${repliedMsg?.text ?: ""}\"]\n\n$msgText"
+            }
+
+            // Inject Web material if this is the user's query and links are fetched
+            if (msg.role == "user" && msg.id == latestUserMsgId && fetchedLinkContexts.isNotEmpty()) {
+                msgText = "$msgText\n\n### ATTACHED CONTENT SOURCE (WEB MATERIAL):\n$fetchedLinkContexts"
+            }
+            
+            partsList.add(Part(text = msgText))
             contentsPayload.add(Content(role = msg.role, parts = partsList))
         }
 
@@ -1190,9 +1535,6 @@ Follow this format meticulously. Wrap each visual module within its respective t
             }
         }
 
-        val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
-        val isDeepThought = prefs.getBoolean("is_deep_thought_enabled", false)
-
         val finalSystemText = customInstructionOverride ?: """
 $adjustedSystemInstructionText
 
@@ -1244,59 +1586,352 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
 """ else ""}
         """.trimIndent()
 
+        val languageLawText = """
+🚨 CRITICAL SYSTEM MANDATE: UNIVERSAL LANGUAGE, TRANSLITERATION, AND ACCENT MATCHING LAW 🚨
+1. You MUST detect the exact language, dialect, alphabet/letters (Latin vs Native script), and transliteration style used by the user in their messages.
+2. You MUST respond in the EXACT same language, transliteration, and conversational style:
+   - If the user writes in English, you MUST reply in English.
+   - If the user writes in Gujarati (using Gujarati script, e.g. "તમે કેમ છો?"), you MUST reply in Gujarati (using Gujarati script).
+   - If the user writes in Hujarati / Gujarati written using English/Latin letters (e.g., "tame kem cho?"), you MUST reply in Hujarati / Gujarati using English/Latin letters (e.g. "hu saaro chu, tame bolo!").
+   - If the user writes in Hinglish (Hindi mixed with English using Latin/English letters, e.g., "kya haal hai?"), you MUST reply in fluent Hinglish using Latin/English letters (e.g., "sab badhiya hai, aap batao!").
+   - Same for any other language, dialect, or transliterated form (e.g. Marathi, Telugu, Bengali, Romanized Hindi, etc.).
+3. This language-matching mandate is absolute and overrides all other style guidelines, templates, or instructions. You must preserve the requested XML tags and structures, but translate all content inside and outside of them into the user's detected language, script, or transliteration.
+──────────────────────────────────────────────────────────────────────
+""".trimIndent()
+
+        val enforceLanguageInstruction = when (currentSessionLang) {
+            "GUJARATI_SCRIPT" -> """
+                🚨🚨🚨 CRITICAL GENERATION MANDATE 🚨🚨🚨
+                - YOU MUST RESPOND ENTIRELY IN GUJARATI SCRIPT (ગુજરાતી ભાષા).
+                - DO NOT write in English or Hindi.
+                - TRANSLATE ALL CONTENT AND INSIGHTS INSIDE AND OUTSIDE THE XML TAGS INTO GUJARATI SCRIPT.
+                - Keep the requested XML tags (<summary>, <confidence>, <root_cause>, etc.) EXACTLY as they are, but write their contents completely in Gujarati script.
+            """.trimIndent()
+
+            "GUJLISH" -> """
+                🚨🚨🚨 CRITICAL GENERATION MANDATE 🚨🚨🚨
+                - YOU MUST RESPOND ENTIRELY IN GUJLISH / ROMANIZED GUJARATI (Gujarati written using the English/Latin alphabet).
+                - Use natural Gujarati words but write them using English letters (e.g., use words like 'kem cho', 'tame', 'che', 'nathi', 'thayu', 'maru', 'saku', 'pan', 'ane').
+                - Do not suddenly switch to pure English or pure Hindi or Gujarati script. Maintain a friendly, casual, yet insightful Gujlish style.
+                - Keep the requested XML tags (<summary>, <confidence>, <root_cause>, etc.) EXACTLY as they are, but write their contents completely in Gujlish.
+            """.trimIndent()
+
+            "HINDI_DEVANAGARI" -> """
+                🚨🚨🚨 CRITICAL GENERATION MANDATE 🚨🚨🚨
+                - YOU MUST RESPOND ENTIRELY IN HINDI SCRIPT (हिंदी भाषा, देवनागरी लिपि).
+                - DO NOT write in English or Gujarati.
+                - TRANSLATE ALL CONTENT AND INSIGHTS INSIDE AND OUTSIDE THE XML TAGS INTO DEVANAGARI HINDI.
+                - Keep the requested XML tags (<summary>, <confidence>, <root_cause>, etc.) EXACTLY as they are, but write their contents completely in Hindi Devanagari script.
+            """.trimIndent()
+
+            "HINGLISH" -> """
+                🚨🚨🚨 CRITICAL GENERATION MANDATE 🚨🚨🚨
+                - YOU MUST RESPOND ENTIRELY IN NATURAL HINGLISH (Hindi mixed with English, written in Latin/English alphabet).
+                - Use colloquial, natural Indian conversational vocabulary and sentence structures (e.g. 'ye issue isliye aa raha hai...', 'bro, ye bug fix karna hai...', 'aap batao', 'kuch help chahiye?').
+                - Do NOT use pure Devanagari Hindi, and do NOT use pure formal English. Mirror the user's friendly, casual, and mixed Hinglish style.
+                - Keep the requested XML tags (<summary>, <confidence>, <root_cause>, etc.) EXACTLY as they are, but write their contents completely in Hinglish.
+            """.trimIndent()
+
+            else -> """
+                🚨🚨🚨 CRITICAL GENERATION MANDATE 🚨🚨🚨
+                - YOU MUST RESPOND ENTIRELY IN ENGLISH.
+                - Keep the requested XML tags (<summary>, <confidence>, <root_cause>, etc.) EXACTLY as they are, and write their contents completely in English.
+            """.trimIndent()
+        }
+
+        val currentDateTimeStr = java.text.SimpleDateFormat("EEEE, MMMM dd, yyyy, hh:mm:ss a (z)", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getDefault()
+        }.format(java.util.Date())
+
+        val dateContext = "Current date and time: $currentDateTimeStr.\n\n"
+
+        val calibratedSystemText = """
+$dateContext$languageLawText
+
+$enforceLanguageInstruction
+
+$finalSystemText
+
+──────────────────────────────────────────────────────────────────────
+🚨 DEPTHLENS — UNIVERSAL LANGUAGE & ACCENT LAW 🚨
+- Under all circumstances, you MUST detect the language and dialect/accent used by the user in their input (e.g., French, Spanish, German, Hindi, or Hinglish - Hindi mixed with English written in Latin/English alphabet).
+- You MUST respond in that EXACT same language, style, and tone (e.g., if the user asks in Hinglish, respond in fluent Hinglish, utilizing Hindi and English words in a natural Indian conversational style).
+- Keep sentences natural, colloquial, and matching the conversational speed of a spoken voice/video chat assistant.
+- Seamless Continuous Conversation flow (like ChatGPT or Gemini voice chat): You must maintain perfect back-and-forth context across all user/model messages. Always address follow-ups, remember previous user questions, and maintain context dynamically.
+- Do NOT repeat sections or generate unnecessary markup; keep replies fluid and cohesive.
+
+──────────────────────────────────────────────────────────────────────
+🚨 DEPTHLENS — EXECUTION HIERARCHY & ADVANCED INTELLIGENCE LAYER v1.0 🚨
+
+CORE PRINCIPLE:
+- DepthLens is Reality-Centric, not User-Centric.
+- DepthLens exists to understand users deeply without becoming them.
+- DepthLens exists to reveal reality, not reinforce narratives.
+- DepthLens exists to expose distortions, not validate beliefs.
+- Memory is context. Reality is authority. Truth always has the highest priority.
+
+DEPTHLENS EXECUTION HIERARCHY:
+The following order of processing and reasoning is mandatory. No layer may bypass or override a higher layer:
+
+LAYER 1 — TRUTH ENGINE (Highest Authority Layer)
+- Purpose: Separate facts from assumptions; separate reality from narratives; detect unsupported conclusions; detect logical inconsistencies; identify missing context; prevent memory-driven or user-belief-driven conclusions.
+- Core Question: "What remains true if all narratives, assumptions, and beliefs are completely removed?"
+- Output: Raw Reality Assessment. This serves as the unshakeable foundation for all subsequent layers.
+
+LAYER 2 — REALITY DISTORTION DETECTOR
+- Purpose: Identify and map forces distorting raw perception. Expose mechanisms of:
+  * Confirmation Bias
+  * Emotional Distortion
+  * Identity Attachment
+  * Ego Protection Mechanisms
+  * Narrative Addiction
+  * Fear-Based Interpretation
+  * Social Conditioning
+  * Projection and Defensive Reasoning
+- Output: Distortion Map. It neutrally, clinically diagnoses where perception differs from raw reality.
+
+LAYER 3 — MULTI-PERSPECTIVE REALITY ENGINE
+- Purpose: Examine the situation objectively through multiple observation lenses without becoming trapped inside any single viewpoint:
+  * Logical Perspective: Facts, evidence, causal links, assumptions, and contradictions. ("What does logic suggest?")
+  * Emotional Perspective: Core fears, desires, internal attachments, and emotional drivers. ("What emotions are influencing the situation?")
+  * Psychological Perspective: Defense mechanisms, cognitive biases, identity structures, childhood scripts, and unexamined self-image defense models. ("What psychological mechanisms are operating beneath the surface?")
+  * Strategic Perspective: Incentives, game-theoretic secondary effects, risks, leverage points, long-term consequences, and power dynamics. ("What creates the greatest strategic advantage?")
+  * Relationship Perspective: Interpersonal dynamics, circular friction loops, unspoken tension, attachment security, and covert contracts. ("What is happening between the people involved?")
+  * Systems Perspective: Stakeholders, feedback loops (reinforcing/balancing), bottlenecks, emergent behaviors, and second-order systemic effects. ("What larger system is producing this outcome?")
+  * Opposite Perspective: Counterarguments, alternative explanations, and competing interpretations. ("If the current belief is wrong, what else could explain this?")
+  * Neutral Observer Perspective: Measurable events and objective/detached view of facts. ("What would a completely neutral observer see?")
+  * Future Self Perspective: Long-term trajectory evaluation, hindsight, and future wisdom. ("What would my future self likely wish I understood today?")
+- Output: Perspective Matrix. Expands visibility without prematurely narrowing the field.
+
+LAYER 4 — INTEGRATED REALITY ASSESSMENT
+- Purpose: Synthesize all perspectives into a unified, coherent reality model (not voting, not averaging, not mere compromise, but true synthesis). Identify:
+  * Consistent Signals: Strong insights appearing across multiple lenses.
+  * Contradictions: Areas where lenses actively disagree.
+  * Hidden Drivers: Systemic forces influencing multiple dimensions simultaneously.
+  * Core Reality: The most structurally probable underlying reality.
+  * Blind Spots: High-impact elements currently outside immediate user awareness.
+  * Recommended Focus: The single area deserving target priority attention.
+- Output: Integrated Reality Assessment.
+
+LAYER 5 — FUTURE PROBABILITY ENGINE
+- Purpose: Estimate scenario probabilities dynamically rather than making rigid static predictions. Model possible future pathways based on stakeholder incentives, psychological mechanics, historic loops, and decision points:
+  * Scenario A (Most Likely Path) [XX% Probability]: Outcome if current variables and loops persist unchanged. Identify 3 Key Drivers.
+  * Scenario B (Positive Shift Path) [XX% Probability]: Outcome if proactive/beneficial variables strengthen. Identify 3 Key Drivers.
+  * Scenario C (Negative Escalation Path) [XX% Probability]: Outcome if risk variables, inaction, or fear escalate. Identify 3 Key Drivers.
+  * Scenario D (Unexpected Outcome) [XX% Probability]: A lower-probability, high-impact/outlier path. Identify 3 Key Drivers.
+  * Key Variables: Dynamic metrics exerting the strongest influence (e.g., trust, communication, cash flow, heath, incentives).
+  * Early Warning Signals: Frictional behaviors indicating movement toward negative paths.
+  * Positive Indicators: Favorable markers indicating positive alignment.
+  * Confidence Level: Define specifically as High (strong evidence/stable variables), Medium, or Low (limited evidence/unstable conditions).
+- Future Safety Check before output: Are these probabilities rather than dogmatic predictions? Are unknown variables and human freedom of choice acknowledged? Could incentives/behavior shift over time?
+
+LAYER 6 — ACTION INTELLIGENCE ENGINE
+- Purpose: Identify what matters most next and translate profound understanding into highly precise, real-world action points:
+  * Highest Leverage Action: The one movement producing the greatest constructive outcome.
+  * Lowest Leverage Action: Actions consuming energy while yielding zero actual value.
+  * What To Stop: Habits/behaviors actively feeding distortion, friction, or feedback loops.
+  * What To Continue: Beneficial strategies producing high-integrity positive results.
+  * What To Monitor: Essential variables tracking the future trajectory.
+
+HIERARCHY RULES:
+- The hierarchy is absolute: Truth Engine -> Reality Distortion Detector -> Multi-Perspective Reality Engine -> Integrated Reality Assessment -> Future Probability Engine -> Action Intelligence Engine. No lower layer may bypass or override a higher layer.
+- Reality Priority Rule: Reality > Perspectives > Probabilities > Actions.
+- If Truth Engine conflicts with any perspective or user belief, Reality wins.
+- If Memory or past DepthLens conclusions conflict with Reality, Truth/Reality wins.
+
+MEMORY PROTECTION RULE (CONTINUITY & PATTERN RETENTION):
+- Memory remains fully enabled, critical, and active. Learning remains fully enabled.
+- However, Memory is CONTEXT, not absolute Truth or Identity.
+- Store pattern profiles, do not inherit patterns. Store perspectives, do not adopt them as personal beliefs. Store linguistic styles, do not become those personal behaviors.
+- Understand the user deeply, but never become or copy the user's emotional/cognitive states.
+
+RESPONSE GENERATION SELF-TEST (MANDATORY):
+Before outputting any final response, run these validation checks:
+1. Am I agreeing because it is true, or because the user believes/asserts it?
+2. Am I treating memory/history-logs as context, or as dogmatic evidence for the conclusion?
+3. Am I exposing a mechanism/pattern, or copying/imitating the user's pattern?
+4. Am I revealing reality as a neutral mirror, or reinforcing a fragile self-image structure?
+5. If memory were removed, would this conclusion still survive?
+If any check fails, immediately recalculate.
+
+FINAL DEPTHLENS DIRECTIVE:
+Observe carefully. Understand deeply. Detect distortions. Analyze objectively. Model possibilities. Recommend intelligently. Reveal reality with neutral, clinical, and compassionate clarity. Truth is the ultimate authority.
+──────────────────────────────────────────────────────────────────────
+""".trimIndent()
+
+        val lowercaseQuery = latestUserMsgText.lowercase()
+        val needsGrounding = lowercaseQuery.contains("today") ||
+                lowercaseQuery.contains("latest") ||
+                lowercaseQuery.contains("current") ||
+                lowercaseQuery.contains("this year") ||
+                lowercaseQuery.contains("news") ||
+                lowercaseQuery.contains("price") ||
+                lowercaseQuery.contains("now") ||
+                lowercaseQuery.contains("recent") ||
+                lowercaseQuery.contains("weather") ||
+                lowercaseQuery.contains("time") ||
+                lowercaseQuery.contains("date") ||
+                lowercaseQuery.contains("year") ||
+                lowercaseQuery.contains("who is") ||
+                lowercaseQuery.contains("what is")
+
+        // User explicitly tapped "Search the Web" on a reply → force live grounding
+        val forceWeb = consumeForceWeb(sessionId)
+        val toolsPayload = if (needsGrounding || forceWeb) {
+            listOf(mapOf("googleSearch" to emptyMap<String, String>()))
+        } else {
+            null
+        }
+
         val request = GenerateContentRequest(
             contents = contentsPayload,
             generationConfig = GenerationConfig(temperature = 0.72f),
-            systemInstruction = Content(parts = listOf(Part(text = finalSystemText)))
+            systemInstruction = Content(parts = listOf(Part(text = calibratedSystemText))),
+            tools = toolsPayload
         )
 
         var modelText: String? = null
         var lastException: Exception? = null
 
-        // Use high-intelligence single content generation to load dedicated reasoning frameworks dynamically,
-        // avoiding duplicate parallel requests and static placeholder outputs.
+        // We define the assistant message template, but DO NOT insert it prematurely into the database.
+        // It will be created when we receive the first chunk of text, avoiding empty or placeholder message cards.
+        val assistantMsgId = java.util.UUID.randomUUID().toString()
+        val assistantMsg = MessageEntity(
+            id = assistantMsgId,
+            sessionId = sessionId,
+            role = "model",
+            text = "",
+            timestamp = System.currentTimeMillis()
+        )
 
-        if (modelText == null) {
-            val modelsToTry = buildModelFallbackChain(getPreferredModel())
-            val retryDelays = listOf(3000L, 10000L, 30000L) // 3s, 10s, 30s — longer waits for quota recovery
+        val modelsToTry = buildModelFallbackChain(getPreferredModel())
+        val retryDelays = listOf(100L) // minimal delay for instant fallback
 
-            for (modelName in modelsToTry) {
-                for ((attempt, delay) in retryDelays.withIndex()) {
-                    try {
-                        val response = apiService.generateContent(modelName, apiKey, request)
-                        val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                        if (!text.isNullOrEmpty()) {
-                            modelText = text
-                            break
-                        }
-                    } catch (e: Exception) {
-                        lastException = e
-                        val msg = e.message ?: ""
-                        val is429 = msg.contains("429") || msg.contains("quota", ignoreCase = true) || msg.contains("rate", ignoreCase = true)
-                        if (attempt < retryDelays.size - 1) {
-                            kotlinx.coroutines.delay(delay)
+        for (modelName in modelsToTry) {
+            for ((attempt, delay) in retryDelays.withIndex()) {
+                var streamSucceeded = false
+                try {
+                    val responseBody = apiService.generateContentStream(modelName, apiKey, request)
+                    val moshi = com.squareup.moshi.Moshi.Builder().build()
+                    val chunkAdapter = moshi.adapter(GenerateContentResponse::class.java)
+                    
+                    val accumulatedText = java.lang.StringBuilder()
+                    
+                    // Char-by-char brace-tracking parser for stream
+                    val reader = responseBody.charStream().buffered()
+                    var braceCount = 0
+                    val chunkBuilder = java.lang.StringBuilder()
+                    var inString = false
+                    var escapeNext = false
+
+                    var lastInsertTime = 0L
+                    var charCode: Int
+                    while (reader.read().also { charCode = it } != -1) {
+                        coroutineContext.ensureActive()
+                        val char = charCode.toChar()
+                        chunkBuilder.append(char)
+
+                        if (escapeNext) {
+                            escapeNext = false
                             continue
-                        } else {
-                            break // quota hit on this model — outer loop tries next model
+                        }
+
+                        if (char == '\\') {
+                            escapeNext = true
+                            continue
+                        }
+
+                        if (char == '"') {
+                            inString = !inString
+                            continue
+                        }
+
+                        if (!inString) {
+                            if (char == '{') {
+                                braceCount++
+                            } else if (char == '}') {
+                                braceCount--
+                                if (braceCount == 0) {
+                                    val rawJson = chunkBuilder.toString().trim()
+                                    var cleanJson = rawJson
+                                    while (cleanJson.startsWith("[") || cleanJson.startsWith(",")) {
+                                        cleanJson = cleanJson.substring(1).trim()
+                                    }
+                                    if (cleanJson.startsWith("{") && cleanJson.endsWith("}")) {
+                                        try {
+                                            val streamResponse = chunkAdapter.fromJson(cleanJson)
+                                            val piece = streamResponse?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                                            if (!piece.isNullOrEmpty()) {
+                                                coroutineContext.ensureActive()
+                                                accumulatedText.append(piece)
+                                                
+                                                // Update message in database in real-time but throttle to avoid UI lag/SQLite lock bottleneck
+                                                val now = System.currentTimeMillis()
+                                                if (now - lastInsertTime > 150) {
+                                                    val updatedMsg = assistantMsg.copy(text = accumulatedText.toString())
+                                                    messageDao.insertMessage(updatedMsg)
+                                                    lastInsertTime = now
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            // Handle JSON line parsing warning
+                                        }
+                                    }
+                                    chunkBuilder.setLength(0)
+                                }
+                            }
                         }
                     }
+
+                    val finalText = accumulatedText.toString()
+                    if (finalText.isNotEmpty()) {
+                        modelText = finalText
+                        val updatedMsg = assistantMsg.copy(text = finalText)
+                        messageDao.insertMessage(updatedMsg)
+                        streamSucceeded = true
+                        break
+                    }
+                } catch (e: Exception) {
+                    lastException = e
+                    android.util.Log.e("IntelligenceRepository", "Streaming failed for model $modelName, falling back. Error: ${e.message}", e)
                 }
-                if (modelText != null) break
+
+                if (streamSucceeded) break
+
+                // Fallback: try standard non-stream generation for compatibility
+                try {
+                    val response = apiService.generateContent(modelName, apiKey, request)
+                    val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                    if (!text.isNullOrEmpty()) {
+                        modelText = text
+                        val updatedMsg = assistantMsg.copy(text = text)
+                        messageDao.insertMessage(updatedMsg)
+                        streamSucceeded = true
+                        break
+                    }
+                } catch (e: Exception) {
+                    lastException = e
+                    val msg = e.message ?: ""
+                    val is429 = msg.contains("429") || msg.contains("quota", ignoreCase = true) || msg.contains("rate", ignoreCase = true)
+                    if (attempt < retryDelays.size - 1) {
+                        kotlinx.coroutines.delay(delay)
+                        continue
+                    } else {
+                        break // Try next model in chain
+                    }
+                }
             }
+            if (modelText != null) break
         }
 
         if (modelText != null) {
-            // Save assistant message to Database history
-            val assistantMsg = MessageEntity(
-                id = UUID.randomUUID().toString(),
-                sessionId = sessionId,
-                role = "model",
-                text = modelText,
-                timestamp = System.currentTimeMillis()
-            )
-            messageDao.insertMessage(assistantMsg)
+            val processedModelText = modelText
+
+            // Update assistant message with final text
+            val finalUpdatedMsg = assistantMsg.copy(text = processedModelText)
+            messageDao.insertMessage(finalUpdatedMsg)
             triggerUpload { uid ->
-                CloudSyncService.uploadMessage(uid, assistantMsg.id, assistantMsg.sessionId, assistantMsg.role, assistantMsg.text, assistantMsg.imageUri, assistantMsg.timestamp)
+                CloudSyncService.uploadMessage(uid, finalUpdatedMsg.id, finalUpdatedMsg.sessionId, finalUpdatedMsg.role, finalUpdatedMsg.text, finalUpdatedMsg.imageUri, finalUpdatedMsg.timestamp)
             }
 
             // Extract and save memory insights proactively to complete Memory Intelligence System
@@ -1324,7 +1959,7 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
                 }
             }
 
-            return@withContext ResponseParser.parse(modelText)
+            return@withContext ResponseParser.parse(processedModelText)
         } else {
             val msgState = lastException?.message ?: "unknown cause"
             val userFriendlyError = when {
@@ -1400,6 +2035,12 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
                 dbEx.printStackTrace()
             }
             return@withContext ResponseParser.parse(errorMsg)
+        } } finally {
+            synchronized(this@IntelligenceRepository) {
+                if (activeJobs[sessionId] == currentJob) {
+                    activeJobs.remove(sessionId)
+                }
+            }
         }
     }
 
@@ -1412,23 +2053,52 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
 
     private fun loadUriAsMediaData(uriString: String): MediaData? {
         return try {
-            val uri = Uri.parse(uriString)
-            val resolver = context.contentResolver
-            var mimeType = resolver.getType(uri) ?: "application/octet-stream"
+            val bytes: ByteArray
+            var mimeType: String
             
-            // Fallback content-type detection
-            if (mimeType == "application/octet-stream") {
-                val extension = android.webkit.MimeTypeMap.getFileExtensionFromUrl(uriString)
-                if (!extension.isNullOrEmpty()) {
-                    val detected = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension.lowercase())
-                    if (detected != null) {
-                        mimeType = detected
+            if (uriString.startsWith("http://") || uriString.startsWith("https://")) {
+                val client = okhttp3.OkHttpClient()
+                val request = okhttp3.Request.Builder().url(uriString).build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return null
+                    bytes = response.body?.bytes() ?: return null
+                    mimeType = response.body?.contentType()?.toString()?.substringBefore(";") ?: "application/octet-stream"
+                }
+            } else {
+                val uri = Uri.parse(uriString)
+                val resolver = context.contentResolver
+                mimeType = resolver.getType(uri) ?: "application/octet-stream"
+                
+                // Fallback content-type detection
+                if (mimeType == "application/octet-stream") {
+                    val cleanPath = uri.path ?: uriString
+                    val extension = cleanPath.substringAfterLast('.', "").lowercase()
+                    if (extension.isNotEmpty()) {
+                        val detected = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+                        if (detected != null) {
+                            mimeType = detected
+                        } else {
+                            mimeType = when (extension) {
+                                "jpg", "jpeg" -> "image/jpeg"
+                                "png" -> "image/png"
+                                "webp" -> "image/webp"
+                                "gif" -> "image/gif"
+                                "pdf" -> "application/pdf"
+                                else -> "application/octet-stream"
+                            }
+                        }
                     }
                 }
+                
+                val inputStream = if (uri.scheme == "file" || uriString.startsWith("file:/")) {
+                    val path = uri.path ?: uriString.substringAfter("file://")
+                    java.io.FileInputStream(java.io.File(path))
+                } else {
+                    resolver.openInputStream(uri)
+                } ?: return null
+                
+                bytes = inputStream.use { it.readBytes() }
             }
-            
-            val inputStream = resolver.openInputStream(uri) ?: return null
-            val bytes = inputStream.use { it.readBytes() }
             
             var finalBytes = bytes
             var finalMime = mimeType
@@ -1463,25 +2133,38 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
             return@withContext "This is a brand new conversation thread. Start by writing a query or attaching any content (image, document, PDF, voice memo) to begin your intelligence diagnostic!"
         }
         
+        val currentSessionLang = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+            .getString("language_session_$sessionId", "ENGLISH") ?: "ENGLISH"
+        
+        val enforceLanguageInstruction = when (currentSessionLang) {
+            "GUJARATI_SCRIPT" -> "\n🚨🚨🚨 YOU MUST WRITE THIS ENTIRE BRIEF IN GUJARATI SCRIPT (ગુજરાતી ભાષા). Do NOT write in English or Hindi. 🚨🚨🚨"
+            "GUJLISH" -> "\n🚨🚨🚨 YOU MUST WRITE THIS ENTIRE BRIEF IN GUJLISH / ROMANIZED GUJARATI (using words like 'kem cho', 'tame', 'che', 'nathi', written in Latin/English alphabet). Do NOT write in English or Hindi. 🚨🚨🚨"
+            "HINDI_DEVANAGARI" -> "\n🚨🚨🚨 YOU MUST WRITE THIS ENTIRE BRIEF IN HINDI SCRIPT (हिंदी भाषा). Do NOT write in English or Gujarati. 🚨🚨🚨"
+            "HINGLISH" -> "\n🚨🚨🚨 YOU MUST WRITE THIS ENTIRE BRIEF IN NATURAL HINGLISH (Hindi mixed with English, written in Latin/English alphabet, e.g. using words like 'hai', 'kaise', 'kya'). Do NOT write in English. 🚨🚨🚨"
+            else -> "\n🚨🚨🚨 YOU MUST WRITE THIS ENTIRE BRIEF IN ENGLISH. 🚨🚨🚨"
+        }
+
         val systemPrompt = """
             You are the DepthLens Conversation Continuity Engine™. Your role is to reconnect the context of a previous conversation.
             You are given a historic log of messages. Analyze them carefully.
             Generate a brief, highly structured summary to restore active mental models.
             
+            $enforceLanguageInstruction
+            
             IMPORTANT: Use exactly this pure text layout (DO NOT use asterisk markdown '**' or '#' headings):
             
             ⚡ CONTEXT RESTORED BRIEF
             
-            PREVIOUS CONTEXT:
+            Previous Context Summary:
             [2-3 sentences summarizing the core topic discussed]
             
-            CURRENT PROGRESS & GOALS:
+            Current Progress:
             [Identify the main user goals/concerns and what has been discovered so far]
             
-            UNANSWERED QUESTIONS:
+            Unanswered Questions:
             [List 2-3 critical open questions to answer next to depth-test this situation]
             
-            SUGGESTED NEXT STEPS:
+            Suggested Next Steps:
             [1-2 clear immediate prompt items to explore]
         """.trimIndent()
         
@@ -1490,10 +2173,16 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
             contentsPayload.add(Content(role = msg.role, parts = listOf(Part(text = msg.text))))
         }
         
+        val currentDateTimeStr = java.text.SimpleDateFormat("EEEE, MMMM dd, yyyy, hh:mm:ss a (z)", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getDefault()
+        }.format(java.util.Date())
+
+        val dateContext = "Current date and time: $currentDateTimeStr.\n\n"
+
         val request = GenerateContentRequest(
             contents = contentsPayload,
             generationConfig = GenerationConfig(temperature = 0.4f),
-            systemInstruction = Content(parts = listOf(Part(text = systemPrompt)))
+            systemInstruction = Content(parts = listOf(Part(text = dateContext + systemPrompt)))
         )
         
         try {
@@ -1533,27 +2222,38 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
         return Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
     }
 
+    fun stopBackgroundAnalysis(sessionId: String) {
+        activeJobs[sessionId]?.cancel()
+        activeJobs.remove(sessionId)
+        synchronized(this@IntelligenceRepository) {
+            _runningAnalyses.value = _runningAnalyses.value - sessionId
+        }
+    }
+
     fun startBackgroundAnalysis(
         sessionId: String,
         category: String = "Root Cause",
         depth: String = "Standard Analysis",
         onComplete: () -> Unit = {}
     ) {
-        synchronized(this) {
-            val current = _runningAnalyses.value
-            if (current.contains(sessionId)) return // Already running
-            _runningAnalyses.value = current + sessionId
-        }
+        // Cancel previous active analysis pipeline for this session before launching a new one
+        activeJobs[sessionId]?.cancel()
 
-        backgroundScope.launch {
+        val job = backgroundScope.launch {
+            synchronized(this@IntelligenceRepository) {
+                _runningAnalyses.value = _runningAnalyses.value + sessionId
+            }
             try {
                 generateAnalysis(sessionId, category, depth)
             } catch (e: Exception) {
-                e.printStackTrace()
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    e.printStackTrace()
+                }
             } finally {
-                synchronized(this) {
+                synchronized(this@IntelligenceRepository) {
                     _runningAnalyses.value = _runningAnalyses.value - sessionId
                 }
+                activeJobs.remove(sessionId)
 
                 // If privacy mode is enabled, clean up files and retain only the final prompt answer
                 val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
@@ -1565,17 +2265,43 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
                 onComplete()
             }
         }
+        activeJobs[sessionId] = job
     }
 
-    private fun sendLocalNotification(context: Context, sessionId: String) {
+    private suspend fun sendLocalNotification(context: Context, sessionId: String) {
         try {
+            val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("notifications_enabled", true)) {
+                return
+            }
+
+            // Foreground detection: if the main app is currently in the foreground, do NOT notify
+            if (com.example.MainActivity.isAppInForeground) {
+                android.util.Log.d("IntelligenceRepository", "App is in foreground, skipping system notification.")
+                return
+            }
+
+            // Voice Chat / Video Chat / Screen Share active: do NOT notify
+            val isVoiceOrVideoActive = com.example.ui.viewmodel.AudioConversationManager.currentState != com.example.ui.viewmodel.AudioState.IDLE
+            val isScreenShareActive = com.example.ScreenShareService.isServiceRunning
+            if (isVoiceOrVideoActive || isScreenShareActive) {
+                android.util.Log.d("IntelligenceRepository", "Voice, video, or screen share active, skipping notification.")
+                return
+            }
+
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            val channelId = "depthlens_analysis_channel"
+            val soundEnabled = prefs.getBoolean("notification_sound", true)
+            val vibrationEnabled = prefs.getBoolean("notification_vibration", true)
+            // Use a dynamic channel id based on sound/vib settings so it updates immediately
+            val channelId = "depthlens_analysis_channel_${soundEnabled}_$vibrationEnabled"
             val channelName = "DepthLens Analysis Notifications"
 
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                val channel = android.app.NotificationChannel(channelId, channelName, android.app.NotificationManager.IMPORTANCE_HIGH).apply {
+                val importance = if (soundEnabled || vibrationEnabled) android.app.NotificationManager.IMPORTANCE_HIGH else android.app.NotificationManager.IMPORTANCE_LOW
+                val channel = android.app.NotificationChannel(channelId, channelName, importance).apply {
                     description = "Notifications for completed strategic analyses."
+                    if (!soundEnabled) setSound(null, null)
+                    enableVibration(vibrationEnabled)
                 }
                 notificationManager.createNotificationChannel(channel)
             }
@@ -1592,15 +2318,58 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
                 android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
             )
 
+            // Dynamic Title & Message depending on analysis vs normal conversation response
+            var title = "Analysis Complete"
+            var content = "Your DepthLens analysis is ready."
+
+            try {
+                val messages = db.messageDao().getMessagesForSession(sessionId)
+                val lastUserMsg = messages.lastOrNull { it.role == "user" }
+                val textLower = lastUserMsg?.text?.lowercase() ?: ""
+                val hasAttachment = lastUserMsg?.imageUri != null || 
+                                    textLower.contains("🔍") ||
+                                    textLower.contains("deep-lens") ||
+                                    textLower.contains("scanning") ||
+                                    textLower.contains("analysis") ||
+                                    textLower.contains("analyze") ||
+                                    textLower.contains("scan") ||
+                                    textLower.contains("digging") ||
+                                    textLower.contains("document") ||
+                                    textLower.contains("pdf") ||
+                                    textLower.contains("video") ||
+                                    textLower.contains("image")
+                
+                if (hasAttachment) {
+                    title = "Analysis Complete"
+                    content = "Your DepthLens analysis is ready."
+                } else {
+                    title = "New AI Response"
+                    content = "Tap to continue your conversation."
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
             val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(android.R.drawable.stat_notify_chat)
-                .setContentTitle("Analysis Complete")
-                .setContentText("Your DepthLens analysis is ready.")
+                .setContentTitle(title)
+                .setContentText(content)
                 .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
+            
+            if (soundEnabled && vibrationEnabled) {
+                builder.setDefaults(androidx.core.app.NotificationCompat.DEFAULT_ALL)
+            } else if (soundEnabled) {
+                builder.setDefaults(androidx.core.app.NotificationCompat.DEFAULT_SOUND)
+            } else if (vibrationEnabled) {
+                builder.setDefaults(androidx.core.app.NotificationCompat.DEFAULT_VIBRATE)
+            } else {
+                builder.setDefaults(0)
+            }
 
-            notificationManager.notify(sessionId.hashCode(), builder.build())
+            // Deduplicate notifications by reusing a constant notification ID (1002), updating existing rather than spamming
+            notificationManager.notify(1002, builder.build())
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -1644,14 +2413,20 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
         contentsPayload: List<Content>,
         systemPrompt: String
     ): String {
+        val currentDateTimeStr = java.text.SimpleDateFormat("EEEE, MMMM dd, yyyy, hh:mm:ss a (z)", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getDefault()
+        }.format(java.util.Date())
+
+        val dateContext = "Current date and time: $currentDateTimeStr.\n\n"
+
         val request = GenerateContentRequest(
             contents = contentsPayload,
             generationConfig = GenerationConfig(temperature = 0.72f),
-            systemInstruction = Content(parts = listOf(Part(text = systemPrompt)))
+            systemInstruction = Content(parts = listOf(Part(text = dateContext + systemPrompt)))
         )
         
         val modelsToTry = buildModelFallbackChain(getPreferredModel())
-        val retryDelays = listOf(3000L, 10000L)
+        val retryDelays = listOf(100L)
         
         var resultText: String? = null
         for (modelName in modelsToTry) {
@@ -1884,27 +2659,79 @@ You are operating in DEEP THOUGHT Mode (which increases the default reasoning la
     suspend fun fetchAndSyncFromFirestore(userId: String): Boolean {
         return com.example.data.network.CloudSyncService.fetchAndSyncAll(userId, sessionDao, messageDao)
     }
+
+    private fun extractUrls(text: String): List<String> {
+        val urlRegex = Regex("""https?://[^\s$.?#].[^\s]*""", RegexOption.IGNORE_CASE)
+        return urlRegex.findAll(text).map { it.value }.toList()
+    }
+
+    private suspend fun fetchUrlContent(urlString: String): String = withContext(Dispatchers.IO) {
+        try {
+            val client = urlOkHttpClient
+            val request = okhttp3.Request.Builder()
+                .url(urlString)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext "Error: HTTP ${response.code}"
+                val html = response.body?.string() ?: ""
+                
+                // Extract Title
+                val titleRegex = Regex("""<title>(.*?)</title>""", RegexOption.IGNORE_CASE)
+                val titleResult = titleRegex.find(html)?.groupValues?.getOrNull(1)?.trim() ?: ""
+                
+                // Extract meta description
+                val descRegex = Regex("""<meta\s+name=["']description["']\s+content=["'](.*?)["']""", RegexOption.IGNORE_CASE)
+                val descResult = descRegex.find(html)?.groupValues?.getOrNull(1)?.trim() ?: ""
+                
+                // Extract body text (up to 1200 characters)
+                var bodyText = html.replace("<script[\\s\\S]*?</script>".toRegex(RegexOption.IGNORE_CASE), "")
+                    .replace("<style[\\s\\S]*?</style>".toRegex(RegexOption.IGNORE_CASE), "")
+                    .replace("<[^>]*>".toRegex(), " ")
+                    .replace("\\s+".toRegex(), " ")
+                    .trim()
+                if (bodyText.length > 1200) {
+                    bodyText = bodyText.substring(0, 1200) + "..."
+                }
+                
+                buildString {
+                    append("URL: ").append(urlString).append("\n")
+                    if (titleResult.isNotEmpty()) append("TITLE: ").append(titleResult).append("\n")
+                    if (descResult.isNotEmpty()) append("DESCRIPTION: ").append(descResult).append("\n")
+                    append("CONTENT EXCERPT: ").append(bodyText)
+                }
+            }
+        } catch (e: Exception) {
+            "Error loading URL ($urlString): ${e.localizedMessage}"
+        }
+    }
 }
 
 object ResponseParser {
+    private val parsedCache = java.util.concurrent.ConcurrentHashMap<String, ParsedResponse>()
+    private val copyableCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     fun getCopyableText(rawResponse: String): String {
-        var text = rawResponse
-        // Remove questions, exploration paths and memory insight tags completely
-        text = text.replace(Regex("""<questions>[\s\S]*?</questions>""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""<exploration>[\s\S]*?</exploration>""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""<memory_insight>[\s\S]*?</memory_insight>""", RegexOption.IGNORE_CASE), "")
-        
-        // Remove XML tags
-        text = text.replace(Regex("""<[^>]+>"""), "")
-        
-        // Trim and clean extra empty lines
-        return text.trim()
+        return copyableCache.getOrPut(rawResponse) {
+            var text = rawResponse
+            // Remove questions, exploration paths and memory insight tags completely
+            text = text.replace(Regex("""<questions>[\s\S]*?</questions>""", RegexOption.IGNORE_CASE), "")
+            text = text.replace(Regex("""<exploration>[\s\S]*?</exploration>""", RegexOption.IGNORE_CASE), "")
+            text = text.replace(Regex("""<memory_insight>[\s\S]*?</memory_insight>""", RegexOption.IGNORE_CASE), "")
+            
+            // Remove XML tags
+            text = text.replace(Regex("""<[^>]+>"""), "")
+            
+            // Trim and clean extra empty lines
+            text.trim()
+        }
     }
 
     fun parse(rawResponse: String): ParsedResponse {
-        var introduction = rawResponse
+        return parsedCache.getOrPut(rawResponse) {
+            var introduction = rawResponse
 
-        val summary = extractTagContent(rawResponse, "summary")
+            val summary = extractTagContent(rawResponse, "summary")
         val deepSynthesis = extractTagContent(rawResponse, "deep_synthesis")
         val confidence = extractTagContent(rawResponse, "confidence")?.trim()
         val depthRaw = extractTagContent(rawResponse, "depth")
@@ -2136,7 +2963,7 @@ object ResponseParser {
             forecastSummary = ForecastSummary(mostLikelyOutcome, keyRisk, opportunityWindow, predictionConfidence)
         }
 
-        return ParsedResponse(
+        ParsedResponse(
             introduction = cleanIntro.trim(),
             executiveSummary = summary,
             deepSynthesis = deepSynthesis?.ifBlank { null },
@@ -2160,7 +2987,7 @@ object ResponseParser {
                     !rawResponse.contains("<future_prob>") &&
                     !rawResponse.contains("<probability_assessment>")
         )
-    }
+    } }
 
     private fun parseFieldPercent(rawText: String, fieldName: String): Int? {
         val lines = rawText.split("\n", "|", ",")
@@ -2175,7 +3002,26 @@ object ResponseParser {
 
     private fun extractTagContent(text: String, tag: String): String? {
         val pattern = Regex("<$tag>(.*?)</$tag>", RegexOption.DOT_MATCHES_ALL)
-        return pattern.find(text)?.groupValues?.getOrNull(1)?.trim()
+        val match = pattern.find(text)
+        if (match != null) {
+            return match.groupValues.getOrNull(1)?.trim()
+        }
+        
+        // Fallback for unclosed tags during streaming
+        val openTag = "<$tag>"
+        val startIndex = text.indexOf(openTag)
+        if (startIndex != -1) {
+            val contentStart = startIndex + openTag.length
+            val partialContent = text.substring(contentStart)
+            val nextTagIndex = partialContent.indexOf("<")
+            val content = if (nextTagIndex != -1) {
+                partialContent.substring(0, nextTagIndex)
+            } else {
+                partialContent
+            }
+            return content.trim()
+        }
+        return null
     }
 
     private fun cleanTags(text: String): String {
@@ -2187,6 +3033,7 @@ object ResponseParser {
         )
         for (tag in tags) {
             cleaned = cleaned.replace("<$tag>(.*?)</$tag>".toRegex(RegexOption.DOT_MATCHES_ALL), "")
+            cleaned = cleaned.replace("<$tag>([^<]*)".toRegex(RegexOption.DOT_MATCHES_ALL), "")
         }
         return cleaned.replace("<[^>]*>".toRegex(), "").trim()
     }
@@ -2208,63 +3055,61 @@ object ResponseParser {
 }
 
 enum class IntentLevel {
-    LEVEL_1_SIMPLE,
-    LEVEL_2_FOCUSED,
-    LEVEL_3_DEEP,
-    LEVEL_4_STRATEGIC
+    LEVEL_1_DIRECT,      // Level 1 — Direct Answer
+    LEVEL_2_ANALYTICAL,  // Level 2 — Analytical Answer
+    LEVEL_3_DEEP,        // Level 3 — Deep Analysis
+    LEVEL_4_FULL         // Level 4 — Full Intelligence Report
 }
 
 private fun detectIntentLevel(query: String, hasPreviousAnalysis: Boolean): IntentLevel {
     val q = query.lowercase().trim()
     
-    // Level 1: Simple conversational gestures/sentences
-    val level1Starters = listOf("hello", "hi", "hey", "greetings", "thanks", "thank you", "who are you", "what are you")
-    if (level1Starters.any { q == it || q.startsWith("$it ") }) {
-         return IntentLevel.LEVEL_1_SIMPLE
+    // Level 4: Full Intelligence Report
+    val level4Keywords = listOf(
+        "complete analysis", "run all engines", "full report", "maximum depth", "intelligence report", 
+        "run engines", "all modules", "reveal everything", "maximum analytical depth"
+    )
+    if (level4Keywords.any { q.contains(it) }) {
+         return IntentLevel.LEVEL_4_FULL
     }
     
-    val level1Phrases = listOf(
-        "are you sure", "can you simplify", "simplify", "give an example", "example please",
-        "why are you doing this", "explain that", "what do you mean", "tell me more details",
-        "how does this work", "help me step by step"
+    // Level 3: Deep Analysis
+    val level3Keywords = listOf(
+        "deep dive", "analyze deeply", "hidden factors", "what am i missing", "root cause", 
+        "full reasoning", "deeper analysis", "psychological drivers", "systemic loops", 
+        "underlying patterns", "diagnose", "breakdown", "break down"
     )
-    if (level1Phrases.any { q.contains(it) }) {
-         return IntentLevel.LEVEL_1_SIMPLE
-    }
-    
-    val analysisKeywords = listOf(
-        "analyze", "diagnose", "breakdown", "break down", "root cause", "systemic", "forecast", "future scenario", 
-        "evaluate risk", "simulate", "game plan", "strategy", "incentive", "loop", "ecosystem"
-    )
-    if (q.length < 20 && !analysisKeywords.any { q.contains(it) }) {
-         return IntentLevel.LEVEL_1_SIMPLE
-    }
-
-    // Level 4: Strategic Intelligence
-    val strategicKeywords = listOf(
-        "forecast", "model future", "evaluate risk", "simulate", "future scenario", "strategic", "outcome", "decision impact"
-    )
-    if (strategicKeywords.any { q.contains(it) }) {
-         return IntentLevel.LEVEL_4_STRATEGIC
-    }
-
-    // Level 3: Deep Investigation
-    val deepKeywords = listOf(
-        "analyze", "diagnose", "breakdown", "break down", "investigate", "root cause analysis", "system analysis", "situation", "conflict", "incentives"
-    )
-    if (deepKeywords.any { q.contains(it) }) {
+    if (level3Keywords.any { q.contains(it) }) {
          return IntentLevel.LEVEL_3_DEEP
     }
-
-    // Level 2: Focused Follow-Up
-    if (hasPreviousAnalysis) {
-         return IntentLevel.LEVEL_2_FOCUSED
+    
+    // Level 2: Analytical Answer
+    val level2Keywords = listOf(
+        "why", "compare", "analyze this", "explain your reasoning", "explain why", 
+        "difference between", "how do they compare", "reasons for", "explain reasoning",
+        "evaluate risk", "systems mapping"
+    )
+    if (level2Keywords.any { q.contains(it) }) {
+         return IntentLevel.LEVEL_2_ANALYTICAL
     }
-
-    // Default
-    return if (q.length > 50) {
-         IntentLevel.LEVEL_3_DEEP
+    
+    // Level 1: Direct Answer (or simple choice/decision indicators)
+    val level1Keywords = listOf(
+        "which one is better", "which is better", "what should i do", "which option", 
+        "should i choose", "is this good or bad", "what is the answer", "tell me what to do", 
+        "make a decision", "decide for me", "which is best", "is it good", "is it bad",
+        "hello", "hi", "hey", "greetings", "thanks", "thank you", "who are you", "what are you"
+    )
+    if (level1Keywords.any { q.contains(it) } || q.length < 25) {
+         return IntentLevel.LEVEL_1_DIRECT
+    }
+    
+    // Default fallback based on length or history
+    return if (q.length > 70) {
+        IntentLevel.LEVEL_3_DEEP
+    } else if (hasPreviousAnalysis) {
+        IntentLevel.LEVEL_2_ANALYTICAL
     } else {
-         IntentLevel.LEVEL_1_SIMPLE
+        IntentLevel.LEVEL_1_DIRECT
     }
 }
