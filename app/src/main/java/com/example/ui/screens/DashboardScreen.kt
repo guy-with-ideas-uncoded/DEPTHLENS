@@ -426,6 +426,10 @@ fun DashboardScreen(
                 // (don't force-exit here; that closes it instantly before it can render)
             }
             currentTab != "home" -> {
+                if (currentTab == "sessions" && viewModel.getChatDeletedFlag()) {
+                    viewModel.selectSession(null)
+                    viewModel.clearChatDeletedFlag()
+                }
                 currentTab = "home"
             }
             // Priority 4: Results Feed active -> Return to Landing Screen
@@ -2161,7 +2165,13 @@ Text(
                                 onSessionSelected = { sessionId -> viewModel.selectSession(sessionId) },
                                 onCreateNewSession = { viewModel.createSession("") },
                                 onDeleteSession = { sessionId -> viewModel.deleteSession(sessionId) },
-                                onNavigateToChat = { currentTab = "home" },
+                                onNavigateToChat = {
+                                    if (viewModel.getChatDeletedFlag()) {
+                                        viewModel.selectSession(null)
+                                        viewModel.clearChatDeletedFlag()
+                                    }
+                                    currentTab = "home"
+                                },
                                 onTogglePinSession = { sessionId -> viewModel.togglePinSession(sessionId) },
                                 onRenameSession = { sessionId, newTitle -> viewModel.renameSession(sessionId, newTitle) },
                                 listState = sessionsListState

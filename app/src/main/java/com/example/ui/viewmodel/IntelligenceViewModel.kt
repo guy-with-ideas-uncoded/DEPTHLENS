@@ -101,6 +101,17 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     val activeSessionId: StateFlow<String?> = _activeSessionId.asStateFlow()
 
     private var isFirstLaunchSessionSetup = true
+    private var wasChatDeleted = false
+
+    fun getChatDeletedFlag(): Boolean = wasChatDeleted
+
+    fun setChatDeletedFlag(value: Boolean) {
+        wasChatDeleted = value
+    }
+
+    fun clearChatDeletedFlag() {
+        wasChatDeleted = false
+    }
 
     // Selected analysis mode (synced from UI)
     private val _selectedMode = MutableStateFlow("Multi-Layer")
@@ -587,11 +598,10 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun deleteSession(sessionId: String) {
         viewModelScope.launch {
             repository.deleteSession(sessionId)
+            wasChatDeleted = true
             if (_activeSessionId.value == sessionId) {
-                val remaining = repository.getAllSessionsDirect()
-                val nextActive = remaining.maxByOrNull { it.lastUpdatedAt }
-                _activeSessionId.value = nextActive?.id ?: "draft_session_id"
-                prefs.edit().putString("last_active_session_id", _activeSessionId.value).apply()
+                _activeSessionId.value = "draft_session_id"
+                prefs.edit().putString("last_active_session_id", "draft_session_id").apply()
             }
         }
     }
