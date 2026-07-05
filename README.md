@@ -17,6 +17,15 @@
 
 <br/>
 
+<table><tr>
+<td><img src="mockups/screen_chat.svg" width="160" alt="Chat"/></td>
+<td><img src="mockups/screen_insights.svg" width="160" alt="Insights"/></td>
+<td><img src="mockups/screen_voice.svg" width="160" alt="Voice"/></td>
+<td><img src="mockups/screen_settings.svg" width="160" alt="Settings"/></td>
+</tr></table>
+
+<br/>
+
 [![Android](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/madfordiamonds/DEPTHLENS/releases)
 [![Kotlin](https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
@@ -25,7 +34,7 @@
 
 <br/>
 
-[**🌐 Live Website**](https://shorturl.at/TDOZi) &nbsp;·&nbsp; [**📱 Download APK**](https://github.com/madfordiamonds/DEPTHLENS/releases) &nbsp;·&nbsp; [**📝 Releases**](https://github.com/madfordiamonds/DEPTHLENS/releases)
+[**🌐 Live Website**](https://shorturl.at/TDOZi) &nbsp;·&nbsp; [**📱 Download APK**](https://github.com/madfordiamonds/DEPTHLENS/releases)
 
 </div>
 
@@ -57,43 +66,6 @@ The difference isn't speed. It's depth.
 It doesn't just respond — it investigates. It doesn't just inform — it reveals.
 
 Whether you're navigating a business decision, understanding human behavior, analyzing a system, or exploring a pattern you can't quite name — DepthLens is built to go deeper than the surface.
-
-<br/>
-
----
-
-## App Preview
-
-<br/>
-
-<div align="center">
-
-<table>
-<tr>
-<td align="center" width="25%">
-<img src="mockups/screen_chat.svg" width="200" alt="Chat Screen"/>
-<br/><sub><b>Intelligence Chat</b></sub>
-<br/><sub>Root cause · strategic · psychological analysis in any language</sub>
-</td>
-<td align="center" width="25%">
-<img src="mockups/screen_insights.svg" width="200" alt="Insights Dashboard"/>
-<br/><sub><b>Intelligence Dashboard</b></sub>
-<br/><sub>Memory patterns, behavioral insights, probability forecasts</sub>
-</td>
-<td align="center" width="25%">
-<img src="mockups/screen_voice.svg" width="200" alt="Voice Mode"/>
-<br/><sub><b>Voice · Video · Screen</b></sub>
-<br/><sub>Live multimodal intelligence with barge-in support</sub>
-</td>
-<td align="center" width="25%">
-<img src="mockups/screen_settings.svg" width="200" alt="Settings"/>
-<br/><sub><b>Appearance & Settings</b></sub>
-<br/><sub>6 themes · Liquid Crystal & Frost Aurora glass · AI controls</sub>
-</td>
-</tr>
-</table>
-
-</div>
 
 <br/>
 
