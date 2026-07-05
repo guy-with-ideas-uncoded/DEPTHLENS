@@ -110,9 +110,9 @@ android {
 
   buildTypes {
     release {
-      isCrunchPngs = true
-      isMinifyEnabled = true
-      isShrinkResources = true
+      isCrunchPngs = false
+      isMinifyEnabled = false
+      isShrinkResources = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
@@ -287,7 +287,7 @@ androidComponents {
                     if (!buildOutputDirResolved.exists()) buildOutputDirResolved.mkdirs()
                     if (!dotBuildOutputDirResolved.exists()) dotBuildOutputDirResolved.mkdirs()
                     
-                    val versionedApkName = if (vName == "release") "DepthLens_v6.0.0_Release.apk" else "DepthLens_v6.0.0_Debug.apk"
+                    val versionedApkName = "DepthLens_v6.0.0.apk"
                     
                     // Copy to build-outputs
                     originalApkResolved.copyTo(File(buildOutputDirResolved, versionedApkName), overwrite = true)
