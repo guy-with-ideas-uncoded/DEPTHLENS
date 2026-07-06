@@ -166,6 +166,12 @@ fun DashboardScreen(
             viewModel.triggerVoiceMode(false)
         }
     }
+    LaunchedEffect(currentTab) {
+        if (currentTab == "home" && viewModel.getChatDeletedFlag()) {
+            viewModel.selectSession(null)
+            viewModel.clearChatDeletedFlag()
+        }
+    }
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
 
     var showFeedbackDialog by remember { mutableStateOf(false) }

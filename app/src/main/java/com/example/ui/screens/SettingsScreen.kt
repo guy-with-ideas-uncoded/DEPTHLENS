@@ -2713,7 +2713,7 @@ fun AboutSubscreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Version $versionName (Build $versionCode)",
+                    text = "Version $versionName",
                     color = textMuted,
                     fontSize = 12.sp,
                     fontFamily = InstrumentSansFontFamily
@@ -2791,7 +2791,7 @@ fun AboutSubscreen(
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = " © 2026 ",
+                        text = "/ © 2026 ",
                         color = textMuted,
                         fontSize = 11.sp,
                         fontFamily = InstrumentSansFontFamily

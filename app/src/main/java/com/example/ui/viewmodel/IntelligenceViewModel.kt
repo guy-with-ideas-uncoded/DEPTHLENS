@@ -555,6 +555,9 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
 
     fun selectSession(sessionId: String?) {
         isFirstLaunchSessionSetup = false
+        if (sessionId != null) {
+            wasChatDeleted = false
+        }
         speechManager.resetState()
         val targetId = sessionId ?: "draft_session_id"
         _activeSessionId.value = targetId
@@ -599,10 +602,8 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             repository.deleteSession(sessionId)
             wasChatDeleted = true
-            if (_activeSessionId.value == sessionId) {
-                _activeSessionId.value = "draft_session_id"
-                prefs.edit().putString("last_active_session_id", "draft_session_id").apply()
-            }
+            _activeSessionId.value = "draft_session_id"
+            prefs.edit().putString("last_active_session_id", "draft_session_id").apply()
         }
     }
 
