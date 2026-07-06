@@ -635,6 +635,11 @@ private fun parseTextAndSections(text: String, blocks: MutableList<BlockElement>
     
     for (line in lines) {
         val trimmedLine = line.trim()
+        val metadataRegex = Regex("^\\[?\\**(importance|emphasis|priority|confidence|severity|level)\\**(?:\\s*:\\s*|\\s+)(high|medium|low|critical)\\**\\]?\\.?\\s*$", RegexOption.IGNORE_CASE)
+        val standaloneRegex = Regex("^\\[?\\**(high|medium|low|critical)\\**\\]?\\.?\\s*$", RegexOption.IGNORE_CASE)
+        if (metadataRegex.matches(trimmedLine) || standaloneRegex.matches(trimmedLine)) {
+            continue
+        }
         if (trimmedLine.startsWith("SECTION:", ignoreCase = true)) {
             if (currentParagraphLines.isNotEmpty()) {
                 blocks.add(BlockElement.Paragraph(currentParagraphLines.joinToString("\n")))
