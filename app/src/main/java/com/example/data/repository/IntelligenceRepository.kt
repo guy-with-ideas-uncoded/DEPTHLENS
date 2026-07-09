@@ -1086,13 +1086,12 @@ Follow this format meticulously. Wrap each visual module within its respective t
                 "suicide", "collapse", "bankruptcy", "crisis", "lawsuit", "fraud", "fatal"
             )
 
-            if (fullDepthKeywords.any { q.contains(it) } || sessionDepth == "Full Investigation" || sessionCategory == "Full Investigation") {
+            if (fullDepthKeywords.any { q.contains(it) } || sessionDepth == "Full Investigation") {
                 IntentLevel.LEVEL_4_FULL
-            } else if (deepKeywords.any { q.contains(it) } || highStakesKeywords.any { q.contains(it) } || sessionDepth == "Deep Analysis" || sessionCategory in listOf("Deep Thought", "Deep Scan", "Deep Synthesis")) {
+            } else if (deepKeywords.any { q.contains(it) } || highStakesKeywords.any { q.contains(it) } || sessionDepth == "Deep Analysis") {
                 IntentLevel.LEVEL_3_DEEP
             } else {
-                // Baseline to ensure XML-like tags are generated for all specialized modes
-                IntentLevel.LEVEL_3_DEEP
+                IntentLevel.LEVEL_1_DIRECT
             }
         }
 
@@ -1393,8 +1392,339 @@ Follow this format meticulously. Wrap each visual module within its respective t
             contentsPayload.add(Content(role = msg.role, parts = partsList))
         }
 
+        val categoryFocusInstruction = when (sessionCategory) {
+            "Root Cause" -> """
+                ### REASONING SYSTEM: ROOT CAUSE MODE (RCA)
+                - Purpose: Find the fundamental cause behind a situation.
+                - Focus: Origins, Hidden drivers, First domino, Core constraints, Why this keeps repeating.
+                - Core Reasoning Framework Constraint: You MUST repeatedly ask yourself internally: "Why? What causes that? What causes that?" until you reach the deepest, absolute core explanation.
+                - Mode Vocabulary: Causal trigger, origins, prime driver, first domino, system constraint, systemic vulnerability, feedback cycle.
+                - Output Structure Requirement: You MUST structure the main analysis body (the introduction outside XML tags) exactly with these section headers (separated by double newlines) and provide profound, situational-specific answers:
+                  
+                  SITUATION: [Fully describe the core visible context here]
+                  
+                  VISIBLE SYMPTOMS: [Detail the apparent surface symptoms and triggers]
+                  
+                  CONTRIBUTING FACTORS: [Map out all multi-dimensional contributing conditions]
+                  
+                  ROOT CAUSE: [Expose the deepest foundational first domino trigger]
+                  
+                  EVIDENCE: [Present the relational/behavioral evidence proving this causal link]
+                  
+                  LEVERAGE POINT: [Identify the single highest-leverage pivot point to shift this system]
+                  
+                  RECOMMENDED ACTION: [Pragmatic, immediate, highly clear actions to take]
+                  
+                - XML Custom Tag Requirement: You MUST wrap the technical summary block inside `<root_cause>` ... `</root_cause>` tags with this exact 1-line format per field (no markdown):
+                  Symptom: [1 sentence visible symptom]
+                  Immediate Cause: [1 sentence trigger]
+                  Underlying Cause: [1 sentence hidden incentive or bias]
+                  Deeper Cause: [1 sentence core childhood script or structural lock]
+                  Root Cause Estimate: [1 sentence definitive causal diagnosis]
+                  Supporting Evidence: [1 sentence logic proof]
+                  Alternative Root Causes: [1 sentence plausible alternative theories]
+            """.trimIndent()
+
+            "Deep Synthesis" -> """
+                ### REASONING SYSTEM: DEEP SYNTHESIS MODE
+                - Purpose: Integrate multiple perspectives into one higher-order understanding.
+                - Focus: Psychology, Systems, Economics, Evolution, Human behavior, Incentives, Philosophy.
+                - Core Reasoning Framework Constraint: You MUST NOT search for a single root cause. Instead, synthesize multiple conflicting and simultaneous truths into a higher-order strategic blueprint.
+                - Mode Vocabulary: Co-existence, dialectic synthesis, multi-layered alignment, emergent pattern, paradox, strategic wisdom, holistic force.
+                - Output Structure Requirement: You MUST structure the main analysis body (the introduction outside XML tags) exactly with these section headers (separated by double newlines) and provide profound, situational-specific answers:
+                  
+                  PERSPECTIVE 1: [The psychological and emotional reality at play]
+                  
+                  PERSPECTIVE 2: [The systemic incentives and economic/resource loops]
+                  
+                  PERSPECTIVE 3: [The historical / evolutionary / behavioral trends]
+                  
+                  PERSPECTIVE 4: [The philosophical and transcendent meaning or lessons]
+                  
+                  INTEGRATED PATTERN: [The ultimate unified circular repeating feedback pattern or fractal]
+                  
+                  STRATEGIC WISDOM: [The high-level strategic truth and ultimate breakthrough insight]
+                  
+                  WHAT MOST PEOPLE MISS: [The contrarian, completely non-obvious truth that is hidden in plain sight]
+                  
+                - XML Custom Tag Requirement: You MUST populate the `<deep_synthesis>` ... `</deep_synthesis>` tags with these 8 perspectives and synthesis with double spacing.
+            """.trimIndent()
+
+            "Psychology" -> """
+                ### REASONING SYSTEM: PSYCHOLOGY LENS
+                - Purpose: Analyze mental models, emotions, motivations, fears, and cognitive biases.
+                - Focus: Emotional drivers, Insecurity, Desire, Trauma patterns, Cognitive biases, Human behavior.
+                - Core Reasoning Framework Constraint: Evaluate active defense mechanisms (projection, rationalization), shadow traits, child scripts, ego protections, and core identities.
+                - Mode Vocabulary: Ego-protection, cognitive bias, emotional projection, attachment style, trauma script, core wound, shadow dynamic, coping response.
+                - Output Structure Requirement: You MUST structure the main analysis body (the introduction outside XML tags) exactly with these section headers (separated by double newlines) and provide profound, situational-specific answers:
+                  
+                  OBSERVED PSYCHOLOGY: [Formulate active cognitive schemas and defense layers]
+                  
+                  POSSIBLE EMOTIONAL DRIVERS: [Identify unexamined insecurities, hidden desires, or pains]
+                  
+                  BIASES PRESENT: [Explicitly name and detail cognitive biases, projections, and distortions]
+                  
+                  HIDDEN NEEDS: [Identify the fundamental underserved human needs being protected]
+                  
+                  BEHAVIORAL PREDICTION: [Accurately predict how these psychological blocks manifest next]
+                  
+                  ADVICE: [Empathetic, deep, transformative integration exercises and advice]
+                  
+                - XML Custom Tag Requirement: You MUST populate `<human_intel>` ... `</human_intel>` tags with:
+                  Surface Intention: [apparent motive]
+                  Emotional Driver: [suppressed feeling]
+                  Need Driver: [core need]
+                  Fear Driver: [avoided fear]
+                  Incentive Driver: [gain/payout]
+                  Identity Driver: [guarded self-image]
+                  Hidden Motives: [hidden agenda]
+            """.trimIndent()
+
+            "Systems" -> """
+                ### REASONING SYSTEM: SYSTEMS LENS
+                - Purpose: Analyze feedback loops and systemic interactions.
+                - Focus: Cause/effect loops, Reinforcing loops, Bottlenecks, Incentives, Emergent behavior.
+                - Core Reasoning Framework Constraint: Map circular feedback, delays, systemic leverage, and resource boundaries. Avoid linear causal explanations.
+                - Mode Vocabulary: Feedback loop, reinforcing loop, balancing mechanism, system bottleneck, secondary effect, systemic limits, dynamic equilibrium.
+                - Output Structure Requirement: You MUST structure the main analysis body (the introduction outside XML tags) exactly with these section headers (separated by double newlines) and provide profound, situational-specific answers:
+                  
+                  SYSTEM COMPONENTS: [Enumerate stakeholders, boundaries, and variables]
+                  
+                  FEEDBACK LOOPS: [Diagram and detail circular reinforcing and balancing loops]
+                  
+                  BOTTLENECKS: [Name the choke points, capacity constraints, and operational filters]
+                  
+                  SECOND ORDER EFFECTS: [Detail the cascading secondary and third-order unintended consequences]
+                  
+                  SYSTEM MAP: [Trace how elements connect through pathways other than direct links]
+                  
+                  INTERVENTION POINTS: [Specify the highest impact systemic leverage point to shift the loop]
+                  
+                - XML Custom Tag Requirement: You MUST populate `<probability_assessment>` and `<timeline_forecast>` tags with custom systemic risk calculations.
+            """.trimIndent()
+
+            "Probability" -> """
+                ### REASONING SYSTEM: PROBABILITY LENS
+                - Purpose: Estimate likely future outcomes.
+                - Focus: Scenario planning, Risk assessment, Expected outcomes, Decision trees.
+                - Core Reasoning Framework Constraint: Express all outcomes as branching probability trees. You MUST estimate and explicitly state realistic probabilities (% values) for every scenario based on situational factors and behaviors. No absolute predictions.
+                - Mode Vocabulary: Branching trajectory, probability interval, risk coefficient, expected value, sensitivity factor, warning signal, tail risk.
+                - Output Structure Requirement: You MUST structure the main analysis body (the introduction outside XML tags) exactly with these section headers (separated by double newlines) and provide profound, situational-specific answers:
+                  
+                  SCENARIO A: [Detail the most likely status-quo persistent path]
+                  PROBABILITY: [Value]% (Always include calculated probability % representing current loop inertia)
+                  
+                  SCENARIO B: [Detail the alternative constructive alignment/breakthrough track]
+                  PROBABILITY: [Value]% (Always include calculated probability % representing a targeted pivot)
+                  
+                  SCENARIO C: [Detail the tail risk/vulnerability or risk escalation outlier branch]
+                  PROBABILITY: [Value]% (Always include calculated probability % representing worst case scenarios)
+                  
+                  KEY VARIABLES: [Identify dynamic cues, sensitivities, and early warning indicators]
+                  
+                  MOST LIKELY OUTCOME: [Deliver a definitive, reasoned probable forecast prediction]
+                  
+                - XML Custom Tag Requirement: You MUST populate `<future_prob>` and `<probability_metrics>` tags with these scenarios and signals.
+            """.trimIndent()
+
+            "Business" -> """
+                ### REASONING SYSTEM: BUSINESS LENS
+                - Purpose: Think like an investor, operator, and strategist.
+                - Focus: Revenue, Market dynamics, Competitive advantage, Incentives, Scaling.
+                - Core Reasoning Framework Constraint: Apply rigorous economic, financial, and competitive strategy tools (SWOT, Moats, unit economics, value chains).
+                - Mode Vocabulary: Value chain, competitive moat, unit economics, incentive alignment, market force, scale barrier, transaction cost.
+                - Output Structure Requirement: You MUST structure the main analysis body (the introduction outside XML tags) exactly with these section headers (separated by double newlines) and provide profound, situational-specific answers:
+                  
+                  BUSINESS REALITY: [Overview of business/work reality, customer motives, and unit economics]
+                  
+                  MARKET FORCES: [Map the competitive landscape, suppliers, competitors, and industry pressures]
+                  
+                  STRENGTHS: [Identify core competencies, brand capitals, or dynamic strategic assets]
+                  
+                  WEAKNESSES: [Detail internal operational bottlenecks, leakages, or resource deficiencies]
+                  
+                  OPPORTUNITIES: [Target market expansions, alternative revenue streams, and leverage points]
+                  
+                  THREATS: [Outline external risks, hostile competitors, or regulatory cliffs]
+                  
+                  STRATEGIC RECOMMENDATION: [State the highest leverage structural strategy for scaling and moat building]
+                  
+                - XML Custom Tag Requirement: You MUST populate `<decision_impact>` and `<forecast_summary>` reflecting these business trade-offs and pay-offs.
+            """.trimIndent()
+
+            "Relationships" -> """
+                ### REASONING SYSTEM: RELATIONSHIPS LENS
+                - Purpose: Analyze interpersonal dynamics.
+                - Focus: Attachment styles, Boundaries, Communication, Emotional needs, Power dynamics.
+                - Core Reasoning Framework Constraint: Map circular relational dances, unexpressed covert contracts, codependencies, boundaries, and safety thresholds.
+                - Mode Vocabulary: Relational dance, attachment trigger, covert contract, boundary leak, power symmetry, deep trust threshold, emotional safety loop.
+                - Output Structure Requirement: You MUST structure the main analysis body (the introduction outside XML tags) exactly with these section headers (separated by double newlines) and provide profound, situational-specific answers:
+                  
+                  RELATIONSHIP DYNAMIC: [Describe the codependent loops or circular friction dances]
+                  
+                  PERSON A PERSPECTIVE: [Outline the attachment triggers, unmet needs, and defensive behavior of Person A]
+                  
+                  PERSON B PERSPECTIVE: [Outline the attachment triggers, unmet needs, and defensive behavior of Person B]
+                  
+                  HIDDEN TENSIONS: [Expose unexpressed covert contracts, resentments, and hidden loyalty/trust traps]
+                  
+                  LIKELY OUTCOME: [Predict the relationship development trajectory if boundaries remain unchanged]
+                  
+                  RECOMMENDED APPROACH: [Actionable paths to repair trust, set clean boundaries, and re-establish safety]
+                  
+                - XML Custom Tag Requirement: You MUST populate `<human_intel>` and `<decision_impact>` maps matching these relational parties.
+            """.trimIndent()
+
+            "Spiritual" -> """
+                ### REASONING SYSTEM: SPIRITUAL LENS
+                - Purpose: Explore meaning, awareness, growth, and consciousness.
+                - Focus: Identity, Ego, Awareness, Purpose, Presence.
+                - Core Reasoning Framework Constraint: Zoom out to transcendental meaning and personal growth. You MUST avoid giving generic mystical, fuzzy, or esoteric cliches. Keep your insights practical, high-integrity, and highly grounded in lived experience.
+                - Mode Vocabulary: Ego identity, conscious awareness, transcendent presence, evolutionary growth, values flow, shadow integration, purpose gate.
+                - Output Structure Requirement: You MUST structure the main analysis body (the introduction outside XML tags) exactly with these section headers (separated by double newlines) and provide profound, situational-specific answers:
+                  
+                  SURFACE SITUATION: [Overview of the surface-level mundane conflict or scenario]
+                  
+                  DEEPER LESSON: [Highlight what growth or evolution opportunities are embedded in this friction]
+                  
+                  EGO PERSPECTIVE: [Reveal how fear, pride, and self-protection misinterpret the events]
+                  
+                  AWARENESS PERSPECTIVE: [View the scenario from a state of calm, non-judgmental presence]
+                  
+                  GROWTH OPPORTUNITY: [How this issue can expand self-understanding and break static habits]
+                  
+                  REFLECTION: [Grounded contemplations, practical self-inquiries, or mindful actions]
+                  
+                - XML Custom Tag Requirement: You MUST populate `<deep_synthesis>` or `<depth>` reflecting these higher-order growth vectors.
+            """.trimIndent()
+
+            else -> "Identify the core themes, drivers, and dynamic implications of the context."
+        }
+
+        val depthReasoningFramework = when (sessionDepth) {
+            "Quick Insight" -> """
+                ### DEPTH REASONING FRAMEWORK: QUICK INSIGHT
+                - Objective: Rapid, high-density, action-oriented bullet vectors.
+                - Style: Under 5 seconds of cognitive load. Zero filler or introductions.
+                - Detail Structure: Exactly 3 to 5 highly concise, spacing-optimized, bullet points written through the vocabulary of the chosen Mode.
+                - Active Tags Constraint: Output ONLY these tags: <summary>, <confidence>, <exploration>. DO NOT generate other tags or sections.
+                - Mobile Brevity: Each bullet point must be a single powerful sentence max.
+            """.trimIndent()
+
+            "Standard Analysis" -> """
+                ### DEPTH REASONING FRAMEWORK: STANDARD ANALYSIS
+                - Objective: Balanced, structured, highly clear systems-thinking and behavioral explanation.
+                - Style: Professional, concise, and structured.
+                - Detail Structure: Exactly 3 to 4 structured, dense paragraphs covering surface symptoms, systemic loops, psychological drivers, and immediate pivots.
+                - Active Tags Constraint: Output ONLY these tags: <summary>, <confidence>, <root_cause>, <exploration>.
+            """.trimIndent()
+
+            "Deep Analysis" -> """
+                ### DEPTH REASONING FRAMEWORK: DEEP ANALYSIS
+                - Objective: Exhaustive, multi-layered deconstruction of the situation.
+                - Style: Rigorous, clinical, multi-perspective.
+                - Detail Structure: A detailed introductory overview followed by a comprehensive, 10-layer progressive reality mapping block.
+                - Active Tags Constraint: Output ONLY: <summary>, <confidence>, <depth>, <memory_insight>, <exploration>.
+                - Rules for <depth> Tag: Identify the situation across all 10 Layers of Reality, writing exactly 2 sentences per layer. Layer X - Name: Explanation.
+            """.trimIndent()
+
+            "Full Investigation" -> """
+                ### DEPTH REASONING FRAMEWORK: FULL INVESTIGATION
+                - Objective: Sovereign strategic intelligence, risk predictions, and branching scenario modeling.
+                - Style: Elite, comprehensive, strategic advisory report.
+                - Detail Structure: Map out the macro-strategic systems, stakeholder games, unintended feedback loops, timelines, and decision trade-offs.
+                - Active Tags Constraint: Output all advanced forecasting modules: <summary>, <confidence>, <probability_metrics>, <probability_assessment>, <future_pathways>, <timeline_forecast>, <decision_impact>, <forecast_summary>, <future_prob>, <memory_insight>, <questions>, <exploration>.
+                - Probability estimates: Express all scenario forecasts as reasoned percentages (e.g. 60%, 25%) based on loop stability constants.
+            """.trimIndent()
+
+            else -> """
+                ### DEPTH REASONING FRAMEWORK: STANDARD ANALYSIS
+                - Core constraints: Focus on the diagnostic depth requested by the user, and select relevant XML-like tags to build a structured report.
+            """.trimIndent()
+        }
+
+        var adjustedSystemInstructionText = systemInstructionText
+        when (sessionCategory) {
+            "Root Cause" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate an elite Root Cause Analysis block wrapped in <root_cause>...</root_cause> tags. Do NOT output a <deep_synthesis> tag under any circumstances. Focus exclusively on diagnostic truth, core causality, driving wounds, system bottlenecks, and triggers. Avoid high-level perspective summaries."
+                    )
+                    .replace("<deep_synthesis>", "<root_cause>")
+                    .replace("</deep_synthesis>", "</root_cause>")
+            }
+            "Deep Synthesis" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT output a <root_cause> tag. Focus entirely on synthesizing multi-perspective wisdom and high-level viewpoints. Expressly avoid causal diagnosis."
+                    )
+                    .replace("<root_cause>", "<deep_synthesis>")
+                    .replace("</root_cause>", "</deep_synthesis>")
+            }
+            "Psychology" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate an elite psychological deconstruction block wrapped in <human_intel>...</human_intel> tags. Focus entirely on exposing ego-protections, child-scripts, attachment-triggers and unexamined self-image defense models. Avoid generic advice."
+                    )
+                    .replace("<deep_synthesis>", "<human_intel>")
+                    .replace("</deep_synthesis>", "</human_intel>")
+            }
+            "Systems" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate systemic loop analysis metrics wrapped in <probability_assessment>...</probability_assessment> and <timeline_forecast>...</timeline_forecast> tags. Analyze stakeholders, reinforcing/balancing feedback loops, bottlenecks, and game-theoretic secondary effects."
+                    )
+                    .replace("<deep_synthesis>", "<probability_assessment>")
+                    .replace("</deep_synthesis>", "</probability_assessment>")
+            }
+            "Probability" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate branching scenario forecast streams wrapped in <future_prob>...</future_prob> and <probability_metrics>...</probability_metrics> tags. Model status-quo loop persistence vs alternative breakthrough tracks, tail risks, outlier factors, and early warning signals."
+                    )
+                    .replace("<deep_synthesis>", "<future_prob>")
+                    .replace("</deep_synthesis>", "</future_prob>")
+            }
+            "Business" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate corporate strategy assessment streams wrapped in <decision_impact>...</decision_impact> and <forecast_summary>...</forecast_summary> tags. Map unit-economics, transaction costs, competitive moats, market-forces, SWOT alignments, and scaling barriers."
+                    )
+                    .replace("<deep_synthesis>", "<decision_impact>")
+                    .replace("</deep_synthesis>", "</decision_impact>")
+            }
+            "Relationships" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate relational dynamics maps wrapped in <human_intel>...</human_intel> and <decision_impact>...</decision_impact> tags. Detail interpersonal circular friction loops, attachment security boundaries, and unspoken covert contracts."
+                    )
+                    .replace("<deep_synthesis>", "<human_intel>")
+                    .replace("</deep_synthesis>", "</human_intel>")
+            }
+            "Spiritual" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate transcendent lesson insights wrapped in <deep_synthesis>...</deep_synthesis> or <depth>...</depth> tags. Map the mundane conflict to core growth, ego defenses, presence practices, value integration, and conscious awareness metrics."
+                    )
+            }
+        }
+
         val finalSystemText = customInstructionOverride ?: """
-$systemInstructionText
+$adjustedSystemInstructionText
+
+### SPECIALIZED LENS FOCUS: $sessionCategory
+$categoryFocusInstruction
+
+### DEDICATED DEPTH REASONING FRAMEWORK: $sessionDepth
+$depthReasoningFramework
 
 ### INTENDED ANALYSIS DEPTH
 Selected depth rating: ${if (isDeepThought) "Full Investigation (Deep Thought Active)" else sessionDepth}. You MUST adjust your detail levels, formatting, and structures accordingly:
@@ -1611,21 +1941,21 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
 ──────────────────────────────────────────────────────────────────────
 """.trimIndent()
 
-        val lowercaseQuery = latestUserMsgText.lowercase().trim()
-        val needsGrounding = lowercaseQuery.contains("latest news") ||
-                lowercaseQuery.contains("current news") ||
-                lowercaseQuery.contains("today's news") ||
-                lowercaseQuery.contains("current price of") ||
-                lowercaseQuery.contains("stock price of") ||
-                lowercaseQuery.contains("crypto price of") ||
-                lowercaseQuery.contains("weather in") ||
-                lowercaseQuery.contains("weather today") ||
-                lowercaseQuery.contains("latest update on") ||
-                lowercaseQuery.contains("current status of") ||
-                lowercaseQuery.contains("latest score") ||
-                lowercaseQuery.contains("recent developments in") ||
-                (lowercaseQuery.startsWith("who is") && (lowercaseQuery.contains("current") || lowercaseQuery.contains("now"))) ||
-                (lowercaseQuery.startsWith("what is") && (lowercaseQuery.contains("current") || lowercaseQuery.contains("latest") || lowercaseQuery.contains("today")))
+        val lowercaseQuery = latestUserMsgText.lowercase()
+        val needsGrounding = lowercaseQuery.contains("today") ||
+                lowercaseQuery.contains("latest") ||
+                lowercaseQuery.contains("current") ||
+                lowercaseQuery.contains("this year") ||
+                lowercaseQuery.contains("news") ||
+                lowercaseQuery.contains("price") ||
+                lowercaseQuery.contains("now") ||
+                lowercaseQuery.contains("recent") ||
+                lowercaseQuery.contains("weather") ||
+                lowercaseQuery.contains("time") ||
+                lowercaseQuery.contains("date") ||
+                lowercaseQuery.contains("year") ||
+                lowercaseQuery.contains("who is") ||
+                lowercaseQuery.contains("what is")
 
         // User explicitly tapped "Search the Web" on a reply → force live grounding
         val forceWeb = consumeForceWeb(sessionId)
@@ -1635,7 +1965,7 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             null
         }
 
-        var currentRequest = GenerateContentRequest(
+        val request = GenerateContentRequest(
             contents = contentsPayload,
             generationConfig = GenerationConfig(temperature = 0.72f),
             systemInstruction = Content(parts = listOf(Part(text = calibratedSystemText))),
@@ -1678,6 +2008,8 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
 
         val modelsToTry = buildModelFallbackChain(getPreferredModel())
         val retryDelays = listOf(100L) // minimal delay for instant fallback
+
+        var currentRequest = request
 
         for (modelName in modelsToTry) {
             for ((attempt, delay) in retryDelays.withIndex()) {
@@ -1805,12 +2137,108 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                             ex.printStackTrace()
                         }
                     }
-                    if (currentRequest.tools != null) {
-                        android.util.Log.i("IntelligenceRepository", "Streaming failed with tools enabled, stripping tools for fallback")
-                        currentRequest = currentRequest.copy(tools = null)
-                    }
                     if (e.message?.contains("Safety block detected") == true) {
                         break // immediately terminate loop on safety blocks
+                    }
+
+                    // INTELLIGENT RETRY FALLBACK: if tools were enabled, retry the stream call immediately without tools!
+                    if (currentRequest.tools != null) {
+                        android.util.Log.i("IntelligenceRepository", "Intelligent Fallback: Retrying stream without tools due to failure: ${e.message}")
+                        currentRequest = currentRequest.copy(tools = null)
+                        try {
+                            val responseBody = apiRequestMutex.withLock {
+                                apiService.generateContentStream(modelName, apiKey, currentRequest)
+                            }
+                            val moshi = com.squareup.moshi.Moshi.Builder().build()
+                            val chunkAdapter = moshi.adapter(GenerateContentResponse::class.java)
+                            
+                            val accumulatedText = java.lang.StringBuilder()
+                            val reader = responseBody.charStream().buffered()
+                            var braceCount = 0
+                            val chunkBuilder = java.lang.StringBuilder()
+                            var inString = false
+                            var escapeNext = false
+
+                            var lastInsertTime = 0L
+                            var charCode: Int
+                            while (reader.read().also { charCode = it } != -1) {
+                                coroutineContext.ensureActive()
+                                val char = charCode.toChar()
+                                chunkBuilder.append(char)
+
+                                if (escapeNext) {
+                                    escapeNext = false
+                                    continue
+                                }
+
+                                if (char == '\\') {
+                                    escapeNext = true
+                                    continue
+                                }
+
+                                if (char == '"') {
+                                    inString = !inString
+                                    continue
+                                }
+
+                                if (!inString) {
+                                    if (char == '{') {
+                                        braceCount++
+                                    } else if (char == '}') {
+                                        braceCount--
+                                        if (braceCount == 0) {
+                                            val rawJson = chunkBuilder.toString().trim()
+                                            var cleanJson = rawJson
+                                            while (cleanJson.startsWith("[") || cleanJson.startsWith(",")) {
+                                                cleanJson = cleanJson.substring(1).trim()
+                                            }
+                                            if (cleanJson.startsWith("{") && cleanJson.endsWith("}")) {
+                                                try {
+                                                    val streamResponse = chunkAdapter.fromJson(cleanJson)
+                                                    val candidate = streamResponse?.candidates?.firstOrNull()
+                                                    val reason = candidate?.finishReason
+                                                    if (!reason.isNullOrEmpty() && reason != "STOP") {
+                                                        finishReason = reason
+                                                        if (reason == "SAFETY" || reason == "BLOCKED" || reason == "RECITATION") {
+                                                            throw Exception("Safety block detected: $reason")
+                                                        }
+                                                    }
+                                                    val piece = candidate?.content?.parts?.firstOrNull()?.text
+                                                    if (!piece.isNullOrEmpty()) {
+                                                        coroutineContext.ensureActive()
+                                                        accumulatedText.append(piece)
+                                                        
+                                                        val now = System.currentTimeMillis()
+                                                        if (now - lastInsertTime > 150) {
+                                                            val updatedMsg = assistantMsg.copy(text = accumulatedText.toString())
+                                                            messageDao.insertMessage(updatedMsg)
+                                                            lastInsertTime = now
+                                                        }
+                                                    }
+                                                } catch (e: Exception) {
+                                                    if (e.message?.contains("Safety block detected") == true) {
+                                                        throw e
+                                                    }
+                                                }
+                                            }
+                                            chunkBuilder.setLength(0)
+                                        }
+                                    }
+                                }
+                            }
+
+                            val finalText = accumulatedText.toString()
+                            if (finalText.isNotEmpty()) {
+                                modelText = finalText
+                                val updatedMsg = assistantMsg.copy(text = finalText)
+                                messageDao.insertMessage(updatedMsg)
+                                streamSucceeded = true
+                                break
+                            }
+                        } catch (fallbackEx: Exception) {
+                            lastException = fallbackEx
+                            android.util.Log.e("IntelligenceRepository", "Streaming fallback failed: ${fallbackEx.message}", fallbackEx)
+                        }
                     }
                 }
 
@@ -1846,7 +2274,7 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                     }
                 } catch (e: Exception) {
                     lastException = e
-                    var msg = e.message ?: ""
+                    val msg = e.message ?: ""
                     if (e is retrofit2.HttpException) {
                         lastHttpStatus = e.code()
                         try {
@@ -1867,9 +2295,10 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                             ex.printStackTrace()
                         }
                     }
-                    
+
+                    // INTELLIGENT RETRY FALLBACK: if tools were enabled, retry the standard call immediately without tools!
                     if (currentRequest.tools != null) {
-                        android.util.Log.i("IntelligenceRepository", "Standard generation failed with tools enabled, retrying without tools in-place")
+                        android.util.Log.i("IntelligenceRepository", "Intelligent Fallback: Retrying standard call without tools due to error: ${e.message}")
                         currentRequest = currentRequest.copy(tools = null)
                         try {
                             val response = apiRequestMutex.withLock {
@@ -1882,19 +2311,15 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                                 val updatedMsg = assistantMsg.copy(text = text)
                                 messageDao.insertMessage(updatedMsg)
                                 streamSucceeded = true
+                                break
                             }
-                        } catch (retryEx: Exception) {
-                            lastException = retryEx
-                            msg = retryEx.message ?: ""
-                            if (retryEx is retrofit2.HttpException) {
-                                lastHttpStatus = retryEx.code()
-                            }
+                        } catch (fallbackEx: Exception) {
+                            lastException = fallbackEx
+                            android.util.Log.e("IntelligenceRepository", "Standard fallback failed: ${fallbackEx.message}", fallbackEx)
                         }
                     }
 
-                    if (streamSucceeded) break
-
-                    val is429 = msg.contains("429") || msg.contains("quota", ignoreCase = true) || msg.contains("rate", ignoreCase = true)
+                    val is429 = msg.contains("429") || msg.contains("quota exceeded", ignoreCase = true) || msg.contains("rate limit exceeded", ignoreCase = true) || msg.contains("RESOURCE_EXHAUSTED", ignoreCase = true)
                     if (is429 && attempt < retryDelays.size - 1) {
                         kotlinx.coroutines.delay(delay)
                         continue
@@ -1906,6 +2331,35 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             if (modelText != null) break
         }
 
+        // --- DEVELOPER DIAGNOSTICS & PIPELINE INVESTIGATION LOGGING ---
+        val candidateCount = if (modelText != null) 1 else 0
+        val retryCountVal = com.example.data.diagnostics.DiagnosticsManager.currentSession.value.retryCount
+        val responseLatency = System.currentTimeMillis() - startTime
+        val finalPromptLog = if (contentsPayload.isNotEmpty()) {
+            contentsPayload.lastOrNull()?.parts?.firstOrNull()?.text ?: ""
+        } else {
+            latestUserMsgText
+        }
+
+        android.util.Log.i("DepthLensDiagnostics", """
+            ==================== REQUEST PIPELINE INVESTIGATION ====================
+            - Raw User Input: $rawLatestText
+            - Normalized Input: $latestUserMsgText
+            - Final Prompt Sent to Gemini: $finalPromptLog
+            - Conversation History Injected: ${compressedHistory.joinToString("\n") { "[${it.role}] ${it.text}" }}
+            - Memory Injected: $memoryBlock
+            - Prompt Token Count: ${estimateTokenCount(latestUserMsgText)}
+            - Context Token Count: ${estimateTokenCount(calibratedSystemText) + estimateTokenCount(memoryBlock) + compressedHistory.sumOf { m -> estimateTokenCount(m.text) }}
+            - HTTP Status: ${if (modelText != null) 200 else lastHttpStatus}
+            - Gemini Error Body: ${if (modelText != null) "None" else geminiErrorCode}
+            - Finish Reason: ${if (modelText != null) (finishReason.ifEmpty { "STOP" }) else (finishReason.ifEmpty { "ERROR" })}
+            - Safety Ratings / Block Info: $safetyBlockInfo
+            - Candidate Count: $candidateCount
+            - Retry Count: $retryCountVal
+            - Request Latency: ${responseLatency}ms
+            ========================================================================
+        """.trimIndent())
+
         if (modelText != null) {
             val processedModelText = modelText
 
@@ -1916,32 +2370,14 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                 CloudSyncService.uploadMessage(uid, finalUpdatedMsg.id, finalUpdatedMsg.sessionId, finalUpdatedMsg.role, finalUpdatedMsg.text, finalUpdatedMsg.imageUri, finalUpdatedMsg.timestamp)
             }
 
-            val duration = System.currentTimeMillis() - startTime
-            writeDeveloperDiagnosticsLog(
-                rawInput = rawLatestText,
-                normalizedInput = latestUserMsgText,
-                systemPrompt = calibratedSystemText,
-                injectedMemory = memoryBlock,
-                selectedMode = sessionCategory,
-                targetTemperature = 0.72f,
-                fallbackChain = modelsToTry,
-                exceptionClass = null,
-                exceptionMessage = null,
-                rawErrorBody = null,
-                httpResponseCode = 200,
-                durationMs = duration
-            )
             com.example.data.diagnostics.DiagnosticsManager.updateSession {
                 it.copy(
                     apiStatus = "Success",
                     estimatedResponseTokens = estimateTokenCount(processedModelText),
-                    requestLatencyMs = duration,
+                    requestLatencyMs = responseLatency,
                     lastHttpStatus = 200,
                     lastGeminiError = "None",
-                    lastFinishReason = finishReason.ifEmpty { "STOP" },
-                    lastExceptionClass = "None",
-                    lastExceptionMessage = "None",
-                    lastExceptionStackTrace = "None"
+                    lastFinishReason = finishReason.ifEmpty { "STOP" }
                 )
             }
             com.example.data.diagnostics.DiagnosticsManager.commitSession()
@@ -1973,7 +2409,6 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
 
             return@withContext ResponseParser.parse(processedModelText)
         } else {
-            val duration = System.currentTimeMillis() - startTime
             var httpStatus = lastHttpStatus
             var apiErrCode = geminiErrorCode
             
@@ -1999,70 +2434,85 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             }
 
             val msgState = lastException?.message ?: "unknown cause"
-            val errorPayload = (msgState + " " + apiErrCode).lowercase()
             val userFriendlyError = when {
-                errorPayload.contains("safety block detected", ignoreCase = true) ||
-                errorPayload.contains("safety", ignoreCase = true) ||
-                errorPayload.contains("blocked", ignoreCase = true) ||
-                errorPayload.contains("recitation", ignoreCase = true) ->
-                    "Error: Request blocked by safety filters."
+                msgState.contains("Safety block detected", ignoreCase = true) ->
+                    "Error: Safety Block. The response was blocked by safety filters."
 
-                errorPayload.contains("context", ignoreCase = true) ||
-                errorPayload.contains("token limit", ignoreCase = true) ||
-                errorPayload.contains("limit exceeded", ignoreCase = true) ||
-                httpStatus == 413 ->
-                    "Error: Context window limit exceeded."
+                httpStatus == 400 -> "Error: Invalid Request (400). Please check your prompt format or conversation state. Details: ${apiErrCode.ifEmpty { msgState }}"
+                httpStatus == 401 -> "Error: Authentication Failure (401). Your API key is invalid or unauthorized. Please re-enter a valid Gemini API key in Settings. Details: ${apiErrCode.ifEmpty { msgState }}"
+                httpStatus == 403 -> "Error: Permission Denied (403). Access blocked or API key unauthorized. Please check your Google AI Studio permissions. Details: ${apiErrCode.ifEmpty { msgState }}"
+                httpStatus == 404 -> "Error: Endpoint Not Found (404). The requested model or API version could not be found. Details: ${apiErrCode.ifEmpty { msgState }}"
+                httpStatus == 408 -> "Error: Request Timeout (408). The analysis took too long. Please try again."
+                httpStatus == 413 -> "Error: Request Too Large (413). The prompt exceeds the context length limit."
+                httpStatus == 429 -> "Error: API quota exceeded or rate limit hit (429). You have reached your current Gemini API usage limits. Please wait a moment or check your Google AI Studio quota."
+                httpStatus == 500 -> "Error: Gemini Internal Server Error (500). Google's servers encountered an unexpected failure. Please retry."
+                httpStatus == 502 -> "Error: Bad Gateway (502). Network routing error to Gemini. Please try again."
+                httpStatus == 503 -> "Error: Service Unavailable (503). Gemini servers are temporarily unavailable or overloaded."
+                httpStatus in 500..599 -> "Error: Server unavailable. Gemini internal server error occurred ($httpStatus). Details: ${apiErrCode.ifEmpty { msgState }}"
 
-                httpStatus == 429 ||
-                errorPayload.contains("resource_exhausted", ignoreCase = true) ||
-                errorPayload.contains("quota_exceeded", ignoreCase = true) ||
-                errorPayload.contains("quota exceeded", ignoreCase = true) ||
-                errorPayload.contains("rate_limit_exceeded", ignoreCase = true) ->
-                    "Error: API quota exceeded or rate limit hit."
+                // Connection/Internet/DNS/SSL errors
+                msgState.contains("Unable to resolve host", ignoreCase = true) ||
+                msgState.contains("NoRouteToHostException", ignoreCase = true) ||
+                msgState.contains("UnknownHostException", ignoreCase = true) ->
+                    "Error: DNS resolution failed or no internet connection. Please verify your cell signal or Wi-Fi status."
 
-                errorPayload.contains("api key", ignoreCase = true) ||
-                errorPayload.contains("key invalid", ignoreCase = true) ||
-                errorPayload.contains("unauthorized", ignoreCase = true) ||
-                errorPayload.contains("auth", ignoreCase = true) ||
-                httpStatus == 401 || httpStatus == 403 ->
-                    "Error: Invalid API Key configuration."
-
-                errorPayload.contains("unable to resolve host", ignoreCase = true) ||
-                errorPayload.contains("noroutetohostexception", ignoreCase = true) ||
-                errorPayload.contains("unknownhostexception", ignoreCase = true) ||
-                errorPayload.contains("connectexception", ignoreCase = true) ||
-                errorPayload.contains("no internet", ignoreCase = true) ||
-                errorPayload.contains("network connection", ignoreCase = true) ->
-                    "Error: Network connection failed."
+                msgState.contains("SSLHandshakeException", ignoreCase = true) ||
+                msgState.contains("SSL handshake", ignoreCase = true) ->
+                    "Error: SSL handshake failed. Secure network communication could not be established with the Gemini servers."
 
                 msgState.contains("timeout", ignoreCase = true) ||
                 msgState.contains("TimeoutException", ignoreCase = true) ||
                 msgState.contains("SocketTimeoutException", ignoreCase = true) ->
                     "Error: Network timeout. The server took too long to respond. Please check your network speed and try again."
 
+                msgState.contains("connect", ignoreCase = true) ||
+                msgState.contains("ConnectException", ignoreCase = true) ->
+                    "Error: No internet connection. Could not connect to Gemini servers."
+
+                // Rate limiting fallback (ONLY genuine rate limiting checks!)
+                httpStatus == 429 ||
+                msgState.contains("quota exceeded", ignoreCase = true) ||
+                msgState.contains("rate limit exceeded", ignoreCase = true) ||
+                msgState.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ||
+                apiErrCode.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ||
+                apiErrCode.contains("quota exceeded", ignoreCase = true) ->
+                    "Error: API quota exceeded or rate limit hit. You have reached your current Gemini API usage limits. Please wait a moment or check your Google AI Studio quota."
+
+                // Authentication fallback
+                msgState.contains("auth", ignoreCase = true) ||
+                msgState.contains("API key", ignoreCase = true) ->
+                    "Error: Authentication failure. Your API key is invalid or unauthorized. Please re-enter a valid Gemini API key in Settings."
+
+                // Server Unavailable fallback
+                msgState.contains("500") ->
+                    "Error: Server unavailable. Gemini internal server error occurred (500)."
+                
+                msgState.contains("503") ||
+                msgState.contains("Service Unavailable", ignoreCase = true) ->
+                    "Error: Gemini servers are temporarily unavailable or overloaded (503)."
+
+                // Request cancelled
                 msgState.contains("CancellationException", ignoreCase = true) ||
                 msgState.contains("Job was cancelled", ignoreCase = true) ->
                     "Error: Request cancelled. The analysis was stopped by the user or system."
 
+                // Malformed / JSON Parsing
                 msgState.contains("JsonParsingException", ignoreCase = true) ||
                 msgState.contains("SerializationException", ignoreCase = true) ||
                 msgState.contains("malformed", ignoreCase = true) ->
                     "Error: JSON parsing failure or malformed response from the model. The received format is invalid."
 
-                else -> "Error invoking DepthLens: $msgState"
+                else -> "Error invoking DepthLens: $msgState. Details: ${apiErrCode.ifEmpty { "None" }}"
             }
             
             com.example.data.diagnostics.DiagnosticsManager.updateSession {
                 it.copy(
                     apiStatus = "Failed",
-                    requestLatencyMs = duration,
+                    requestLatencyMs = responseLatency,
                     lastHttpStatus = httpStatus,
                     lastGeminiError = apiErrCode.ifEmpty { msgState },
                     lastFinishReason = finishReason.ifEmpty { "ERROR" },
-                    safetyBlockInfo = safetyBlockInfo,
-                    lastExceptionClass = lastException?.javaClass?.name ?: "UnknownException",
-                    lastExceptionMessage = lastException?.message ?: "Unknown Error",
-                    lastExceptionStackTrace = getStackTraceString(lastException)
+                    safetyBlockInfo = safetyBlockInfo
                 )
             }
             com.example.data.diagnostics.DiagnosticsManager.commitSession()
@@ -2070,7 +2520,7 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             val errorMsg = userFriendlyError
             try {
                 val assistantMsg = MessageEntity(
-                    id = java.util.UUID.randomUUID().toString(),
+                    id = UUID.randomUUID().toString(),
                     sessionId = sessionId,
                     role = "model",
                     text = errorMsg,
@@ -2080,24 +2530,9 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                 triggerUpload { uid ->
                     CloudSyncService.uploadMessage(uid, assistantMsg.id, assistantMsg.sessionId, assistantMsg.role, assistantMsg.text, assistantMsg.imageUri, assistantMsg.timestamp)
                 }
-            } catch (dbEx: java.lang.Exception) {
+            } catch (dbEx: Exception) {
                 dbEx.printStackTrace()
             }
-            
-            writeDeveloperDiagnosticsLog(
-                rawInput = rawLatestText,
-                normalizedInput = latestUserMsgText,
-                systemPrompt = calibratedSystemText,
-                injectedMemory = memoryBlock,
-                selectedMode = sessionCategory,
-                targetTemperature = 0.72f,
-                fallbackChain = modelsToTry,
-                exceptionClass = lastException?.javaClass?.name ?: "UnknownException",
-                exceptionMessage = lastException?.message ?: "Unknown Error",
-                rawErrorBody = apiErrCode.ifEmpty { null },
-                httpResponseCode = httpStatus,
-                durationMs = duration
-            )
             return@withContext ResponseParser.parse(errorMsg)
         }
     } finally {
@@ -2106,66 +2541,6 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                     activeJobs.remove(sessionId)
                 }
             }
-        }
-    }
-
-    private fun getStackTraceString(throwable: Throwable?): String {
-        if (throwable == null) return "None"
-        val sw = java.io.StringWriter()
-        val pw = java.io.PrintWriter(sw)
-        throwable.printStackTrace(pw)
-        return sw.toString()
-    }
-
-    private fun writeDeveloperDiagnosticsLog(
-        rawInput: String,
-        normalizedInput: String,
-        systemPrompt: String,
-        injectedMemory: String,
-        selectedMode: String,
-        targetTemperature: Float,
-        fallbackChain: List<String>,
-        exceptionClass: String?,
-        exceptionMessage: String?,
-        rawErrorBody: String?,
-        httpResponseCode: Int,
-        durationMs: Long
-    ) {
-        try {
-            val logFile = java.io.File(context.cacheDir, "developer_diagnostics.log")
-            val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date())
-            val logEntry = buildString {
-                appendLine("================================================================================")
-                appendLine("TIMESTAMP: $timestamp")
-                appendLine("SELECTED ANALYSIS MODE: $selectedMode")
-                appendLine("ROUND-TRIP DURATION: ${durationMs}ms")
-                appendLine("HTTP STATUS CODE: $httpResponseCode")
-                appendLine("TARGET TEMPERATURE: $targetTemperature")
-                appendLine("FALLBACK CHAIN: ${fallbackChain.joinToString(" -> ")}")
-                appendLine("EXCEPTION CLASS: ${exceptionClass ?: "None"}")
-                appendLine("EXCEPTION MESSAGE: ${exceptionMessage ?: "None"}")
-                appendLine("--------------------------------------------------------------------------------")
-                appendLine("RAW USER INPUT:")
-                appendLine(rawInput)
-                appendLine("--------------------------------------------------------------------------------")
-                appendLine("NORMALIZED INPUT:")
-                appendLine(normalizedInput)
-                appendLine("--------------------------------------------------------------------------------")
-                appendLine("INJECTED MEMORY/CONTEXT:")
-                appendLine(injectedMemory)
-                appendLine("--------------------------------------------------------------------------------")
-                appendLine("SYSTEM PROMPT:")
-                appendLine(systemPrompt)
-                appendLine("--------------------------------------------------------------------------------")
-                appendLine("RAW API ERROR BODY (UNPARSED JSON):")
-                appendLine(rawErrorBody ?: "None")
-                appendLine("================================================================================")
-                appendLine()
-            }
-            logFile.appendText(logEntry)
-            android.util.Log.d("DEVELOPER_LOG", "Diagnostics written to: ${logFile.absolutePath}")
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -2842,11 +3217,24 @@ object ResponseParser {
 
     fun getCopyableText(rawResponse: String): String {
         return copyableCache.getOrPut(rawResponse) {
-            if (rawResponse.startsWith("Error:") || rawResponse.contains("Error invoking DepthLens")) {
-                rawResponse
-            } else {
-                parse(rawResponse).exportText()
-            }
+            var text = rawResponse
+            // Remove questions, exploration paths and memory insight tags completely
+            text = text.replace(Regex("""<questions>[\s\S]*?</questions>""", RegexOption.IGNORE_CASE), "")
+            text = text.replace(Regex("""<exploration>[\s\S]*?</exploration>""", RegexOption.IGNORE_CASE), "")
+            text = text.replace(Regex("""<memory_insight>[\s\S]*?</memory_insight>""", RegexOption.IGNORE_CASE), "")
+            
+            // Remove XML tags
+            text = text.replace(Regex("""<[^>]+>"""), "")
+            
+            // Strip leaked AI metadata words (like "High.", "Importance: High") at the beginning of lines
+            val leakedMetadataRegex = Regex(
+                "^(?:(\\s*[-*+•]\\s*|\\s*\\d+\\.\\s*))?\\*?\\*?(?:(?:importance|emphasis|priority|confidence|severity|level|reasoning)\\s*:\\s*)?(?:high|medium|low|critical)\\*?\\*?\\s*\\.?\\s*",
+                setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
+            )
+            text = text.replace(leakedMetadataRegex, "$1").replace(Regex("^(?:high|medium|low|critical)\\\\.\\s*", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)), "")
+            
+            // Trim and clean extra empty lines
+            text.trim()
         }
     }
 
@@ -3222,10 +3610,8 @@ object ResponseParser {
                 continue
             }
 
-            val role = msg.role.lowercase().trim()
-            val cleanRole = if (role == "model" || role == "assistant" || role == "ai") "model" else "user"
             val cleanText = normalizeText(msg.text)
-            val repairedMsg = msg.copy(text = cleanText, role = cleanRole)
+            val repairedMsg = msg.copy(text = cleanText)
             cleanHistory.add(repairedMsg)
         }
 

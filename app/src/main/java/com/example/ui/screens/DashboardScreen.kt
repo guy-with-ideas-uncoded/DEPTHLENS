@@ -182,7 +182,7 @@ fun DashboardScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showReportBugDialog by remember { mutableStateOf(false) }
     val selectedMode by viewModel.selectedMode.collectAsState()
-    val selectedDepth by viewModel.selectedDepth.collectAsState()
+    var selectedDepth by remember { mutableStateOf("Standard Analysis") }
     
     var reportBugMessage by remember { mutableStateOf("") }
     var reportBugSubmitted by remember { mutableStateOf(false) }
@@ -2128,7 +2128,7 @@ Text(
                                 selectedMode = selectedMode,
                                 onModeSelected = { viewModel.setSelectedMode(it) },
                                 selectedDepth = selectedDepth,
-                                onDepthSelected = { viewModel.setSelectedDepth(it) },
+                                onDepthSelected = { selectedDepth = it; viewModel.setSelectedDepth(it) },
                                 isDeepThoughtEnabled = isDeepThoughtEnabled,
                                 onDeepThoughtToggle = { viewModel.setDeepThoughtEnabled(it) },
                                 onSessionSelected = { sessionId -> viewModel.selectSession(sessionId) },
@@ -5816,7 +5816,22 @@ private fun generatePdfReport(titleText: String, textContent: String): ByteArray
     paint.color = android.graphics.Color.BLACK
     paint.textSize = 10.5f
     
-    val sections = textContent.replace("\r", "").split("\n")
+    fun sanitizePdfText(input: String): String {
+        var text = input.trim()
+        text = text.replace(Regex("""<questions>[\s\S]*?</questions>""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""<exploration>[\s\S]*?</exploration>""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""<memory_insight>[\s\S]*?</memory_insight>""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""System Instructions[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""SYSTEM_PROMPT[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""Developer Config[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""<[^>]+>"""), "")
+        text = text.replace(Regex("""applicationId\s*=[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""BuildConfig[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
+        return text.trim()
+    }
+    
+    val sanitizedContent = sanitizePdfText(textContent)
+    val sections = sanitizedContent.replace("\r", "").split("\n")
     for (section in sections) {
         if (section.trim().isEmpty()) {
             currentY += 10f

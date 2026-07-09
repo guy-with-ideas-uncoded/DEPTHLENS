@@ -27,10 +27,7 @@ object DiagnosticsManager {
         val responseHeaders: String = "",
         val retryCount: Int = 0,
         val requestLatencyMs: Long = 0,
-        val lastLogTime: Long = 0,
-        val lastExceptionClass: String = "None",
-        val lastExceptionMessage: String = "None",
-        val lastExceptionStackTrace: String = "None"
+        val lastLogTime: Long = 0
     )
 
     private val _currentSession = MutableStateFlow(DiagnosticSession())

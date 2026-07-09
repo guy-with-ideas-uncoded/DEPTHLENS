@@ -456,17 +456,7 @@ fun exportChatToPdf(
             canvas.drawText(roleLabel, 40f, y, rolePaint)
             y += 14f
             
-            val contentToDraw = if (isUser) {
-                msg.text
-            } else {
-                if (msg.text.startsWith("Error:") || msg.text.contains("Error invoking DepthLens")) {
-                    msg.text
-                } else {
-                    com.example.data.repository.ResponseParser.parse(msg.text).exportText()
-                }
-            }
-            
-            val textLines = wrapText(contentToDraw, textPaint, 515)
+            val textLines = wrapText(msg.text, textPaint, 515)
             for (line in textLines) {
                 if (y > pageHeight - 55) {
                     pdfDocument.finishPage(page)
@@ -3490,7 +3480,22 @@ private fun generatePdfReport(titleText: String, textContent: String): ByteArray
     paint.color = android.graphics.Color.BLACK
     paint.textSize = 10.5f
     
-    val sections = textContent.replace("\r", "").split("\n")
+    fun sanitizePdfText(input: String): String {
+        var text = input.trim()
+        text = text.replace(Regex("""<questions>[\s\S]*?</questions>""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""<exploration>[\s\S]*?</exploration>""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""<memory_insight>[\s\S]*?</memory_insight>""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""System Instructions[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""SYSTEM_PROMPT[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""Developer Config[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""<[^>]+>"""), "")
+        text = text.replace(Regex("""applicationId\s*=[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
+        text = text.replace(Regex("""BuildConfig[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
+        return text.trim()
+    }
+    
+    val sanitizedContent = sanitizePdfText(textContent)
+    val sections = sanitizedContent.replace("\r", "").split("\n")
     for (section in sections) {
         if (section.trim().isEmpty()) {
             currentY += 10f

@@ -119,7 +119,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
 
     fun setSelectedMode(mode: String?) {
         val allValidModes = listOf(
-            "Multi-Layer", "Quick Insight", "Surface Read",
+            "Multi-Layer", "Quick Insight",
             "Pattern Map", "Psychology", "Systems", "Probability", "Business", "Relationships", "Spiritual",
             "Full Investigation", "Deep Thought", "Deep Scan", "Deep Synthesis"
         )
@@ -129,12 +129,6 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             mode
         }
         _selectedMode.value = finalMode
-        
-        val currentSessionId = _activeSessionId.value ?: "draft_session_id"
-        prefs.edit()
-            .putString("selected_mode_global", finalMode)
-            .putString("selected_mode_$currentSessionId", finalMode)
-            .apply()
     }
 
     // Selected analysis depth (synced from UI)
@@ -574,30 +568,17 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         }
         clearAttachment()
         clearContinuityBrief()
-        
-        // Restore session's selected mode, or default to the last global mode, or "Multi-Layer"
-        viewModelScope.launch {
-            val restoredMode = prefs.getString("selected_mode_$targetId", null)
-                ?: prefs.getString("selected_mode_global", "Multi-Layer")
-            setSelectedMode(restoredMode)
-        }
     }
 
     fun createSession(title: String) {
         viewModelScope.launch {
             if (title.isBlank()) {
                 _activeSessionId.value = "draft_session_id"
-                val restoredMode = prefs.getString("selected_mode_draft_session_id", null)
-                    ?: prefs.getString("selected_mode_global", "Multi-Layer")
-                setSelectedMode(restoredMode)
                 clearAttachment()
             } else {
                 val newSession = repository.createNewSession(title)
                 _activeSessionId.value = newSession.id
                 prefs.edit().putString("last_active_session_id", newSession.id).apply()
-                val currentMode = _selectedMode.value
-                prefs.edit().putString("selected_mode_${newSession.id}", currentMode).apply()
-                setSelectedMode(currentMode)
                 clearAttachment()
             }
         }
@@ -797,6 +778,18 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         val forceWeb = text.trimStart().startsWith("[web]")
         val cleanQuery = text.trim().removePrefix("[web]").trim()
         if (cleanQuery.isEmpty() && _attachedImageUri.value == null) return
+
+        // Auto Layer Selection logic: automatically select most suitable analysis mode based on the prompt
+        if (_autoLayerSelection.value) {
+            val qLower = cleanQuery.lowercase()
+            val predictedMode = when {
+                qLower.contains("pattern") || qLower.contains("repeat") || qLower.contains("trend") || qLower.contains("loop") || qLower.contains("mapping") || qLower.contains("map") || qLower.contains("cycle") || qLower.contains("habit") -> "Pattern Map"
+                qLower.contains("layer") || qLower.contains("multi") || qLower.contains("dimension") || qLower.contains("level") || qLower.contains("complex") -> "Multi-Layer"
+                qLower.contains("summary") || qLower.contains("brief") || qLower.contains("surface") || qLower.contains("quick") || qLower.contains("outline") || qLower.contains("overview") -> "Surface Read"
+                else -> "Deep Scan" // Default high-fidelity mode
+            }
+            setSelectedMode(predictedMode)
+        }
 
         val attachedUri = _attachedImageUri.value
         clearAttachment()
@@ -1842,7 +1835,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                     geminiStr = "Error"
                     lastRequestStr = when {
                         "403" in msg || "401" in msg || "API_KEY" in msg || "unauthorized" in msg.lowercase() -> "Authentication Error"
-                        "429" in msg || "resource_exhausted" in msg.lowercase() || "quota_exceeded" in msg.lowercase() || "rate_limit_exceeded" in msg.lowercase() -> "Rate Limited / Quota Exceeded"
+                        "429" in msg || "quota" in msg.lowercase() || "limit" in msg.lowercase() -> "Rate Limited / Quota Exceeded"
                         "404" in msg || "not found" in msg.lowercase() || "model" in msg.lowercase() -> "Endpoint Not Found (404)"
                         "timeout" in msg.lowercase() || "time out" in msg.lowercase() -> "Network Timeout"
                         else -> "Failed (${msg.take(40)})"

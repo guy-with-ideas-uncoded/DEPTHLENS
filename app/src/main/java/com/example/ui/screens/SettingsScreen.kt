@@ -2615,9 +2615,6 @@ fun AboutSubscreen(
 ) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
-    val currentSessionState by com.example.data.diagnostics.DiagnosticsManager.currentSession.collectAsState()
-    var developerTaps by remember { mutableStateOf(0) }
-    var showDeveloperPanel by remember { mutableStateOf(false) }
 
     val packageInfo = remember { 
         try {
@@ -2690,28 +2687,11 @@ fun AboutSubscreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Real DepthLens eye-mark logo using the single shared component.
-                Box(
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        developerTaps++
-                        if (developerTaps >= 7) {
-                            if (!showDeveloperPanel) {
-                                showDeveloperPanel = true
-                                android.widget.Toast.makeText(context, "Developer diagnostics panel unlocked!", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        } else if (developerTaps >= 3) {
-                            android.widget.Toast.makeText(context, "Tap ${7 - developerTaps} more times to unlock developer panel", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                ) {
-                    DepthLensLogo(
-                        modifier = Modifier.padding(top = 8.dp),
-                        size = 88.dp,
-                        showGlow = true
-                    )
-                }
+                DepthLensLogo(
+                    modifier = Modifier.padding(top = 8.dp),
+                    size = 88.dp,
+                    showGlow = true
+                )
 
                 Spacer(modifier = Modifier.height(14.dp))
                 Text(
@@ -2738,126 +2718,6 @@ fun AboutSubscreen(
                     fontSize = 12.sp,
                     fontFamily = InstrumentSansFontFamily
                 )
-
-                if (showDeveloperPanel) {
-                    Spacer(modifier = Modifier.height(20.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .premiumGlassBg(cornerRadius = 20.dp)
-                            .padding(16.dp)
-                    ) {
-                        Column {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Developer Diagnostics",
-                                    color = logoBlue,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = InstrumentSansFontFamily
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(999.dp))
-                                        .background(if (currentSessionState.apiStatus == "Success") Color(0xFF10B981) else Color(0xFFEF4444))
-                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Text(
-                                        text = currentSessionState.apiStatus,
-                                        color = Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = InstrumentSansFontFamily
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            
-                            @Composable
-                            fun DiagnosticsItem(label: String, value: String, isCode: Boolean = false) {
-                                Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                    Text(text = label, color = textMuted, fontSize = 11.sp, fontFamily = InstrumentSansFontFamily)
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = value.ifEmpty { "None" },
-                                        color = textPrimary,
-                                        fontSize = 12.sp,
-                                        fontFamily = if (isCode) androidx.compose.ui.text.font.FontFamily.Monospace else InstrumentSansFontFamily
-                                    )
-                                }
-                            }
-
-                            DiagnosticsItem("Current Model", currentSessionState.currentModel, isCode = true)
-                            DiagnosticsItem("Last HTTP Status", currentSessionState.lastHttpStatus.toString(), isCode = true)
-                            DiagnosticsItem("Token Count", "Prompt: ${currentSessionState.promptTokens} | Context: ${currentSessionState.contextTokens} | Response: ${currentSessionState.estimatedResponseTokens} | Total: ${currentSessionState.totalTokens}", isCode = true)
-                            DiagnosticsItem("Active Retries", currentSessionState.activeRetries.toString(), isCode = true)
-                            DiagnosticsItem("Last Finish Reason", currentSessionState.lastFinishReason, isCode = true)
-                            DiagnosticsItem("Safety Info", currentSessionState.safetyBlockInfo)
-                            DiagnosticsItem("Last Exception Class", currentSessionState.lastExceptionClass, isCode = true)
-                            DiagnosticsItem("Last Exception Message", currentSessionState.lastExceptionMessage)
-                            
-                            if (currentSessionState.lastExceptionStackTrace != "None") {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(text = "Exception Stack Trace:", color = textMuted, fontSize = 11.sp, fontFamily = InstrumentSansFontFamily)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 150.dp)
-                                        .background(Color.Black.copy(alpha = 0.3f), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-                                        .padding(8.dp)
-                                        .verticalScroll(rememberScrollState())
-                                ) {
-                                    Text(
-                                        text = currentSessionState.lastExceptionStackTrace,
-                                        color = Color(0xFFFFA500),
-                                        fontSize = 10.sp,
-                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-                            androidx.compose.material3.Button(
-                                onClick = {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    val clip = android.content.ClipData.newPlainText(
-                                        "DepthLens Diagnostics",
-                                        buildString {
-                                            appendLine("API Status: ${currentSessionState.apiStatus}")
-                                            appendLine("Model: ${currentSessionState.currentModel}")
-                                            appendLine("HTTP Status: ${currentSessionState.lastHttpStatus}")
-                                            appendLine("Prompt Tokens: ${currentSessionState.promptTokens}")
-                                            appendLine("Context Tokens: ${currentSessionState.contextTokens}")
-                                            appendLine("Response Tokens: ${currentSessionState.estimatedResponseTokens}")
-                                            appendLine("Total Tokens: ${currentSessionState.totalTokens}")
-                                            appendLine("Retries: ${currentSessionState.activeRetries}")
-                                            appendLine("Exception Class: ${currentSessionState.lastExceptionClass}")
-                                            appendLine("Exception Message: ${currentSessionState.lastExceptionMessage}")
-                                            appendLine("Stack Trace: ${currentSessionState.lastExceptionStackTrace}")
-                                            appendLine("Raw Input: ${currentSessionState.rawUserInput}")
-                                            appendLine("Normalized Input: ${currentSessionState.normalizedInput}")
-                                            appendLine("System Prompt: ${currentSessionState.systemPrompt}")
-                                        }
-                                    )
-                                    clipboard.setPrimaryClip(clip)
-                                    android.widget.Toast.makeText(context, "Copied to clipboard!", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                    containerColor = ThemeManager.accentColor
-                                ),
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
-                            ) {
-                                Text("Copy Full Log Payload", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = InstrumentSansFontFamily)
-                            }
-                        }
-                    }
-                }
 
                 Spacer(modifier = Modifier.height(20.dp))
 
