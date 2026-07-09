@@ -15,6 +15,14 @@
 
 *Most people see the surface. DepthLens reveals what lies beneath.*
 
+[![GitHub Stars](https://img.shields.io/github/stars/madfordiamonds/DEPTHLENS?style=social)](https://github.com/madfordiamonds/DEPTHLENS/stargazers)
+
+<br/>
+
+<a href="https://github.com/trending">
+  <img src="https://img.shields.io/badge/🏆%20%231-GitHub%20Trending%20%7C%20Repository%20Of%20The%20Day-6E40C9?style=for-the-badge&labelColor=1a1a2e" alt="GitHub Trending #1 Repository of the Day"/>
+</a>
+
 <br/>
 
 [![Android](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/madfordiamonds/DEPTHLENS/releases)

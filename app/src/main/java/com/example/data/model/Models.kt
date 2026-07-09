@@ -139,7 +139,6 @@ data class ParsedResponse(
 ) {
     fun exportText(): String {
         val builder = java.lang.StringBuilder()
-        builder.append("=== DEPTHLENS STRATEGIC RECONSTRUCTION REPORT ===\n\n")
         
         fun sanitize(input: String): String {
             var text = input.trim()
@@ -165,137 +164,100 @@ data class ParsedResponse(
 
         val cleanIntro = sanitize(introduction)
         if (cleanIntro.isNotBlank()) {
-            builder.append("INTRODUCTION\n")
             builder.append(cleanIntro).append("\n\n")
         }
         
         val summary = executiveSummary?.let { sanitize(it) }
-        if (!summary.isNullOrBlank()) {
-            builder.append("EXECUTIVE SUMMARY\n")
+        if (!summary.isNullOrBlank() && summary != cleanIntro) {
             builder.append(summary).append("\n\n")
         }
 
         val ds = deepSynthesis?.let { sanitize(it) }
-        if (!ds.isNullOrBlank()) {
-            builder.append("DEEP SYNTHESIS\n")
+        if (!ds.isNullOrBlank() && ds != cleanIntro && ds != summary) {
             builder.append(ds).append("\n\n")
         }
 
         if (depthLayers.isNotEmpty()) {
-            builder.append("DEPTH LAYERS OF REALITY\n")
             depthLayers.forEach { layer ->
-                builder.append("Layer ").append(layer.layerNumber).append(" - ").append(layer.layerName).append(": ").append(sanitize(layer.description)).append("\n")
+                val desc = sanitize(layer.description)
+                if (desc.isNotBlank()) {
+                    builder.append(layer.layerNumber).append(". ").append(desc).append("\n\n")
+                }
             }
-            builder.append("\n")
         }
         
         val rcr = rootCauseReport
         if (rcr != null) {
-            builder.append("ROOT CAUSE REPORT (THE 'WHY')\n")
-            builder.append("Surface Cause: ").append(sanitize(rcr.symptom)).append("\n")
-            builder.append("Immediate Cause: ").append(sanitize(rcr.immediateCause)).append("\n")
-            builder.append("Underlying Cause: ").append(sanitize(rcr.underlyingCause)).append("\n")
-            builder.append("Deeper Cause: ").append(sanitize(rcr.deeperCause)).append("\n")
-            builder.append("Root Cause Conclusion: ").append(sanitize(rcr.rootCauseEstimate)).append("\n")
-            builder.append("Supporting Evidence: ").append(sanitize(rcr.supportingEvidence)).append("\n")
-            if (rcr.alternativeExplanation.isNotBlank()) {
-                builder.append("Alternative Explanation: ").append(sanitize(rcr.alternativeExplanation)).append("\n")
-            }
-            builder.append("\n")
+            if (rcr.symptom.isNotBlank()) builder.append(sanitize(rcr.symptom)).append("\n\n")
+            if (rcr.immediateCause.isNotBlank()) builder.append(sanitize(rcr.immediateCause)).append("\n\n")
+            if (rcr.underlyingCause.isNotBlank()) builder.append(sanitize(rcr.underlyingCause)).append("\n\n")
+            if (rcr.deeperCause.isNotBlank()) builder.append(sanitize(rcr.deeperCause)).append("\n\n")
+            if (rcr.rootCauseEstimate.isNotBlank()) builder.append(sanitize(rcr.rootCauseEstimate)).append("\n\n")
+            if (rcr.supportingEvidence.isNotBlank()) builder.append(sanitize(rcr.supportingEvidence)).append("\n\n")
+            if (rcr.alternativeExplanation.isNotBlank()) builder.append(sanitize(rcr.alternativeExplanation)).append("\n\n")
         }
         
         val hd = humanDrivers
         if (hd != null) {
-            builder.append("HUMAN DRIVERS (PSYCHOMOTIVE ANATOMY)\n")
-            builder.append("Surface Intention: ").append(sanitize(hd.surfaceIntention)).append("\n")
-            builder.append("Emotional Driver: ").append(sanitize(hd.emotionalDriver)).append("\n")
-            builder.append("Core Need: ").append(sanitize(hd.needDriver)).append("\n")
-            builder.append("Core Fear: ").append(sanitize(hd.fearDriver)).append("\n")
-            builder.append("Incentives: ").append(sanitize(hd.incentiveDriver)).append("\n")
-            builder.append("Identity Alignment: ").append(sanitize(hd.identityDriver)).append("\n")
-            builder.append("Hidden Motives: ").append(sanitize(hd.hiddenMotives)).append("\n")
-            builder.append("\n")
+            if (hd.surfaceIntention.isNotBlank()) builder.append(sanitize(hd.surfaceIntention)).append("\n\n")
+            if (hd.emotionalDriver.isNotBlank()) builder.append(sanitize(hd.emotionalDriver)).append("\n\n")
+            if (hd.needDriver.isNotBlank()) builder.append(sanitize(hd.needDriver)).append("\n\n")
+            if (hd.fearDriver.isNotBlank()) builder.append(sanitize(hd.fearDriver)).append("\n\n")
+            if (hd.incentiveDriver.isNotBlank()) builder.append(sanitize(hd.incentiveDriver)).append("\n\n")
+            if (hd.identityDriver.isNotBlank()) builder.append(sanitize(hd.identityDriver)).append("\n\n")
+            if (hd.hiddenMotives.isNotBlank()) builder.append(sanitize(hd.hiddenMotives)).append("\n\n")
         }
         
         if (futureScenarios.isNotEmpty()) {
-            builder.append("FUTURE SCENARIOS & PROBABILITIES\n")
             futureScenarios.forEach { scenario ->
-                builder.append("- ").append(scenario.codeName.uppercase()).append(" - ").append(scenario.displayName).append(" (Prob: ").append(scenario.probability).append("%)\n")
-                builder.append("  Outcome: ").append(sanitize(scenario.impactText)).append("\n")
+                builder.append(sanitize(scenario.displayName)).append("\n")
+                if (scenario.impactText.isNotBlank()) builder.append(sanitize(scenario.impactText)).append("\n")
                 if (scenario.earlyWarningSigns.isNotEmpty()) {
-                    builder.append("  Early Warning Signs:\n")
                     scenario.earlyWarningSigns.forEach { sign ->
-                        builder.append("    * ").append(sanitize(sign)).append("\n")
+                        builder.append("• ").append(sanitize(sign)).append("\n")
                     }
                 }
+                builder.append("\n")
             }
-            builder.append("\n")
-        }
-        
-        val conf = confidence
-        if (!conf.isNullOrBlank()) {
-            builder.append("Confidence Level: ").append(sanitize(conf)).append("\n")
         }
         
         probabilityAssessment?.let { pa ->
-            builder.append("\nPROBABILITY ASSESSMENT\n")
-            builder.append("Confidence: ").append(sanitize(pa.confidence)).append("\n")
-            builder.append("Overall Likelihood: ").append(pa.likelihood).append("%\n")
             if (pa.reasoningFactors.isNotEmpty()) {
-                builder.append("Reasoning Factors:\n")
                 pa.reasoningFactors.forEach { factor ->
-                    builder.append("  * ").append(sanitize(factor)).append("\n")
+                    builder.append("• ").append(sanitize(factor)).append("\n")
                 }
+                builder.append("\n")
             }
-        }
-        
-        probabilityMetrics?.let { pm ->
-            builder.append("\nPROBABILITY METRICS\n")
-            builder.append("Confidence: ").append(pm.confidence).append("%\n")
-            builder.append("Likelihood: ").append(pm.likelihood).append("%\n")
-            builder.append("Risk: ").append(pm.risk).append("%\n")
-            builder.append("Opportunity: ").append(pm.opportunity).append("%\n")
         }
         
         timelineForecast?.let { tf ->
-            builder.append("\nTIMELINE FORECAST\n")
-            builder.append("Short Term (").append(tf.shortTermProb).append("%): ").append(sanitize(tf.shortTermDesc)).append("\n")
-            builder.append("Mid Term (").append(tf.midTermProb).append("%): ").append(sanitize(tf.midTermDesc)).append("\n")
-            builder.append("Long Term (").append(tf.longTermProb).append("%): ").append(sanitize(tf.longTermDesc)).append("\n")
-            if (tf.explanation.isNotBlank()) builder.append("Explanation: ").append(sanitize(tf.explanation)).append("\n")
+            if (tf.shortTermDesc.isNotBlank()) builder.append(sanitize(tf.shortTermDesc)).append("\n\n")
+            if (tf.midTermDesc.isNotBlank()) builder.append(sanitize(tf.midTermDesc)).append("\n\n")
+            if (tf.longTermDesc.isNotBlank()) builder.append(sanitize(tf.longTermDesc)).append("\n\n")
+            if (tf.explanation.isNotBlank()) builder.append(sanitize(tf.explanation)).append("\n\n")
         }
         
         decisionImpact?.let { di ->
-            builder.append("\nDECISION IMPACT ANALYSIS\n")
-            builder.append("Status Quo (").append(di.statusQuoProb).append("%): ").append(sanitize(di.statusQuoDesc)).append("\n")
-            builder.append("Action (").append(di.actionProb).append("%): ").append(sanitize(di.actionDesc)).append("\n")
-            builder.append("Comparison: ").append(sanitize(di.comparison)).append("\n")
-            builder.append("Risks: ").append(sanitize(di.risks)).append("\n")
-            builder.append("Benefits: ").append(sanitize(di.benefits)).append("\n")
-            builder.append("Tradeoffs: ").append(sanitize(di.tradeoffs)).append("\n")
+            if (di.statusQuoDesc.isNotBlank()) builder.append(sanitize(di.statusQuoDesc)).append("\n\n")
+            if (di.actionDesc.isNotBlank()) builder.append(sanitize(di.actionDesc)).append("\n\n")
+            if (di.comparison.isNotBlank()) builder.append(sanitize(di.comparison)).append("\n\n")
+            if (di.risks.isNotBlank()) builder.append(sanitize(di.risks)).append("\n\n")
+            if (di.benefits.isNotBlank()) builder.append(sanitize(di.benefits)).append("\n\n")
+            if (di.tradeoffs.isNotBlank()) builder.append(sanitize(di.tradeoffs)).append("\n\n")
         }
         
-        forecastSummary?.let { fs ->
-            builder.append("\nFORECAST SUMMARY\n")
-            builder.append("Most Likely Outcome: ").append(fs.mostLikelyOutcome).append("%\n")
-            builder.append("Key Risk: ").append(fs.keyRisk).append("%\n")
-            builder.append("Opportunity Window: ").append(fs.opportunityWindow).append("%\n")
-            builder.append("Prediction Confidence: ").append(sanitize(fs.predictionConfidence)).append("\n")
-        }
-
         if (futurePathways.isNotEmpty()) {
-            builder.append("\nFUTURE PATHWAYS\n")
             futurePathways.forEach { pathway ->
-                builder.append("- ").append(sanitize(pathway.title)).append(" (Prob: ").append(pathway.probability).append("%)\n")
-                if (pathway.description.isNotBlank()) builder.append("  Description: ").append(sanitize(pathway.description)).append("\n")
-                if (pathway.drivers.isNotBlank()) builder.append("  Drivers: ").append(sanitize(pathway.drivers)).append("\n")
-                if (pathway.risks.isNotBlank()) builder.append("  Risks: ").append(sanitize(pathway.risks)).append("\n")
-                if (pathway.opportunities.isNotBlank()) builder.append("  Opportunities: ").append(sanitize(pathway.opportunities)).append("\n")
+                builder.append(sanitize(pathway.title)).append("\n")
+                if (pathway.description.isNotBlank()) builder.append(sanitize(pathway.description)).append("\n")
+                if (pathway.drivers.isNotBlank()) builder.append("  ").append(sanitize(pathway.drivers)).append("\n")
+                if (pathway.risks.isNotBlank()) builder.append("  ").append(sanitize(pathway.risks)).append("\n")
+                if (pathway.opportunities.isNotBlank()) builder.append("  ").append(sanitize(pathway.opportunities)).append("\n")
+                builder.append("\n")
             }
         }
         
-        builder.append("\n=================================================")
-        return builder.toString()
+        return builder.toString().trim()
     }
 }
 
