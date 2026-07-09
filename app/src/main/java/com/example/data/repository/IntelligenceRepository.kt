@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
@@ -91,6 +92,7 @@ class IntelligenceRepository(private val context: Context) {
     val memoryInsightDao = db.memoryInsightDao()
     private val archivedInsightDao = db.archivedInsightDao()
     private val apiService = RetrofitClient.service
+    private val apiRequestMutex = kotlinx.coroutines.sync.Mutex()
 
     private val activeJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
 
@@ -100,6 +102,8 @@ class IntelligenceRepository(private val context: Context) {
             .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
             .build()
     }
+
+    private val activeDownloads = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Deferred<com.example.data.model.AttachmentEntity>>()
 
     val allSessionsFlow: Flow<List<SessionEntity>> = sessionDao.getAllSessionsFlow()
     val allMemoryInsightsFlow: Flow<List<MemoryInsight>> = memoryInsightDao.getAllInsightsFlow()
@@ -160,7 +164,7 @@ class IntelligenceRepository(private val context: Context) {
 
     fun getAttachmentsForMessageFlow(messageId: String, imageUriField: String): Flow<List<AttachmentEntity>> {
         return attachmentDao.getAttachmentsForMessageFlow(messageId).map { dbList ->
-            if (dbList.isNotEmpty()) {
+            val list = if (dbList.isNotEmpty()) {
                 dbList
             } else if (!imageUriField.isNullOrBlank()) {
                 imageUriField.split(",").map { uriString ->
@@ -177,7 +181,68 @@ class IntelligenceRepository(private val context: Context) {
             } else {
                 emptyList()
             }
+            list.map { ensureLocalAttachment(it) }
         }
+    }
+
+    suspend fun ensureLocalAttachment(attachment: AttachmentEntity): AttachmentEntity = withContext(Dispatchers.IO) {
+        val hasLocal = try {
+            if (attachment.localUri.startsWith("content://")) {
+                context.contentResolver.openFileDescriptor(Uri.parse(attachment.localUri), "r")?.close()
+                true
+            } else if (attachment.localUri.startsWith("file://")) {
+                java.io.File(Uri.parse(attachment.localUri).path ?: "").exists()
+            } else if (attachment.localUri.startsWith("/")) {
+                java.io.File(attachment.localUri).exists()
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            false
+        }
+
+        if (hasLocal) return@withContext attachment
+
+        if (attachment.remoteUrl.isNullOrBlank()) return@withContext attachment
+
+        val deferred = activeDownloads.getOrPut(attachment.attachmentId) {
+            backgroundScope.async(Dispatchers.IO) {
+                try {
+                    val cacheDir = java.io.File(context.cacheDir, "attachments")
+                    if (!cacheDir.exists()) {
+                        cacheDir.mkdirs()
+                    }
+                    val file = java.io.File(cacheDir, "${attachment.attachmentId}_${attachment.fileName}")
+                    
+                    if (!file.exists()) {
+                        val request = okhttp3.Request.Builder().url(attachment.remoteUrl).build()
+                        val response = urlOkHttpClient.newCall(request).execute()
+                        if (response.isSuccessful) {
+                            response.body?.byteStream()?.use { input ->
+                                java.io.FileOutputStream(file).use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (file.exists()) {
+                        val newLocalUri = "file://${file.absolutePath}"
+                        val updated = attachment.copy(localUri = newLocalUri)
+                        attachmentDao.insertAttachment(updated) // Update DB so future flows get the fixed URI
+                        updated
+                    } else {
+                        attachment
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    attachment
+                } finally {
+                    activeDownloads.remove(attachment.attachmentId)
+                }
+            }
+        }
+        deferred.await()
     }
 
     suspend fun getAttachmentsForMessage(messageId: String): List<AttachmentEntity> {
@@ -305,7 +370,9 @@ class IntelligenceRepository(private val context: Context) {
         for (modelName in modelsToTry) {
             for ((attempt, delay) in retryDelays.withIndex()) {
                 try {
-                    val response = apiService.generateContent(modelName, apiKey, request)
+                    val response = apiRequestMutex.withLock {
+                        apiService.generateContent(modelName, apiKey, request)
+                    }
                     val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
                     if (!text.isNullOrEmpty()) {
                         generatedTitle = text.removeSurrounding("\"").removeSurrounding("'").trim()
@@ -398,6 +465,21 @@ class IntelligenceRepository(private val context: Context) {
         val msg = messageDao.getMessageById(messageId)
         if (msg != null) {
             val sessionId = msg.sessionId
+            val attachments = attachmentDao.getAttachmentsForMessage(messageId)
+            attachments.forEach { att ->
+                try {
+                    val uri = Uri.parse(att.localUri)
+                    if (uri.scheme == "file") {
+                        val file = java.io.File(uri.path ?: "")
+                        if (file.exists() && file.absolutePath.contains(context.cacheDir.absolutePath)) {
+                            file.delete()
+                            android.util.Log.d("CACHE_SYSTEM", "Successfully deleted local cache file: ${file.absolutePath}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("CACHE_SYSTEM", "Error deleting local cache file: ${e.message}")
+                }
+            }
             attachmentDao.deleteAttachmentsForMessage(messageId)
             messageDao.deleteMessage(messageId)
             triggerUpload { uid ->
@@ -431,61 +513,152 @@ class IntelligenceRepository(private val context: Context) {
 
         if (!imageUri.isNullOrEmpty()) {
             val uris = imageUri.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-            uris.forEach { uriStr ->
+            val attachments = uris.mapNotNull { uriStr ->
                 try {
-                    val uri = Uri.parse(uriStr)
+                    val uri = android.net.Uri.parse(uriStr)
                     val mime = getUriMimeType(context, uriStr)
                     val name = if (uri.scheme == "file") {
                         java.io.File(uri.path ?: "").name
                     } else {
                         "attachment_${System.currentTimeMillis()}"
                     }
+
+                    // Copy to permanent internal storage to prevent permission loss after restart
+                    val (permanentLocalUri, finalFileName) = if (uriStr.startsWith("content://") || uriStr.startsWith("file://")) {
+                        try {
+                            val attachmentsDir = java.io.File(context.filesDir, "attachments")
+                            if (!attachmentsDir.exists()) attachmentsDir.mkdirs()
+                            
+                            var resolvedName: String? = null
+                            val srcUri = android.net.Uri.parse(uriStr)
+                            if (srcUri.scheme == "content") {
+                                val cursor = context.contentResolver.query(srcUri, null, null, null, null)
+                                cursor?.use { c ->
+                                    if (c.moveToFirst()) {
+                                        val nameIndex = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                                        if (nameIndex != -1) {
+                                            resolvedName = c.getString(nameIndex)
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            val extension = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "bin"
+                            val originalName = resolvedName ?: (srcUri.lastPathSegment ?: "attachment")
+                            val safeName = if (originalName.contains(".")) originalName else "$originalName.$extension"
+                            val uniqueName = "att_${UUID.randomUUID()}_$safeName"
+                            val destFile = java.io.File(attachmentsDir, uniqueName)
+                            
+                            context.contentResolver.openInputStream(srcUri)?.use { input ->
+                                java.io.FileOutputStream(destFile).use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                            
+                            if (destFile.exists()) {
+                                Pair("file://${destFile.absolutePath}", destFile.name)
+                            } else {
+                                Pair(uriStr, name)
+                            }
+                        } catch (ex: Exception) {
+                            ex.printStackTrace()
+                            Pair(uriStr, name)
+                        }
+                    } else {
+                        Pair(uriStr, name)
+                    }
+
                     val attachment = AttachmentEntity(
                         attachmentId = UUID.randomUUID().toString(),
                         messageId = userMsg.id,
                         mimeType = mime,
-                        localUri = uriStr,
+                        localUri = permanentLocalUri,
                         remoteUrl = if (uriStr.startsWith("http")) uriStr else null,
                         thumbnailUrl = null,
-                        fileName = name
+                        fileName = finalFileName
                     )
                     attachmentDao.insertAttachment(attachment)
+                    attachment
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    null
+                }
+            }
 
-                    triggerUpload { uid ->
+            triggerUpload { uid ->
+                val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
+                
+                // Sequentially upload all attachments
+                attachments.forEach { attachment ->
+                    if (attachment.remoteUrl == null) {
                         try {
-                            if (uri.scheme == "file") {
-                                val file = java.io.File(uri.path ?: "")
+                            val uri = android.net.Uri.parse(attachment.localUri)
+                            val storageRef = storage.reference.child("$uid/${userMsg.sessionId}/${userMsg.id}/${attachment.fileName}")
+                            
+                            val uploadTask = if (uri.scheme == "content") {
+                                val inputStream = context.contentResolver.openInputStream(uri)
+                                if (inputStream != null) {
+                                    storageRef.putStream(inputStream)
+                                } else null
+                            } else {
+                                val path = uri.path ?: attachment.localUri
+                                val file = java.io.File(path)
                                 if (file.exists()) {
-                                    val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
-                                    val storageRef = storage.reference.child("chats/$sessionId/messages/${userMsg.id}/${attachment.attachmentId}_$name")
-                                    val uploadTask = storageRef.putFile(uri)
-                                    com.google.android.gms.tasks.Tasks.await(uploadTask)
-                                    val downloadUrl = com.google.android.gms.tasks.Tasks.await(storageRef.downloadUrl).toString()
-                                    
-                                    val updatedAttachment = attachment.copy(remoteUrl = downloadUrl)
-                                    attachmentDao.insertAttachment(updatedAttachment)
-                                }
+                                    storageRef.putFile(android.net.Uri.fromFile(file))
+                                } else null
+                            }
+                            
+                            if (uploadTask != null) {
+                                com.google.android.gms.tasks.Tasks.await(uploadTask)
+                                val downloadUrl = com.google.android.gms.tasks.Tasks.await(storageRef.downloadUrl).toString()
+                                
+                                val updatedAttachment = attachment.copy(remoteUrl = downloadUrl)
+                                attachmentDao.insertAttachment(updatedAttachment)
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
+                
+                // After uploads, fetch updated attachments to generate the final imageUri string
+                val finalAttachments = attachmentDao.getAttachmentsForMessage(userMsg.id)
+                finalAttachments.forEach { att ->
+                    val size = try {
+                        val uri = android.net.Uri.parse(att.localUri)
+                        if (uri.scheme == "content") {
+                            context.contentResolver.openFileDescriptor(uri, "r")?.use {
+                                it.statSize
+                            } ?: 0L
+                        } else {
+                            val path = uri.path ?: att.localUri
+                            val f = java.io.File(path)
+                            if (f.exists()) f.length() else 0L
+                        }
+                    } catch (e: Exception) {
+                        0L
+                    }
+                    CloudSyncService.uploadAttachment(uid, userMsg.sessionId, userMsg.id, att, size)
+                }
+                
+                val finalImageUris = if (finalAttachments.isNotEmpty()) {
+                    finalAttachments.map { it.remoteUrl ?: it.localUri }.joinToString(",")
+                } else {
+                    userMsg.imageUri
+                }
+                
+                // Update local MessageEntity in Room so that imageUri field contains the remote URLs
+                messageDao.insertMessage(userMsg.copy(imageUri = finalImageUris))
+                
+                CloudSyncService.uploadMessage(uid, userMsg.id, userMsg.sessionId, userMsg.role, userMsg.text, finalImageUris, userMsg.timestamp, userMsg.replyToMessageId, userMsg.selectedText)
+            }
+        } else {
+            triggerUpload { uid ->
+                CloudSyncService.uploadMessage(uid, userMsg.id, userMsg.sessionId, userMsg.role, userMsg.text, userMsg.imageUri, userMsg.timestamp, userMsg.replyToMessageId, userMsg.selectedText)
             }
         }
 
         sessionDao.updateLastUsed(sessionId, System.currentTimeMillis())
-        triggerUpload { uid ->
-            val savedAttachments = attachmentDao.getAttachmentsForMessage(userMsg.id)
-            val finalImageUris = if (savedAttachments.isNotEmpty()) {
-                savedAttachments.map { it.remoteUrl ?: it.localUri }.joinToString(",")
-            } else {
-                userMsg.imageUri
-            }
-            CloudSyncService.uploadMessage(uid, userMsg.id, userMsg.sessionId, userMsg.role, userMsg.text, finalImageUris, userMsg.timestamp, userMsg.replyToMessageId, userMsg.selectedText)
-        }
     }
 
     suspend fun runConversationContinuityFlow(sessionId: String, cleanQuery: String) = withContext(Dispatchers.IO) {
@@ -615,7 +788,8 @@ class IntelligenceRepository(private val context: Context) {
             val historyDeferred = async { messageDao.getMessagesForSession(sessionId) }
             val memoryDeferred = async { memoryInsightDao.getAllInsightsFlow().firstOrNull() ?: emptyList() }
 
-            val history = historyDeferred.await()
+            val rawHistory = historyDeferred.await()
+            val history = validateAndRepairHistory(rawHistory)
             if (history.isEmpty()) {
                 val errorMsg = "Error: Session history is empty."
                 try {
@@ -643,7 +817,8 @@ class IntelligenceRepository(private val context: Context) {
             }
 
             // Compile clean, adaptive system instructions
-            val latestUserMsgText = history.lastOrNull { it.role == "user" }?.text ?: ""
+            val rawLatestText = history.lastOrNull { it.role == "user" }?.text ?: ""
+            val latestUserMsgText = normalizeText(rawLatestText)
             val detectedLang = detectLanguage(latestUserMsgText)
             if (detectedLang != "UNKNOWN") {
                 prefs.edit().putString("language_session_$sessionId", detectedLang).apply()
@@ -911,12 +1086,13 @@ Follow this format meticulously. Wrap each visual module within its respective t
                 "suicide", "collapse", "bankruptcy", "crisis", "lawsuit", "fraud", "fatal"
             )
 
-            if (fullDepthKeywords.any { q.contains(it) } || sessionDepth == "Full Investigation") {
+            if (fullDepthKeywords.any { q.contains(it) } || sessionDepth == "Full Investigation" || sessionCategory == "Full Investigation") {
                 IntentLevel.LEVEL_4_FULL
-            } else if (deepKeywords.any { q.contains(it) } || highStakesKeywords.any { q.contains(it) } || sessionDepth == "Deep Analysis") {
+            } else if (deepKeywords.any { q.contains(it) } || highStakesKeywords.any { q.contains(it) } || sessionDepth == "Deep Analysis" || sessionCategory in listOf("Deep Thought", "Deep Scan", "Deep Synthesis")) {
                 IntentLevel.LEVEL_3_DEEP
             } else {
-                IntentLevel.LEVEL_1_DIRECT
+                // Baseline to ensure XML-like tags are generated for all specialized modes
+                IntentLevel.LEVEL_3_DEEP
             }
         }
 
@@ -1173,9 +1349,10 @@ Follow this format meticulously. Wrap each visual module within its respective t
         }
 
         // Build API contents payload
-        val latestUserMsgId = history.lastOrNull { it.role == "user" }?.id
+        val compressedHistory = compressHistory(history)
+        val latestUserMsgId = compressedHistory.lastOrNull { it.role == "user" }?.id
         val contentsPayload = mutableListOf<Content>()
-        for (msg in history) {
+        for (msg in compressedHistory) {
             val partsList = mutableListOf<Part>()
             
             // Supporting multiple comma-separated media/file attachments as first-class inputs!
@@ -1199,7 +1376,7 @@ Follow this format meticulously. Wrap each visual module within its respective t
             
             // Inject reply context if this message is a reply to another message
             if (!msg.replyToMessageId.isNullOrEmpty() && !msg.selectedText.isNullOrEmpty()) {
-                val repliedMsg = history.find { it.id == msg.replyToMessageId }
+                val repliedMsg = compressedHistory.find { it.id == msg.replyToMessageId }
                 val repliedRoleName = if (repliedMsg?.role == "user") "You" else "DepthLens"
                 msgText = "[Context: This message is a reply to a selected excerpt from a previous message.\n" +
                           "The selected text was: \"${msg.selectedText}\"\n" +
@@ -1422,6 +1599,69 @@ Follow this format meticulously. Wrap each visual module within its respective t
                 - XML Custom Tag Requirement: You MUST populate `<deep_synthesis>` or `<depth>` reflecting these higher-order growth vectors.
             """.trimIndent()
 
+            "Quick Insight" -> """
+                ### REASONING SYSTEM: QUICK INSIGHT LENS
+                - Purpose: Deliver ultra-fast, high-density, action-oriented key takeaways.
+                - Focus: Core answer, surface symptoms, and immediate action points.
+                - Core Reasoning Framework Constraint: Zero filler or fluff. Max 3-5 concise bullet vectors.
+                - Output Structure Requirement: You MUST structure the main analysis body as high-density bullets.
+                - XML Custom Tag Requirement: You MUST populate `<summary>` and `<confidence>` and `<exploration>` tags with fast answers.
+            """.trimIndent()
+
+            "Surface Read" -> """
+                ### REASONING SYSTEM: SURFACE READ LENS
+                - Purpose: Map out the immediate observable facts and direct patterns.
+                - Focus: Clear-cut behaviors, overt interactions, and direct statements.
+                - Core Reasoning Framework Constraint: Keep it grounded purely in observable reality without deep psychological or hidden motive speculation.
+                - Output Structure Requirement: You MUST structure the main analysis body as a clear, factual summary.
+                - XML Custom Tag Requirement: You MUST populate `<summary>` and `<confidence>` tags.
+            """.trimIndent()
+
+            "Pattern Map" -> """
+                ### REASONING SYSTEM: PATTERN MAP LENS
+                - Purpose: Map trends, connections, and repeating behaviors.
+                - Focus: Cycle analysis, habits, historical repetition, and loops.
+                - Core Reasoning Framework Constraint: Connect current incidents to historical or recurring trends.
+                - Output Structure Requirement: Structure the body into PATTERN DETECTED, DURATION, REPETITION FREQUENCY, and ROOT TRIGGERS.
+                - XML Custom Tag Requirement: You MUST populate `<summary>` and `<memory_insight>` and `<exploration>` tags.
+            """.trimIndent()
+
+            "Deep Thought" -> """
+                ### REASONING SYSTEM: DEEP THOUGHT LENS
+                - Purpose: Perform rigorous, logical, slow-thinking deconstruction of complex ideas or problems.
+                - Focus: Core philosophical or logical contradictions, trade-offs, and nuanced conclusions.
+                - Core Reasoning Framework Constraint: Probe deep systemic layers and complex logical arguments. Use extensive structured paragraphs.
+                - Output Structure Requirement: Structure the body with deep, multi-paragraph analytical breakdowns.
+                - XML Custom Tag Requirement: You MUST populate `<depth>` and `<summary>` tags.
+            """.trimIndent()
+
+            "Deep Scan" -> """
+                ### REASONING SYSTEM: DEEP SCAN LENS
+                - Purpose: Execute maximum depth, multi-domain, multi-layer deconstruction.
+                - Focus: Hidden layers of reality, systemic bottlenecks, psychological defense blocks, and strategic foresight.
+                - Core Reasoning Framework Constraint: Analyze the issue across all 10 Layers of Reality with maximum causal rigor.
+                - Output Structure Requirement: Structure the body with comprehensive progressive reality mapping across 10 layers.
+                - XML Custom Tag Requirement: You MUST populate `<depth>`, `<root_cause>`, and `<summary>` tags.
+            """.trimIndent()
+
+            "Full Investigation" -> """
+                ### REASONING SYSTEM: FULL INVESTIGATION LENS
+                - Purpose: Complete, exhaustive multi-perspective assessment and forecasting.
+                - Focus: Systemic loops, psychological profiles, economic moats, and branching probability trees.
+                - Core Reasoning Framework Constraint: Analyze every angle exhaustively. Do not summarize or skip sections.
+                - Output Structure Requirement: Structure the body into systematic sections detailing stakeholders, loops, variables, and full recommendations.
+                - XML Custom Tag Requirement: You MUST populate all advanced forecasting tags (<summary>, <confidence>, <probability_metrics>, <probability_assessment>, <future_pathways>, <timeline_forecast>, <decision_impact>, <forecast_summary>, <future_prob>, <memory_insight>, <questions>, <exploration>).
+            """.trimIndent()
+
+            "Multi-Layer" -> """
+                ### REASONING SYSTEM: MULTI-LAYER LENS
+                - Purpose: Analyze multi-dimensional patterns and reality structures.
+                - Focus: Psychological, systemic, and strategic alignment in parallel.
+                - Core Reasoning Framework Constraint: Deconstruct the interaction between the individual, the system, and the situation.
+                - Output Structure Requirement: Structure the body into logical, multi-faceted analytical sections.
+                - XML Custom Tag Requirement: You MUST populate `<deep_synthesis>` and `<summary>` and `<exploration>` tags.
+            """.trimIndent()
+
             else -> "Identify the core themes, drivers, and dynamic implications of the context."
         }
 
@@ -1469,6 +1709,60 @@ Follow this format meticulously. Wrap each visual module within its respective t
 
         var adjustedSystemInstructionText = systemInstructionText
         when (sessionCategory) {
+            "Quick Insight" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate a Quick Insight block wrapped in <summary>...</summary> and <confidence>...</confidence> tags. Focus exclusively on rapid, surface-level key takeaways and fast answers. Do NOT output a <deep_synthesis> tag."
+                    )
+                    .replace("<deep_synthesis>", "<summary>")
+                    .replace("</deep_synthesis>", "</summary>")
+            }
+            "Surface Read" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate a Surface Read block wrapped in <summary>...</summary> and <confidence>...</confidence> tags. Focus exclusively on observable facts and direct patterns, with no deep or complex assumptions. Do NOT output a <deep_synthesis> tag."
+                    )
+                    .replace("<deep_synthesis>", "<summary>")
+                    .replace("</deep_synthesis>", "</summary>")
+            }
+            "Pattern Map" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate an elite Pattern Map block wrapped in <summary>...</summary> and <memory_insight>...</memory_insight> tags. Focus exclusively on mapping trends, connections, repeating behaviors, and repeating historical patterns."
+                    )
+                    .replace("<deep_synthesis>", "<summary>")
+                    .replace("</deep_synthesis>", "</summary>")
+            }
+            "Deep Thought" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate an elite Deep Thought deconstruction wrapped in <depth>...</depth> and <summary>...</summary> tags. Focus on slow reasoning, complex logic, and highly nuanced conclusions. Do NOT output a <deep_synthesis> tag."
+                    )
+                    .replace("<deep_synthesis>", "<depth>")
+                    .replace("</deep_synthesis>", "</depth>")
+            }
+            "Deep Scan" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate an elite Deep Scan deconstruction wrapped in <depth>...</depth>, <root_cause>...</root_cause>, and <summary>...</summary> tags. Focus on maximum depth, hidden layers, and multi-domain analysis. Do NOT output a <deep_synthesis> tag."
+                    )
+                    .replace("<deep_synthesis>", "<depth>")
+                    .replace("</deep_synthesis>", "</depth>")
+            }
+            "Full Investigation" -> {
+                adjustedSystemInstructionText = adjustedSystemInstructionText
+                    .replace(
+                        "You MUST ALWAYS generate an elite Deep Synthesis block wrapped in <deep_synthesis>...</deep_synthesis> tags. Do NOT summarize or repeat sections; synthesize the ultimate central pattern, hidden systemic forces, unconsciously ignored realities, and the single highest leverage point.",
+                        "You MUST ALWAYS generate an exhaustive, comprehensive Full Investigation report utilizing advanced forecasting tags: <summary>, <confidence>, <probability_metrics>, <probability_assessment>, <future_pathways>, <timeline_forecast>, <decision_impact>, <forecast_summary>, <future_prob>, <memory_insight>, <questions>, <exploration>. Do NOT output a <deep_synthesis> tag."
+                    )
+                    .replace("<deep_synthesis>", "<summary>")
+                    .replace("</deep_synthesis>", "</summary>")
+            }
             "Root Cause" -> {
                 adjustedSystemInstructionText = adjustedSystemInstructionText
                     .replace(
@@ -1765,21 +2059,21 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
 ──────────────────────────────────────────────────────────────────────
 """.trimIndent()
 
-        val lowercaseQuery = latestUserMsgText.lowercase()
-        val needsGrounding = lowercaseQuery.contains("today") ||
-                lowercaseQuery.contains("latest") ||
-                lowercaseQuery.contains("current") ||
-                lowercaseQuery.contains("this year") ||
-                lowercaseQuery.contains("news") ||
-                lowercaseQuery.contains("price") ||
-                lowercaseQuery.contains("now") ||
-                lowercaseQuery.contains("recent") ||
-                lowercaseQuery.contains("weather") ||
-                lowercaseQuery.contains("time") ||
-                lowercaseQuery.contains("date") ||
-                lowercaseQuery.contains("year") ||
-                lowercaseQuery.contains("who is") ||
-                lowercaseQuery.contains("what is")
+        val lowercaseQuery = latestUserMsgText.lowercase().trim()
+        val needsGrounding = lowercaseQuery.contains("latest news") ||
+                lowercaseQuery.contains("current news") ||
+                lowercaseQuery.contains("today's news") ||
+                lowercaseQuery.contains("current price of") ||
+                lowercaseQuery.contains("stock price of") ||
+                lowercaseQuery.contains("crypto price of") ||
+                lowercaseQuery.contains("weather in") ||
+                lowercaseQuery.contains("weather today") ||
+                lowercaseQuery.contains("latest update on") ||
+                lowercaseQuery.contains("current status of") ||
+                lowercaseQuery.contains("latest score") ||
+                lowercaseQuery.contains("recent developments in") ||
+                (lowercaseQuery.startsWith("who is") && (lowercaseQuery.contains("current") || lowercaseQuery.contains("now"))) ||
+                (lowercaseQuery.startsWith("what is") && (lowercaseQuery.contains("current") || lowercaseQuery.contains("latest") || lowercaseQuery.contains("today")))
 
         // User explicitly tapped "Search the Web" on a reply → force live grounding
         val forceWeb = consumeForceWeb(sessionId)
@@ -1789,15 +2083,35 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             null
         }
 
-        val request = GenerateContentRequest(
+        var currentRequest = GenerateContentRequest(
             contents = contentsPayload,
             generationConfig = GenerationConfig(temperature = 0.72f),
             systemInstruction = Content(parts = listOf(Part(text = calibratedSystemText))),
             tools = toolsPayload
         )
 
+        val startTime = System.currentTimeMillis()
+        com.example.data.diagnostics.DiagnosticsManager.updateSession {
+            it.copy(
+                apiStatus = "Running",
+                currentModel = getPreferredModel(),
+                rawUserInput = rawLatestText,
+                normalizedInput = latestUserMsgText,
+                systemPrompt = calibratedSystemText,
+                injectedMemory = memoryBlock,
+                conversationHistorySize = compressedHistory.size,
+                promptTokens = estimateTokenCount(latestUserMsgText),
+                contextTokens = estimateTokenCount(calibratedSystemText) + estimateTokenCount(memoryBlock) + compressedHistory.sumOf { m -> estimateTokenCount(m.text) },
+                totalTokens = estimateTokenCount(latestUserMsgText) + estimateTokenCount(calibratedSystemText) + estimateTokenCount(memoryBlock) + compressedHistory.sumOf { m -> estimateTokenCount(m.text) }
+            )
+        }
+
         var modelText: String? = null
         var lastException: Exception? = null
+        var lastHttpStatus = 0
+        var geminiErrorCode = "None"
+        var finishReason = "None"
+        var safetyBlockInfo = "None"
 
         // We define the assistant message template, but DO NOT insert it prematurely into the database.
         // It will be created when we receive the first chunk of text, avoiding empty or placeholder message cards.
@@ -1816,8 +2130,17 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
         for (modelName in modelsToTry) {
             for ((attempt, delay) in retryDelays.withIndex()) {
                 var streamSucceeded = false
+                com.example.data.diagnostics.DiagnosticsManager.updateSession {
+                    it.copy(
+                        activeRetries = attempt,
+                        retryCount = attempt,
+                        currentModel = modelName
+                    )
+                }
                 try {
-                    val responseBody = apiService.generateContentStream(modelName, apiKey, request)
+                    val responseBody = apiRequestMutex.withLock {
+                        apiService.generateContentStream(modelName, apiKey, currentRequest)
+                    }
                     val moshi = com.squareup.moshi.Moshi.Builder().build()
                     val chunkAdapter = moshi.adapter(GenerateContentResponse::class.java)
                     
@@ -1866,7 +2189,15 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                                     if (cleanJson.startsWith("{") && cleanJson.endsWith("}")) {
                                         try {
                                             val streamResponse = chunkAdapter.fromJson(cleanJson)
-                                            val piece = streamResponse?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                                            val candidate = streamResponse?.candidates?.firstOrNull()
+                                            val reason = candidate?.finishReason
+                                            if (!reason.isNullOrEmpty() && reason != "STOP") {
+                                                finishReason = reason
+                                                if (reason == "SAFETY" || reason == "BLOCKED" || reason == "RECITATION") {
+                                                    throw Exception("Safety block detected: $reason")
+                                                }
+                                            }
+                                            val piece = candidate?.content?.parts?.firstOrNull()?.text
                                             if (!piece.isNullOrEmpty()) {
                                                 coroutineContext.ensureActive()
                                                 accumulatedText.append(piece)
@@ -1880,7 +2211,9 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                                                 }
                                             }
                                         } catch (e: Exception) {
-                                            // Handle JSON line parsing warning
+                                            if (e.message?.contains("Safety block detected") == true) {
+                                                throw e
+                                            }
                                         }
                                     }
                                     chunkBuilder.setLength(0)
@@ -1900,14 +2233,58 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                 } catch (e: Exception) {
                     lastException = e
                     android.util.Log.e("IntelligenceRepository", "Streaming failed for model $modelName, falling back. Error: ${e.message}", e)
+                    if (e is retrofit2.HttpException) {
+                        lastHttpStatus = e.code()
+                        try {
+                            val errorBody = e.response()?.errorBody()?.string() ?: ""
+                            geminiErrorCode = errorBody
+                            if (errorBody.isNotEmpty()) {
+                                val moshi = com.squareup.moshi.Moshi.Builder().build()
+                                val adapter = moshi.adapter(Map::class.java)
+                                val errorMap = adapter.fromJson(errorBody)
+                                val errorDetail = errorMap?.get("error") as? Map<*, *>
+                                val errorStatus = errorDetail?.get("status")?.toString() ?: ""
+                                val errorMessage = errorDetail?.get("message")?.toString() ?: ""
+                                if (errorStatus.isNotEmpty()) {
+                                    geminiErrorCode = "$errorStatus: $errorMessage"
+                                }
+                            }
+                        } catch (ex: Exception) {
+                            ex.printStackTrace()
+                        }
+                    }
+                    if (currentRequest.tools != null) {
+                        android.util.Log.i("IntelligenceRepository", "Streaming failed with tools enabled, stripping tools for fallback")
+                        currentRequest = currentRequest.copy(tools = null)
+                    }
+                    if (e.message?.contains("Safety block detected") == true) {
+                        break // immediately terminate loop on safety blocks
+                    }
                 }
 
                 if (streamSucceeded) break
 
                 // Fallback: try standard non-stream generation for compatibility
                 try {
-                    val response = apiService.generateContent(modelName, apiKey, request)
-                    val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                    val response = apiRequestMutex.withLock {
+                        apiService.generateContent(modelName, apiKey, currentRequest)
+                    }
+                    val candidate = response.candidates?.firstOrNull()
+                    val reason = candidate?.finishReason ?: ""
+                    if (reason.isNotEmpty() && reason != "STOP") {
+                        finishReason = reason
+                        if (reason == "SAFETY" || reason == "BLOCKED") {
+                             safetyBlockInfo = "Response blocked due to Safety filters"
+                             throw Exception("Safety block detected: $reason")
+                        } else if (reason == "RECITATION") {
+                             safetyBlockInfo = "Response blocked due to Recitation checks"
+                             throw Exception("Safety block detected: $reason")
+                        } else {
+                             safetyBlockInfo = "Blocked due to finish reason: $reason"
+                             throw Exception("Request finished with unexpected reason: $reason")
+                        }
+                    }
+                    val text = candidate?.content?.parts?.firstOrNull()?.text
                     if (!text.isNullOrEmpty()) {
                         modelText = text
                         val updatedMsg = assistantMsg.copy(text = text)
@@ -1917,9 +2294,56 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                     }
                 } catch (e: Exception) {
                     lastException = e
-                    val msg = e.message ?: ""
+                    var msg = e.message ?: ""
+                    if (e is retrofit2.HttpException) {
+                        lastHttpStatus = e.code()
+                        try {
+                            val errorBody = e.response()?.errorBody()?.string() ?: ""
+                            geminiErrorCode = errorBody
+                            if (errorBody.isNotEmpty()) {
+                                val moshi = com.squareup.moshi.Moshi.Builder().build()
+                                val adapter = moshi.adapter(Map::class.java)
+                                val errorMap = adapter.fromJson(errorBody)
+                                val errorDetail = errorMap?.get("error") as? Map<*, *>
+                                val errorStatus = errorDetail?.get("status")?.toString() ?: ""
+                                val errorMessage = errorDetail?.get("message")?.toString() ?: ""
+                                if (errorStatus.isNotEmpty()) {
+                                    geminiErrorCode = "$errorStatus: $errorMessage"
+                                }
+                            }
+                        } catch (ex: Exception) {
+                            ex.printStackTrace()
+                        }
+                    }
+                    
+                    if (currentRequest.tools != null) {
+                        android.util.Log.i("IntelligenceRepository", "Standard generation failed with tools enabled, retrying without tools in-place")
+                        currentRequest = currentRequest.copy(tools = null)
+                        try {
+                            val response = apiRequestMutex.withLock {
+                                apiService.generateContent(modelName, apiKey, currentRequest)
+                            }
+                            val candidate = response.candidates?.firstOrNull()
+                            val text = candidate?.content?.parts?.firstOrNull()?.text
+                            if (!text.isNullOrEmpty()) {
+                                modelText = text
+                                val updatedMsg = assistantMsg.copy(text = text)
+                                messageDao.insertMessage(updatedMsg)
+                                streamSucceeded = true
+                            }
+                        } catch (retryEx: Exception) {
+                            lastException = retryEx
+                            msg = retryEx.message ?: ""
+                            if (retryEx is retrofit2.HttpException) {
+                                lastHttpStatus = retryEx.code()
+                            }
+                        }
+                    }
+
+                    if (streamSucceeded) break
+
                     val is429 = msg.contains("429") || msg.contains("quota", ignoreCase = true) || msg.contains("rate", ignoreCase = true)
-                    if (attempt < retryDelays.size - 1) {
+                    if (is429 && attempt < retryDelays.size - 1) {
                         kotlinx.coroutines.delay(delay)
                         continue
                     } else {
@@ -1939,6 +2363,36 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             triggerUpload { uid ->
                 CloudSyncService.uploadMessage(uid, finalUpdatedMsg.id, finalUpdatedMsg.sessionId, finalUpdatedMsg.role, finalUpdatedMsg.text, finalUpdatedMsg.imageUri, finalUpdatedMsg.timestamp)
             }
+
+            val duration = System.currentTimeMillis() - startTime
+            writeDeveloperDiagnosticsLog(
+                rawInput = rawLatestText,
+                normalizedInput = latestUserMsgText,
+                systemPrompt = calibratedSystemText,
+                injectedMemory = memoryBlock,
+                selectedMode = sessionCategory,
+                targetTemperature = 0.72f,
+                fallbackChain = modelsToTry,
+                exceptionClass = null,
+                exceptionMessage = null,
+                rawErrorBody = null,
+                httpResponseCode = 200,
+                durationMs = duration
+            )
+            com.example.data.diagnostics.DiagnosticsManager.updateSession {
+                it.copy(
+                    apiStatus = "Success",
+                    estimatedResponseTokens = estimateTokenCount(processedModelText),
+                    requestLatencyMs = duration,
+                    lastHttpStatus = 200,
+                    lastGeminiError = "None",
+                    lastFinishReason = finishReason.ifEmpty { "STOP" },
+                    lastExceptionClass = "None",
+                    lastExceptionMessage = "None",
+                    lastExceptionStackTrace = "None"
+                )
+            }
+            com.example.data.diagnostics.DiagnosticsManager.commitSession()
 
             // Extract and save memory insights proactively to complete Memory Intelligence System
             val extractedMemoryBlock = extractTagContent(modelText, "memory_insight")
@@ -1967,67 +2421,104 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
 
             return@withContext ResponseParser.parse(processedModelText)
         } else {
-            val msgState = lastException?.message ?: "unknown cause"
-            val userFriendlyError = when {
-                // Connection/Internet/DNS/SSL errors
-                msgState.contains("Unable to resolve host", ignoreCase = true) ||
-                msgState.contains("NoRouteToHostException", ignoreCase = true) ||
-                msgState.contains("UnknownHostException", ignoreCase = true) ->
-                    "Error: DNS resolution failed or no internet connection. Please verify your cell signal or Wi-Fi status."
+            val duration = System.currentTimeMillis() - startTime
+            var httpStatus = lastHttpStatus
+            var apiErrCode = geminiErrorCode
+            
+            if (lastException is retrofit2.HttpException) {
+                httpStatus = lastException.code()
+                try {
+                    val errorBody = lastException.response()?.errorBody()?.string() ?: ""
+                    apiErrCode = errorBody
+                    if (errorBody.isNotEmpty()) {
+                        val moshi = com.squareup.moshi.Moshi.Builder().build()
+                        val adapter = moshi.adapter(Map::class.java)
+                        val errorMap = adapter.fromJson(errorBody)
+                        val errorDetail = errorMap?.get("error") as? Map<*, *>
+                        val errorStatus = errorDetail?.get("status")?.toString() ?: ""
+                        val errorMessage = errorDetail?.get("message")?.toString() ?: ""
+                        if (errorStatus.isNotEmpty()) {
+                            apiErrCode = "$errorStatus: $errorMessage"
+                        }
+                    }
+                } catch (ex: Exception) {
+                    ex.printStackTrace()
+                }
+            }
 
-                msgState.contains("SSLHandshakeException", ignoreCase = true) ||
-                msgState.contains("SSL handshake", ignoreCase = true) ->
-                    "Error: SSL handshake failed. Secure network communication could not be established with the Gemini servers."
+            val msgState = lastException?.message ?: "unknown cause"
+            val errorPayload = (msgState + " " + apiErrCode).lowercase()
+            val userFriendlyError = when {
+                errorPayload.contains("safety block detected", ignoreCase = true) ||
+                errorPayload.contains("safety", ignoreCase = true) ||
+                errorPayload.contains("blocked", ignoreCase = true) ||
+                errorPayload.contains("recitation", ignoreCase = true) ->
+                    "Error: Request blocked by safety filters."
+
+                errorPayload.contains("context", ignoreCase = true) ||
+                errorPayload.contains("token limit", ignoreCase = true) ||
+                errorPayload.contains("limit exceeded", ignoreCase = true) ||
+                httpStatus == 413 ->
+                    "Error: Context window limit exceeded."
+
+                httpStatus == 429 ||
+                errorPayload.contains("resource_exhausted", ignoreCase = true) ||
+                errorPayload.contains("quota_exceeded", ignoreCase = true) ||
+                errorPayload.contains("quota exceeded", ignoreCase = true) ||
+                errorPayload.contains("rate_limit_exceeded", ignoreCase = true) ->
+                    "Error: API quota exceeded or rate limit hit."
+
+                errorPayload.contains("api key", ignoreCase = true) ||
+                errorPayload.contains("key invalid", ignoreCase = true) ||
+                errorPayload.contains("unauthorized", ignoreCase = true) ||
+                errorPayload.contains("auth", ignoreCase = true) ||
+                httpStatus == 401 || httpStatus == 403 ->
+                    "Error: Invalid API Key configuration."
+
+                errorPayload.contains("unable to resolve host", ignoreCase = true) ||
+                errorPayload.contains("noroutetohostexception", ignoreCase = true) ||
+                errorPayload.contains("unknownhostexception", ignoreCase = true) ||
+                errorPayload.contains("connectexception", ignoreCase = true) ||
+                errorPayload.contains("no internet", ignoreCase = true) ||
+                errorPayload.contains("network connection", ignoreCase = true) ->
+                    "Error: Network connection failed."
 
                 msgState.contains("timeout", ignoreCase = true) ||
                 msgState.contains("TimeoutException", ignoreCase = true) ||
                 msgState.contains("SocketTimeoutException", ignoreCase = true) ->
                     "Error: Network timeout. The server took too long to respond. Please check your network speed and try again."
 
-                msgState.contains("connect", ignoreCase = true) ||
-                msgState.contains("ConnectException", ignoreCase = true) ->
-                    "Error: No internet connection. Could not connect to Gemini servers."
-
-                // Rate limiting and Quota
-                msgState.contains("429") ||
-                msgState.contains("quota", ignoreCase = true) ||
-                msgState.contains("rate limit", ignoreCase = true) ||
-                msgState.contains("Rate limit exceeded", ignoreCase = true) ->
-                    "Error: API quota exceeded or rate limit hit. You have reached your current Gemini API usage limits. Please wait a moment or check your Google AI Studio quota."
-
-                // Authentication
-                msgState.contains("401") ||
-                msgState.contains("403") ||
-                msgState.contains("auth", ignoreCase = true) ||
-                msgState.contains("API key", ignoreCase = true) ->
-                    "Error: Authentication failure. Your API key is invalid or unauthorized. Please re-enter a valid Gemini API key in Settings."
-
-                // Server Unavailable (500s)
-                msgState.contains("500") ->
-                    "Error: Server unavailable. Gemini internal server error occurred (500)."
-                
-                msgState.contains("503") ||
-                msgState.contains("Service Unavailable", ignoreCase = true) ->
-                    "Error: Gemini servers are temporarily unavailable or overloaded (503)."
-
-                // Request cancelled
                 msgState.contains("CancellationException", ignoreCase = true) ||
                 msgState.contains("Job was cancelled", ignoreCase = true) ->
                     "Error: Request cancelled. The analysis was stopped by the user or system."
 
-                // Malformed / JSON Parsing
                 msgState.contains("JsonParsingException", ignoreCase = true) ||
                 msgState.contains("SerializationException", ignoreCase = true) ||
                 msgState.contains("malformed", ignoreCase = true) ->
                     "Error: JSON parsing failure or malformed response from the model. The received format is invalid."
 
-                else ->
-                    "Error invoking DepthLens: $msgState"
+                else -> "Error invoking DepthLens: $msgState"
             }
+            
+            com.example.data.diagnostics.DiagnosticsManager.updateSession {
+                it.copy(
+                    apiStatus = "Failed",
+                    requestLatencyMs = duration,
+                    lastHttpStatus = httpStatus,
+                    lastGeminiError = apiErrCode.ifEmpty { msgState },
+                    lastFinishReason = finishReason.ifEmpty { "ERROR" },
+                    safetyBlockInfo = safetyBlockInfo,
+                    lastExceptionClass = lastException?.javaClass?.name ?: "UnknownException",
+                    lastExceptionMessage = lastException?.message ?: "Unknown Error",
+                    lastExceptionStackTrace = getStackTraceString(lastException)
+                )
+            }
+            com.example.data.diagnostics.DiagnosticsManager.commitSession()
+
             val errorMsg = userFriendlyError
             try {
                 val assistantMsg = MessageEntity(
-                    id = UUID.randomUUID().toString(),
+                    id = java.util.UUID.randomUUID().toString(),
                     sessionId = sessionId,
                     role = "model",
                     text = errorMsg,
@@ -2037,16 +2528,92 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                 triggerUpload { uid ->
                     CloudSyncService.uploadMessage(uid, assistantMsg.id, assistantMsg.sessionId, assistantMsg.role, assistantMsg.text, assistantMsg.imageUri, assistantMsg.timestamp)
                 }
-            } catch (dbEx: Exception) {
+            } catch (dbEx: java.lang.Exception) {
                 dbEx.printStackTrace()
             }
+            
+            writeDeveloperDiagnosticsLog(
+                rawInput = rawLatestText,
+                normalizedInput = latestUserMsgText,
+                systemPrompt = calibratedSystemText,
+                injectedMemory = memoryBlock,
+                selectedMode = sessionCategory,
+                targetTemperature = 0.72f,
+                fallbackChain = modelsToTry,
+                exceptionClass = lastException?.javaClass?.name ?: "UnknownException",
+                exceptionMessage = lastException?.message ?: "Unknown Error",
+                rawErrorBody = apiErrCode.ifEmpty { null },
+                httpResponseCode = httpStatus,
+                durationMs = duration
+            )
             return@withContext ResponseParser.parse(errorMsg)
-        } } finally {
-            synchronized(this@IntelligenceRepository) {
+        }
+    } finally {
+        synchronized(this@IntelligenceRepository) {
                 if (activeJobs[sessionId] == currentJob) {
                     activeJobs.remove(sessionId)
                 }
             }
+        }
+    }
+
+    private fun getStackTraceString(throwable: Throwable?): String {
+        if (throwable == null) return "None"
+        val sw = java.io.StringWriter()
+        val pw = java.io.PrintWriter(sw)
+        throwable.printStackTrace(pw)
+        return sw.toString()
+    }
+
+    private fun writeDeveloperDiagnosticsLog(
+        rawInput: String,
+        normalizedInput: String,
+        systemPrompt: String,
+        injectedMemory: String,
+        selectedMode: String,
+        targetTemperature: Float,
+        fallbackChain: List<String>,
+        exceptionClass: String?,
+        exceptionMessage: String?,
+        rawErrorBody: String?,
+        httpResponseCode: Int,
+        durationMs: Long
+    ) {
+        try {
+            val logFile = java.io.File(context.cacheDir, "developer_diagnostics.log")
+            val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date())
+            val logEntry = buildString {
+                appendLine("================================================================================")
+                appendLine("TIMESTAMP: $timestamp")
+                appendLine("SELECTED ANALYSIS MODE: $selectedMode")
+                appendLine("ROUND-TRIP DURATION: ${durationMs}ms")
+                appendLine("HTTP STATUS CODE: $httpResponseCode")
+                appendLine("TARGET TEMPERATURE: $targetTemperature")
+                appendLine("FALLBACK CHAIN: ${fallbackChain.joinToString(" -> ")}")
+                appendLine("EXCEPTION CLASS: ${exceptionClass ?: "None"}")
+                appendLine("EXCEPTION MESSAGE: ${exceptionMessage ?: "None"}")
+                appendLine("--------------------------------------------------------------------------------")
+                appendLine("RAW USER INPUT:")
+                appendLine(rawInput)
+                appendLine("--------------------------------------------------------------------------------")
+                appendLine("NORMALIZED INPUT:")
+                appendLine(normalizedInput)
+                appendLine("--------------------------------------------------------------------------------")
+                appendLine("INJECTED MEMORY/CONTEXT:")
+                appendLine(injectedMemory)
+                appendLine("--------------------------------------------------------------------------------")
+                appendLine("SYSTEM PROMPT:")
+                appendLine(systemPrompt)
+                appendLine("--------------------------------------------------------------------------------")
+                appendLine("RAW API ERROR BODY (UNPARSED JSON):")
+                appendLine(rawErrorBody ?: "None")
+                appendLine("================================================================================")
+                appendLine()
+            }
+            logFile.appendText(logEntry)
+            android.util.Log.d("DEVELOPER_LOG", "Diagnostics written to: ${logFile.absolutePath}")
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -2197,7 +2764,9 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             var syncResult: String? = null
             for (syncModel in syncModels) {
                 try {
-                    val response = apiService.generateContent(syncModel, apiKey, request)
+                    val response = apiRequestMutex.withLock {
+                        apiService.generateContent(syncModel, apiKey, request)
+                    }
                     syncResult = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
                     if (!syncResult.isNullOrEmpty()) break
                 } catch (e: Exception) {
@@ -2438,7 +3007,9 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
         for (modelName in modelsToTry) {
             for (attemptDelay in retryDelays) {
                 try {
-                    val response = apiService.generateContent(modelName, apiKey, request)
+                    val response = apiRequestMutex.withLock {
+                        apiService.generateContent(modelName, apiKey, request)
+                    }
                     val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
                     if (!text.isNullOrEmpty()) {
                         resultText = text
@@ -2719,17 +3290,11 @@ object ResponseParser {
 
     fun getCopyableText(rawResponse: String): String {
         return copyableCache.getOrPut(rawResponse) {
-            var text = rawResponse
-            // Remove questions, exploration paths and memory insight tags completely
-            text = text.replace(Regex("""<questions>[\s\S]*?</questions>""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""<exploration>[\s\S]*?</exploration>""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""<memory_insight>[\s\S]*?</memory_insight>""", RegexOption.IGNORE_CASE), "")
-            
-            // Remove XML tags
-            text = text.replace(Regex("""<[^>]+>"""), "")
-            
-            // Trim and clean extra empty lines
-            text.trim()
+            if (rawResponse.startsWith("Error:") || rawResponse.contains("Error invoking DepthLens")) {
+                rawResponse
+            } else {
+                parse(rawResponse).exportText()
+            }
         }
     }
 
@@ -3041,7 +3606,16 @@ object ResponseParser {
             cleaned = cleaned.replace("<$tag>(.*?)</$tag>".toRegex(RegexOption.DOT_MATCHES_ALL), "")
             cleaned = cleaned.replace("<$tag>([^<]*)".toRegex(RegexOption.DOT_MATCHES_ALL), "")
         }
-        return cleaned.replace("<[^>]*>".toRegex(), "").trim()
+        cleaned = cleaned.replace("<[^>]*>".toRegex(), "").trim()
+        
+        // Strip leaked AI metadata words (like "High.", "Importance: High") at the beginning of lines
+        val leakedMetadataRegex = Regex(
+            "^(?:(\\s*[-*+•]\\s*|\\s*\\d+\\.\\s*))?\\*?\\*?(?:(?:importance|emphasis|priority|confidence|severity|level|reasoning)\\s*:\\s*)?(?:high|medium|low|critical)\\*?\\*?\\s*\\.?\\s*",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
+        )
+        cleaned = cleaned.replace(leakedMetadataRegex, "$1").replace(Regex("^(?:high|medium|low|critical)\\\\.\\s*", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)), "")
+        
+        return cleaned.trim()
     }
 
     private fun parseField(rawText: String, fieldName: String): String {
@@ -3059,6 +3633,132 @@ object ResponseParser {
         }
     }
 }
+
+    // --- Developer Diagnostics, Unicode Normalization, and History Validation helpers ---
+
+    fun normalizeText(input: String?): String {
+        if (input == null) return ""
+        val normalized = java.text.Normalizer.normalize(input, java.text.Normalizer.Form.NFC)
+        return normalized
+            .replace("\u200B", "") // zero-width space
+            .replace("\u200C", "") // zero-width non-joiner
+            .replace("\u200D", "") // zero-width joiner
+            .replace("\uFEFF", "") // zero-width no-break space
+            .replace("[\\p{Cc}&&[^\\r\\n\\t]]".toRegex(), "") // other control chars except standard whitespace
+            .trim()
+    }
+
+    fun validateAndRepairHistory(rawHistory: List<MessageEntity>): List<MessageEntity> {
+        if (rawHistory.isEmpty()) return emptyList()
+
+        val cleanHistory = mutableListOf<MessageEntity>()
+        val seenIds = mutableSetOf<String>()
+
+        for (msg in rawHistory) {
+            // Skip duplicate IDs
+            if (msg.id.isNotEmpty() && !seenIds.add(msg.id)) {
+                android.util.Log.w("IntelligenceRepository", "History Repair: Skipped duplicate message ID: ${msg.id}")
+                continue
+            }
+
+            // Repair empty or null text
+            val isTextEmpty = msg.text.trim().isEmpty()
+            val hasAttachment = !msg.imageUri.isNullOrEmpty()
+            
+            if (isTextEmpty && !hasAttachment) {
+                android.util.Log.w("IntelligenceRepository", "History Repair: Skipped empty message: ${msg.id}")
+                continue
+            }
+
+            val role = msg.role.lowercase().trim()
+            val cleanRole = if (role == "model" || role == "assistant" || role == "ai") "model" else "user"
+            val cleanText = normalizeText(msg.text)
+            val repairedMsg = msg.copy(text = cleanText, role = cleanRole)
+            cleanHistory.add(repairedMsg)
+        }
+
+        val alternatingHistory = mutableListOf<MessageEntity>()
+        for (msg in cleanHistory) {
+            if (alternatingHistory.isEmpty()) {
+                alternatingHistory.add(msg)
+            } else {
+                val lastMsg = alternatingHistory.last()
+                if (lastMsg.role == msg.role) {
+                    val mergedText = if (lastMsg.text.isNotEmpty() && msg.text.isNotEmpty()) {
+                        lastMsg.text + "\n\n" + msg.text
+                    } else {
+                        lastMsg.text + msg.text
+                    }
+                    val mergedImageUri = when {
+                        lastMsg.imageUri.isNullOrEmpty() -> msg.imageUri
+                        msg.imageUri.isNullOrEmpty() -> lastMsg.imageUri
+                        else -> lastMsg.imageUri + "," + msg.imageUri
+                    }
+                    alternatingHistory[alternatingHistory.size - 1] = lastMsg.copy(
+                        text = mergedText,
+                        imageUri = mergedImageUri
+                    )
+                    android.util.Log.i("IntelligenceRepository", "History Repair: Merged consecutive messages of same role (${msg.role})")
+                } else {
+                    alternatingHistory.add(msg)
+                }
+            }
+        }
+
+        while (alternatingHistory.isNotEmpty() && alternatingHistory.first().role != "user") {
+            android.util.Log.w("IntelligenceRepository", "History Repair: Removed leading non-user message")
+            alternatingHistory.removeAt(0)
+        }
+
+        return alternatingHistory
+    }
+
+    fun estimateTokenCount(text: String?): Int {
+        if (text == null) return 0
+        return (text.length / 4.0).toInt().coerceAtLeast(1)
+    }
+
+    fun estimateContentTokens(content: Content): Int {
+        var tokens = 0
+        for (part in content.parts) {
+            if (!part.text.isNullOrEmpty()) {
+                tokens += estimateTokenCount(part.text)
+            }
+            if (part.inlineData != null) {
+                tokens += 258
+            }
+        }
+        return tokens
+    }
+
+    fun compressHistory(history: List<MessageEntity>, maxTokens: Int = 15000): List<MessageEntity> {
+        var currentHistory = history.toMutableList()
+        var estimatedTokens = currentHistory.sumOf { msg ->
+            estimateTokenCount(msg.text) + (if (!msg.imageUri.isNullOrEmpty()) 258 else 0)
+        }
+
+        var didCompress = false
+        while (estimatedTokens > maxTokens && currentHistory.size > 2) {
+            android.util.Log.i("IntelligenceRepository", "Compressing context: current tokens ($estimatedTokens) exceeds max ($maxTokens). Dropping oldest turns.")
+            currentHistory.removeAt(0)
+            currentHistory.removeAt(0)
+            didCompress = true
+            
+            while (currentHistory.isNotEmpty() && currentHistory.first().role != "user") {
+                currentHistory.removeAt(0)
+            }
+            
+            estimatedTokens = currentHistory.sumOf { msg ->
+                estimateTokenCount(msg.text) + (if (!msg.imageUri.isNullOrEmpty()) 258 else 0)
+            }
+        }
+        if (didCompress) {
+            com.example.data.diagnostics.DiagnosticsManager.updateSession {
+                it.copy(compressionStatus = "Compressed history to $estimatedTokens tokens")
+            }
+        }
+        return currentHistory
+    }
 
 enum class IntentLevel {
     LEVEL_1_DIRECT,      // Level 1 — Direct Answer

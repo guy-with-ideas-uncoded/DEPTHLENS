@@ -97,13 +97,17 @@ private suspend fun generateThumb(
     context: android.content.Context, uriString: String, kind: AttachKind
 ): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
     thumbCache.get(uriString)?.let { return@withContext it }
-    val uri = normalizeUri(context, uriString)
+    val uri = android.net.Uri.parse(uriString)
     val bmp = try {
         when (kind) {
             AttachKind.VIDEO -> {
                 val retriever = android.media.MediaMetadataRetriever()
                 try {
-                    retriever.setDataSource(context, uri)
+                    if (uri.scheme == "file") {
+                        retriever.setDataSource(uri.path)
+                    } else {
+                        retriever.setDataSource(context, uri)
+                    }
                     retriever.getFrameAtTime(1_000_000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                 } finally {
                     try { retriever.release() } catch (_: Exception) {}
@@ -149,13 +153,92 @@ private fun querySize(context: android.content.Context, uriString: String): Long
     } ?: 0L
 } catch (e: Exception) { 0L }
 
+private suspend fun resolveAttachmentLocalUri(
+    context: android.content.Context,
+    attachment: AttachmentEntity,
+    onProgress: (Boolean) -> Unit = {}
+): String = withContext(Dispatchers.IO) {
+    val currentUri = attachment.localUri
+    if (currentUri.isNotBlank()) {
+        try {
+            val uri = android.net.Uri.parse(currentUri)
+            if (uri.scheme == "content") {
+                var readable = false
+                try {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use {
+                        readable = true
+                    }
+                } catch (e: Exception) {}
+                if (readable) return@withContext currentUri
+            } else {
+                val path = uri.path ?: currentUri
+                val file = java.io.File(path)
+                if (file.exists()) return@withContext currentUri
+            }
+        } catch (e: Exception) {}
+    }
+
+    val remote = attachment.remoteUrl
+    if (remote.isNullOrBlank()) return@withContext currentUri
+
+    try {
+        onProgress(true)
+        val cacheDir = java.io.File(context.cacheDir, "attachments")
+        cacheDir.mkdirs()
+        val destFile = java.io.File(cacheDir, "${attachment.attachmentId}_${attachment.fileName}")
+        
+        if (!destFile.exists()) {
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val request = okhttp3.Request.Builder().url(remote).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    response.body?.byteStream()?.use { input ->
+                        java.io.FileOutputStream(destFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (destFile.exists()) {
+            val newLocalUri = "file://${destFile.absolutePath}"
+            val updated = attachment.copy(localUri = newLocalUri)
+            try {
+                val db = com.example.data.database.DepthDatabase.getDatabase(context)
+                db.attachmentDao().insertAttachment(updated)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            onProgress(false)
+            return@withContext newLocalUri
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    onProgress(false)
+    return@withContext currentUri
+}
+
 /**
  * Compact glass thumbnail card for one attachment. Tapping calls [onClick].
  */
 @Composable
 fun AttachmentThumb(attachment: AttachmentEntity, onClick: () -> Unit) {
     val context = LocalContext.current
-    val model = if (!attachment.remoteUrl.isNullOrBlank()) attachment.remoteUrl else attachment.localUri
+    var resolvedUri by remember(attachment.attachmentId, attachment.localUri, attachment.remoteUrl) {
+        mutableStateOf(attachment.localUri)
+    }
+    var isDownloading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(attachment.attachmentId, attachment.localUri, attachment.remoteUrl) {
+        resolvedUri = resolveAttachmentLocalUri(context, attachment) { isDownloading = it }
+    }
+
+    val model = resolvedUri
     val kind = remember(attachment.attachmentId) { kindOf(attachment.mimeType, attachment.fileName) }
     val accent = ThemeManager.accentColor
 
@@ -172,7 +255,7 @@ fun AttachmentThumb(attachment: AttachmentEntity, onClick: () -> Unit) {
             .clip(cardShape)
             .background(Color.White.copy(alpha = if (ThemeManager.isDarkTheme) 0.06f else 0.14f))
             .border(1.dp, Color.White.copy(alpha = 0.16f), cardShape)
-            .clickable { onClick() }
+            .clickable(enabled = !isDownloading) { onClick() }
     ) {
         when (kind) {
             AttachKind.IMAGE -> {
@@ -188,7 +271,7 @@ fun AttachmentThumb(attachment: AttachmentEntity, onClick: () -> Unit) {
             }
             AttachKind.VIDEO, AttachKind.PDF -> {
                 var thumb by remember(attachment.attachmentId) { mutableStateOf<android.graphics.Bitmap?>(null) }
-                LaunchedEffect(attachment.attachmentId) { thumb = generateThumb(context, model, kind) }
+                LaunchedEffect(attachment.attachmentId, model) { thumb = generateThumb(context, model, kind) }
                 val bmp = thumb
                 if (bmp != null) {
                     val aspectRatio = bmp.width.toFloat() / bmp.height.toFloat()
@@ -251,13 +334,29 @@ fun AttachmentThumb(attachment: AttachmentEntity, onClick: () -> Unit) {
                             color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                             maxLines = 1
                         )
-                        val sz = remember(attachment.attachmentId) { formatSize(querySize(context, model)) }
+                        val sz = remember(attachment.attachmentId, model) { formatSize(querySize(context, model)) }
                         Text(
                             if (sz.isNotBlank()) sz else "Tap to open",
                             color = Color(0xFF9D98C9), fontSize = 10.sp
                         )
                     }
                 }
+            }
+        }
+
+        // Downloading Overlay
+        if (isDownloading) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = 0.4f)),
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = accent,
+                    strokeWidth = 2.dp
+                )
             }
         }
     }
@@ -270,13 +369,64 @@ fun AttachmentThumb(attachment: AttachmentEntity, onClick: () -> Unit) {
 @Composable
 fun InAppAttachmentViewer(attachment: AttachmentEntity, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val model = if (!attachment.remoteUrl.isNullOrBlank()) attachment.remoteUrl else attachment.localUri
+    var resolvedUri by remember(attachment.attachmentId, attachment.localUri, attachment.remoteUrl) {
+        mutableStateOf(attachment.localUri)
+    }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadFailed by remember { mutableStateOf(false) }
+    var retryCount by remember { mutableStateOf(0) }
+
+    LaunchedEffect(attachment.attachmentId, attachment.localUri, attachment.remoteUrl, retryCount) {
+        downloadFailed = false
+        val uri = resolveAttachmentLocalUri(context, attachment) { isDownloading = it }
+        resolvedUri = uri
+        
+        // Double-check if the file is readable
+        val readable = if (uri.isNotBlank()) {
+            try {
+                val parsed = android.net.Uri.parse(uri)
+                if (parsed.scheme == "content") {
+                    var ok = false
+                    context.contentResolver.openFileDescriptor(parsed, "r")?.use { ok = true }
+                    ok
+                } else {
+                    val path = parsed.path ?: uri
+                    java.io.File(path).exists()
+                }
+            } catch (e: Exception) { false }
+        } else false
+
+        if (!readable && !attachment.remoteUrl.isNullOrBlank()) {
+            downloadFailed = true
+        }
+    }
+
+    val model = resolvedUri
     val kind = remember(attachment.attachmentId) { kindOf(attachment.mimeType, attachment.fileName) }
 
     if (kind == AttachKind.DOC || kind == AttachKind.OTHER) {
-        LaunchedEffect(attachment.attachmentId) {
-            openAttachment(context, model, attachment.mimeType)
-            onDismiss()
+        LaunchedEffect(attachment.attachmentId, model) {
+            if (!isDownloading && !downloadFailed) {
+                openAttachment(context, model, attachment.mimeType)
+                onDismiss()
+            }
+        }
+        if (isDownloading) {
+            Dialog(onDismissRequest = onDismiss) {
+                Box(
+                    modifier = Modifier
+                        .size(140.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.85f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        androidx.compose.material3.CircularProgressIndicator(color = ThemeManager.accentColor)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Loading…", color = Color.White, fontSize = 12.sp)
+                    }
+                }
+            }
         }
         return
     }
@@ -288,13 +438,44 @@ fun InAppAttachmentViewer(attachment: AttachmentEntity, onDismiss: () -> Unit) {
             AnimatedVisibility(shown, enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.92f, animationSpec = tween(200)),
                 exit = fadeOut() + scaleOut()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    when (kind) {
-                        AttachKind.IMAGE -> ZoomableImage(model, onDismiss)
-                        AttachKind.VIDEO -> VideoPlayerBox(normalizeUri(context, model))
-                        AttachKind.AUDIO -> AudioPlayerBox(normalizeUri(context, model), attachment.fileName)
-                        AttachKind.PDF -> PdfViewerBox(context, normalizeUri(context, model))
-                        AttachKind.TEXT -> TextViewerBox(context, normalizeUri(context, model), attachment.fileName)
-                        else -> {}
+                    if (isDownloading) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            androidx.compose.material3.CircularProgressIndicator(color = ThemeManager.accentColor)
+                            Spacer(Modifier.height(16.dp))
+                            Text("Downloading attachment…", color = Color.White, fontSize = 14.sp)
+                        }
+                    } else if (downloadFailed) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                            Icon(Icons.Default.Close, null, tint = Color.Red, modifier = Modifier.size(48.dp))
+                            Spacer(Modifier.height(16.dp))
+                            Text("Failed to download attachment", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(8.dp))
+                            Text("Please check your internet connection and try again.", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+                            Spacer(Modifier.height(16.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                androidx.compose.material3.Button(
+                                    onClick = { onDismiss() },
+                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.2f))
+                                ) {
+                                    Text("Cancel", color = Color.White)
+                                }
+                                androidx.compose.material3.Button(
+                                    onClick = { retryCount++ },
+                                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = ThemeManager.accentColor)
+                                ) {
+                                    Text("Retry", color = Color.White)
+                                }
+                            }
+                        }
+                    } else {
+                        when (kind) {
+                            AttachKind.IMAGE -> ZoomableImage(model, onDismiss)
+                            AttachKind.VIDEO -> VideoPlayerBox(android.net.Uri.parse(model))
+                            AttachKind.AUDIO -> AudioPlayerBox(android.net.Uri.parse(model), attachment.fileName)
+                            AttachKind.PDF -> PdfViewerBox(context, android.net.Uri.parse(model))
+                            AttachKind.TEXT -> TextViewerBox(context, android.net.Uri.parse(model), attachment.fileName)
+                            else -> {}
+                        }
                     }
                 }
             }
@@ -350,7 +531,11 @@ private fun VideoPlayerBox(uri: android.net.Uri) {
     androidx.compose.ui.viewinterop.AndroidView(
         factory = { ctx ->
             android.widget.VideoView(ctx).apply {
-                setVideoURI(uri)
+                if (uri.scheme == "file") {
+                    setVideoPath(uri.path)
+                } else {
+                    setVideoURI(uri)
+                }
                 val mc = android.widget.MediaController(ctx)
                 mc.setAnchorView(this)
                 setMediaController(mc)
@@ -368,7 +553,14 @@ private fun AudioPlayerBox(uri: android.net.Uri, name: String) {
     val player = remember { android.media.MediaPlayer() }
     DisposableEffect(Unit) {
         try {
-            player.setDataSource(context, uri)
+            if (uri.scheme == "file") {
+                val file = java.io.File(uri.path ?: "")
+                java.io.FileInputStream(file).use { fis ->
+                    player.setDataSource(fis.fd)
+                }
+            } else {
+                player.setDataSource(context, uri)
+            }
             player.prepare()
         } catch (_: Exception) {}
         player.setOnCompletionListener { playing = false }

@@ -152,6 +152,14 @@ data class ParsedResponse(
             text = text.replace(Regex("""<[^>]+>"""), "")
             text = text.replace(Regex("""applicationId\s*=[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
             text = text.replace(Regex("""BuildConfig[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
+            // Strip markdown formatting tokens
+            text = text.replace(Regex("""\*\*(.*?)\*\*"""), "$1")
+            text = text.replace(Regex("""__(.*?)__"""), "$1")
+            text = text.replace(Regex("""\*(.*?)\*"""), "$1")
+            text = text.replace(Regex("""_(.*?)_"""), "$1")
+            text = text.replace(Regex("""```[\s\S]*?```""")) { it.value.replace("```", "") }
+            text = text.replace(Regex("""`([^`]+)`"""), "$1")
+            text = text.replace(Regex("""^#+\s+""", RegexOption.MULTILINE), "")
             return text.trim()
         }
 
@@ -228,7 +236,65 @@ data class ParsedResponse(
         if (!conf.isNullOrBlank()) {
             builder.append("Confidence Level: ").append(sanitize(conf)).append("\n")
         }
-        builder.append("=================================================")
+        
+        probabilityAssessment?.let { pa ->
+            builder.append("\nPROBABILITY ASSESSMENT\n")
+            builder.append("Confidence: ").append(sanitize(pa.confidence)).append("\n")
+            builder.append("Overall Likelihood: ").append(pa.likelihood).append("%\n")
+            if (pa.reasoningFactors.isNotEmpty()) {
+                builder.append("Reasoning Factors:\n")
+                pa.reasoningFactors.forEach { factor ->
+                    builder.append("  * ").append(sanitize(factor)).append("\n")
+                }
+            }
+        }
+        
+        probabilityMetrics?.let { pm ->
+            builder.append("\nPROBABILITY METRICS\n")
+            builder.append("Confidence: ").append(pm.confidence).append("%\n")
+            builder.append("Likelihood: ").append(pm.likelihood).append("%\n")
+            builder.append("Risk: ").append(pm.risk).append("%\n")
+            builder.append("Opportunity: ").append(pm.opportunity).append("%\n")
+        }
+        
+        timelineForecast?.let { tf ->
+            builder.append("\nTIMELINE FORECAST\n")
+            builder.append("Short Term (").append(tf.shortTermProb).append("%): ").append(sanitize(tf.shortTermDesc)).append("\n")
+            builder.append("Mid Term (").append(tf.midTermProb).append("%): ").append(sanitize(tf.midTermDesc)).append("\n")
+            builder.append("Long Term (").append(tf.longTermProb).append("%): ").append(sanitize(tf.longTermDesc)).append("\n")
+            if (tf.explanation.isNotBlank()) builder.append("Explanation: ").append(sanitize(tf.explanation)).append("\n")
+        }
+        
+        decisionImpact?.let { di ->
+            builder.append("\nDECISION IMPACT ANALYSIS\n")
+            builder.append("Status Quo (").append(di.statusQuoProb).append("%): ").append(sanitize(di.statusQuoDesc)).append("\n")
+            builder.append("Action (").append(di.actionProb).append("%): ").append(sanitize(di.actionDesc)).append("\n")
+            builder.append("Comparison: ").append(sanitize(di.comparison)).append("\n")
+            builder.append("Risks: ").append(sanitize(di.risks)).append("\n")
+            builder.append("Benefits: ").append(sanitize(di.benefits)).append("\n")
+            builder.append("Tradeoffs: ").append(sanitize(di.tradeoffs)).append("\n")
+        }
+        
+        forecastSummary?.let { fs ->
+            builder.append("\nFORECAST SUMMARY\n")
+            builder.append("Most Likely Outcome: ").append(fs.mostLikelyOutcome).append("%\n")
+            builder.append("Key Risk: ").append(fs.keyRisk).append("%\n")
+            builder.append("Opportunity Window: ").append(fs.opportunityWindow).append("%\n")
+            builder.append("Prediction Confidence: ").append(sanitize(fs.predictionConfidence)).append("\n")
+        }
+
+        if (futurePathways.isNotEmpty()) {
+            builder.append("\nFUTURE PATHWAYS\n")
+            futurePathways.forEach { pathway ->
+                builder.append("- ").append(sanitize(pathway.title)).append(" (Prob: ").append(pathway.probability).append("%)\n")
+                if (pathway.description.isNotBlank()) builder.append("  Description: ").append(sanitize(pathway.description)).append("\n")
+                if (pathway.drivers.isNotBlank()) builder.append("  Drivers: ").append(sanitize(pathway.drivers)).append("\n")
+                if (pathway.risks.isNotBlank()) builder.append("  Risks: ").append(sanitize(pathway.risks)).append("\n")
+                if (pathway.opportunities.isNotBlank()) builder.append("  Opportunities: ").append(sanitize(pathway.opportunities)).append("\n")
+            }
+        }
+        
+        builder.append("\n=================================================")
         return builder.toString()
     }
 }

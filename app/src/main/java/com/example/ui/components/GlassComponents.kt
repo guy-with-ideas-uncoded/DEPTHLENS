@@ -587,7 +587,12 @@ private val blocksCache = java.util.concurrent.ConcurrentHashMap<String, List<Bl
 fun parseResponseToBlocks(rawText: String): List<BlockElement> {
     return blocksCache.getOrPut(rawText) {
         val blocks = mutableListOf<BlockElement>()
-        val cleanedText = collapseBlankLines(rawText)
+        val leakedMetadataRegex = Regex(
+            "^(?:(\\s*[-*+•]\\s*|\\s*\\d+\\.\\s*))?\\*?\\*?(?:(?:importance|emphasis|priority|confidence|severity|level|reasoning)\\s*:\\s*)?(?:high|medium|low|critical)\\*?\\*?\\s*\\.?\\s*",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
+        )
+        val textWithoutMetadata = rawText.replace(leakedMetadataRegex, "$1").replace(Regex("^(?:high|medium|low|critical)\\\\.\\s*", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)), "")
+        val cleanedText = collapseBlankLines(textWithoutMetadata)
         
         val tagPattern = Regex("""\[EMPHASIS:(HIGH|MEDIUM|LOW)\]([\s\S]*?)\[/EMPHASIS\]""", RegexOption.IGNORE_CASE)
         var lastIndex = 0

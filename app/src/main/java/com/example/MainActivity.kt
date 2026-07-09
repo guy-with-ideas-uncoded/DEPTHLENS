@@ -188,21 +188,10 @@ class MainActivity : FragmentActivity() {
     // Auto privacy cleanup
     try {
         val prefs = getSharedPreferences("depthlens_prefs", MODE_PRIVATE)
-        val autoCleanup = prefs.getBoolean("auto_cleanup", true)
+        val autoCleanup = prefs.getBoolean("auto_cleanup", false)
         if (autoCleanup) {
-            val attachmentsDir = java.io.File(filesDir, "attachments")
-            if (attachmentsDir.exists() && attachmentsDir.isDirectory) {
-                attachmentsDir.listFiles()?.forEach { it.delete() }
-            }
-            // Clear temporary cache directory as well
-            cacheDir.listFiles()?.forEach {
-                if (it.isDirectory) {
-                    it.deleteRecursively()
-                } else {
-                    it.delete()
-                }
-            }
-            android.util.Log.d("Privacy", "Auto privacy cleanup completed successfully")
+            // Keep user files in filesDir/attachments safe. Only clean general temporary system cache if necessary.
+            android.util.Log.d("Privacy", "Auto privacy cleanup skipped user attachments to prevent data loss")
         }
     } catch (e: Exception) {
         e.printStackTrace()

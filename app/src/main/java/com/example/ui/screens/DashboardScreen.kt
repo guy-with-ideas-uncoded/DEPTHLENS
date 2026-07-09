@@ -131,6 +131,8 @@ fun DashboardScreen(
     val selectedText by viewModel.selectedText.collectAsState()
     val replyMessageId by viewModel.replyMessageId.collectAsState()
     val replySelectedText by viewModel.replySelectedText.collectAsState()
+    
+    var viewerAttachment by remember { mutableStateOf<com.example.data.model.AttachmentEntity?>(null) }
 
     val context = LocalContext.current
     val listState = rememberLazyListState()
@@ -180,7 +182,7 @@ fun DashboardScreen(
     var showAboutDialog by remember { mutableStateOf(false) }
     var showReportBugDialog by remember { mutableStateOf(false) }
     val selectedMode by viewModel.selectedMode.collectAsState()
-    var selectedDepth by remember { mutableStateOf("Standard Analysis") }
+    val selectedDepth by viewModel.selectedDepth.collectAsState()
     
     var reportBugMessage by remember { mutableStateOf("") }
     var reportBugSubmitted by remember { mutableStateOf(false) }
@@ -2126,7 +2128,7 @@ Text(
                                 selectedMode = selectedMode,
                                 onModeSelected = { viewModel.setSelectedMode(it) },
                                 selectedDepth = selectedDepth,
-                                onDepthSelected = { selectedDepth = it; viewModel.setSelectedDepth(it) },
+                                onDepthSelected = { viewModel.setSelectedDepth(it) },
                                 isDeepThoughtEnabled = isDeepThoughtEnabled,
                                 onDeepThoughtToggle = { viewModel.setDeepThoughtEnabled(it) },
                                 onSessionSelected = { sessionId -> viewModel.selectSession(sessionId) },
@@ -2421,7 +2423,11 @@ Text(
                             ) {
                                 items(activeMessages, key = { it.id }) { message ->
                                     if (message.role == "user") {
-                                        UserMessageBubble(message, onGetAttachmentsFlowCached)
+                                        UserMessageBubble(
+                                            message = message,
+                                            onGetAttachmentsFlow = onGetAttachmentsFlowCached,
+                                            onAttachmentClick = { viewerAttachment = it }
+                                        )
                                     } else {
                                         if (message.text.startsWith("Error:") || message.text.contains("Error invoking DepthLens")) {
                                             val onRetryCached = remember(message.id, viewModel) {
@@ -2639,6 +2645,9 @@ Text(
                     )
                 }
             }
+        }
+        viewerAttachment?.let { att ->
+            InAppAttachmentViewer(att) { viewerAttachment = null }
         }
     }
     }
@@ -2941,6 +2950,7 @@ fun AssistantMessageBubble(
 fun UserMessageBubble(
     message: MessageEntity,
     onGetAttachmentsFlow: (String, String) -> kotlinx.coroutines.flow.Flow<List<com.example.data.model.AttachmentEntity>>,
+    onAttachmentClick: (com.example.data.model.AttachmentEntity) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -2960,33 +2970,8 @@ fun UserMessageBubble(
 
                 if (attachments.isNotEmpty()) {
                     attachments.forEach { attachment ->
-                        val context = LocalContext.current
-                        val mimeType = attachment.mimeType
-                        val modelToLoad = if (!attachment.remoteUrl.isNullOrBlank()) attachment.remoteUrl else attachment.localUri
-                        
-                        when {
-                            mimeType.startsWith("image/") -> {
-                                Card(
-                                    border = BorderStroke(1.dp, SurfaceCardColor),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier
-                                        .padding(bottom = 6.dp)
-                                        .size(130.dp)
-                                ) {
-                                    AsyncImage(
-                                        model = modelToLoad,
-                                        contentDescription = "Source thumbnail",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
-                            }
-                            mimeType.startsWith("audio/") -> {
-                                AudioPlayBubble(uriString = modelToLoad)
-                            }
-                            else -> {
-                                FileDocumentBubble(uriString = modelToLoad, mimeType = mimeType)
-                            }
+                        Box(modifier = Modifier.padding(bottom = 6.dp)) {
+                            AttachmentThumb(attachment) { onAttachmentClick(attachment) }
                         }
                     }
                 }
@@ -3076,20 +3061,23 @@ fun DepthLensDiagnosticCard(
             var intro = rawIntro.trim()
             if (summary.isNotBlank()) {
                 if (intro == summary) {
-                    ""
+                    intro = ""
                 } else if (intro.contains(summary)) {
-                    intro.replace(summary, "").trim()
+                    intro = intro.replace(summary, "").trim()
                 } else {
                     val paragraphs = intro.split("\n\n")
                     val filtered = paragraphs.filter { p ->
                         val pClean = p.trim()
                         pClean.isNotBlank() && !summary.contains(pClean) && !pClean.contains(summary)
                     }
-                    filtered.joinToString("\n\n").trim()
+                    intro = filtered.joinToString("\n\n").trim()
                 }
-            } else {
-                intro
             }
+            val leakedMetadataRegex = Regex(
+                "^(?:(\\s*[-*+•]\\s*|\\s*\\d+\\.\\s*))?\\*?\\*?(?:(?:importance|emphasis|priority|confidence|severity|level|reasoning)\\s*:\\s*)?(?:high|medium|low|critical)\\*?\\*?\\s*\\.?\\s*",
+                setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
+            )
+            intro.replace(leakedMetadataRegex, "$1").replace(Regex("^(?:high|medium|low|critical)\\\\.\\s*", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)), "").trim()
         }
 
         // Conversation overview context

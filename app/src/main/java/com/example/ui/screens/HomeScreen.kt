@@ -456,7 +456,17 @@ fun exportChatToPdf(
             canvas.drawText(roleLabel, 40f, y, rolePaint)
             y += 14f
             
-            val textLines = wrapText(msg.text, textPaint, 515)
+            val contentToDraw = if (isUser) {
+                msg.text
+            } else {
+                if (msg.text.startsWith("Error:") || msg.text.contains("Error invoking DepthLens")) {
+                    msg.text
+                } else {
+                    com.example.data.repository.ResponseParser.parse(msg.text).exportText()
+                }
+            }
+            
+            val textLines = wrapText(contentToDraw, textPaint, 515)
             for (line in textLines) {
                 if (y > pageHeight - 55) {
                     pdfDocument.finishPage(page)

@@ -254,6 +254,45 @@ object CloudSyncService {
      * Synchronize a Message natively to Firestore
      * Matches collection path /users/{userId}/chats/{sessionId}/messages/{messageId}
      */
+    suspend fun uploadAttachment(
+        userId: String,
+        sessionId: String,
+        messageId: String,
+        attachment: com.example.data.model.AttachmentEntity,
+        fileSize: Long = 0L
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val db = FirebaseFirestore.getInstance()
+            val storagePath = "$userId/$sessionId/$messageId/${attachment.fileName}"
+            val data = mapOf(
+                "attachmentId" to attachment.attachmentId,
+                "messageId" to attachment.messageId,
+                "mimeType" to attachment.mimeType,
+                "localUri" to attachment.localUri,
+                "remoteUrl" to (attachment.remoteUrl ?: ""),
+                "thumbnailUrl" to (attachment.thumbnailUrl ?: ""),
+                "fileName" to attachment.fileName,
+                // Audited metadata
+                "downloadUrl" to (attachment.remoteUrl ?: ""),
+                "storagePath" to storagePath,
+                "size" to fileSize,
+                "uploadTimestamp" to System.currentTimeMillis(),
+                "chatId" to sessionId,
+                "userId" to userId
+            )
+            val task = db.collection("users").document(userId)
+                .collection("chats").document(sessionId)
+                .collection("messages").document(messageId)
+                .collection("attachments").document(attachment.attachmentId)
+                .set(data, SetOptions.merge())
+            com.google.android.gms.tasks.Tasks.await(task)
+            true
+        } catch (e: Exception) {
+            Log.e("SYNC", "Error uploading attachment: ${e.message}", e)
+            false
+        }
+    }
+
     suspend fun uploadMessage(
         userId: String,
         messageId: String,
@@ -752,6 +791,28 @@ object CloudSyncService {
                                         selectedText = selectedText
                                     )
                                     messageDao.insertMessage(mEntity)
+                                    
+                                    try {
+                                        val attsSnap = db.collection("users").document(userId)
+                                            .collection("chats").document(sessionId)
+                                            .collection("messages").document(msgId)
+                                            .collection("attachments").get()
+                                        val attsResult = com.google.android.gms.tasks.Tasks.await(attsSnap)
+                                        for (attDoc in attsResult.documents) {
+                                            val attachment = com.example.data.model.AttachmentEntity(
+                                                attachmentId = getStringSafely(attDoc, "attachmentId", attDoc.id),
+                                                messageId = getStringSafely(attDoc, "messageId", msgId),
+                                                mimeType = getStringSafely(attDoc, "mimeType", "application/octet-stream"),
+                                                localUri = getStringSafely(attDoc, "localUri", ""),
+                                                remoteUrl = getStringSafely(attDoc, "remoteUrl", "").takeIf { it.isNotBlank() } ?: getStringSafely(attDoc, "downloadUrl", "").takeIf { it.isNotBlank() },
+                                                thumbnailUrl = getStringSafely(attDoc, "thumbnailUrl", "").takeIf { it.isNotBlank() },
+                                                fileName = getStringSafely(attDoc, "fileName", "attachment")
+                                            )
+                                            attachmentDao.insertAttachment(attachment)
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("SYNC", "Failed to sync attachments for message $msgId: ${e.message}")
+                                    }
                                 } catch (me: Exception) {
                                     Log.e("SYNC", "Error parsing/inserting remote message ${msgDoc.id} under session $sessionId: ${me.message}", me)
                                 }
@@ -834,6 +895,12 @@ object CloudSyncService {
                                     .collection("messages").document(localMsg.id)
                                     .set(msgData, SetOptions.merge())
                                 com.google.android.gms.tasks.Tasks.await(uploadMsgTask)
+                                
+                                val localAtts = attachmentDao.getAttachmentsForMessage(localMsg.id)
+                                for (att in localAtts) {
+                                    uploadAttachment(userId, localSession.id, localMsg.id, att)
+                                }
+                                
                                 Log.d("FIRESTORE_WRITE", "Firestore write success: synced message ${localMsg.id}")
                                 Log.d("SYNC", "Firestore write success")
                             } catch (me: Exception) {
@@ -877,7 +944,17 @@ object CloudSyncService {
                 .collection("chats").document(sessionId)
 
             // Delete nested subcollections (e.g. messages) first
-            val nestedSubcollections = listOf("messages", "chats", "history", "chatHistory")
+            try {
+                val messagesRef = docRef.collection("messages")
+                val msgsSnap = com.google.android.gms.tasks.Tasks.await(messagesRef.get())
+                for (doc in msgsSnap.documents) {
+                    deleteMessage(userId, sessionId, doc.id)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed deleting messages for session $sessionId: ${e.message}")
+            }
+            
+            val nestedSubcollections = listOf("chats", "history", "chatHistory")
             for (subColName in nestedSubcollections) {
                 try {
                     val subRef = docRef.collection(subColName)
@@ -917,6 +994,38 @@ object CloudSyncService {
             val docRef = db.collection("users").document(userId)
                 .collection("chats").document(sessionId)
                 .collection("messages").document(messageId)
+            
+            // Delete attachments subcollection and storage files
+            try {
+                val attsRef = docRef.collection("attachments")
+                val attsSnap = com.google.android.gms.tasks.Tasks.await(attsRef.get())
+                val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
+                
+                for (doc in attsSnap.documents) {
+                    val attId = doc.getString("attachmentId") ?: doc.id
+                    val fileName = doc.getString("fileName") ?: "attachment"
+                    
+                    // Delete from storage
+                    try {
+                        val storageRefNew = storage.reference.child("$userId/$sessionId/$messageId/$fileName")
+                        com.google.android.gms.tasks.Tasks.await(storageRefNew.delete())
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error deleting new storage path file: ${e.message}")
+                    }
+                    try {
+                        val storageRefOld = storage.reference.child("uploads/$userId/$sessionId/$messageId/${attId}_$fileName")
+                        com.google.android.gms.tasks.Tasks.await(storageRefOld.delete())
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error deleting old storage file for attachment $attId: ${e.message}")
+                    }
+                    
+                    // Delete from firestore
+                    com.google.android.gms.tasks.Tasks.await(doc.reference.delete())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error deleting attachments for message $messageId: ${e.message}")
+            }
+
             val deleteTask = docRef.delete()
             com.google.android.gms.tasks.Tasks.await(deleteTask)
             Log.d(TAG, "Successfully deleted remote message $messageId under session $sessionId")
