@@ -17,7 +17,14 @@ data class GenerateContentRequest(
     val contents: List<Content>,
     val generationConfig: GenerationConfig? = null,
     val systemInstruction: Content? = null,
-    val tools: List<Map<String, Map<String, String>>>? = null
+    val tools: List<Map<String, Map<String, String>>>? = null,
+    val safetySettings: List<SafetySetting>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SafetySetting(
+    val category: String,
+    val threshold: String
 )
 
 @JsonClass(generateAdapter = true)

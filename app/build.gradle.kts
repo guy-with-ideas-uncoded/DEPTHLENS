@@ -26,7 +26,7 @@ if (!googleServicesFile.exists()) {
               "client_info": {
                 "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef012345",
                 "android_client_info": {
-                  "package_name": "com.aistudio.depthlens.uqmzkx"
+                  "package_name": "com.aistudio.depthlens.v6.final"
                 }
               },
               "oauth_client": [],
@@ -74,7 +74,7 @@ android {
   compileSdk = 35
 
   defaultConfig {
-    applicationId = "com.aistudio.depthlens.uqmzkx"
+    applicationId = "com.aistudio.depthlens.v6.final"
     minSdk = 24
     targetSdk = 35
     versionCode = 6000
@@ -110,6 +110,7 @@ android {
 
   buildTypes {
     release {
+      isDebuggable = false
       isCrunchPngs = false
       isMinifyEnabled = false
       isShrinkResources = false
@@ -117,7 +118,23 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
+      isMinifyEnabled = false
+      isShrinkResources = false
+      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("debugConfig")
+    }
+  }
+
+  bundle {
+    language { enableSplit = false }
+    density { enableSplit = false }
+    abi { enableSplit = false }
+  }
+
+  splits {
+    abi {
+      isEnable = false
+      isUniversalApk = true
     }
   }
   compileOptions {
@@ -129,6 +146,15 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  packaging {
+    resources {
+      excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+    jniLibs {
+      useLegacyPackaging = true
+    }
+  }
+
   androidResources {
     noCompress.add("tflite")
   }
@@ -229,7 +255,7 @@ tasks.register("generateFirebaseConfigs") {
                   "client_info": {
                     "mobilesdk_app_id": "$finalAppId",
                     "android_client_info": {
-                      "package_name": "com.aistudio.depthlens.uqmzkx"
+                      "package_name": "com.aistudio.depthlens.v6.final"
                     }
                   },
                   "oauth_client": [
@@ -287,16 +313,18 @@ androidComponents {
                     if (!buildOutputDirResolved.exists()) buildOutputDirResolved.mkdirs()
                     if (!dotBuildOutputDirResolved.exists()) dotBuildOutputDirResolved.mkdirs()
                     
-                    val versionedApkName = "DepthLens_v6.0.0.apk"
+                    val versionedApkNames = if (vName == "release") listOf("DepthLens_v6.0.0.apk") else listOf("DepthLens_v6.0.0-debug.apk")
                     
-                    // Copy to build-outputs
-                    originalApkResolved.copyTo(File(buildOutputDirResolved, versionedApkName), overwrite = true)
-                    
-                    // Copy to .build-outputs
-                    originalApkResolved.copyTo(File(dotBuildOutputDirResolved, versionedApkName), overwrite = true)
+                    versionedApkNames.forEach { apkName ->
+                        // Copy to build-outputs
+                        originalApkResolved.copyTo(File(buildOutputDirResolved, apkName), overwrite = true)
+                        
+                        // Copy to .build-outputs
+                        originalApkResolved.copyTo(File(dotBuildOutputDirResolved, apkName), overwrite = true)
+                    }
                     
                     val sizeMB = originalApkResolved.length() / (1024.0 * 1024.0)
-                    println("Successfully copied full APK to /build-outputs and /.build-outputs as $versionedApkName (${String.format("%.2f", sizeMB)} MB)")
+                    println("Successfully copied $vName APK to /build-outputs and /.build-outputs as DepthLens_v6.0.0.apk (${String.format("%.2f", sizeMB)} MB)")
                 }
             }
         }
@@ -322,7 +350,7 @@ dependencies {
   implementation(libs.androidx.compose.material.icons.extended)
 
   // Navigation
-  implementation(libs.androidx.navigation.compose)
+  // implementation(libs.androidx.navigation.compose)
 
   // Room
   implementation(libs.androidx.room.runtime)
@@ -333,7 +361,7 @@ dependencies {
   implementation(libs.retrofit)
   implementation(libs.converter.moshi)
   implementation(libs.okhttp)
-  implementation(libs.logging.interceptor)
+  // implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   ksp(libs.moshi.kotlin.codegen)
 
@@ -341,7 +369,7 @@ dependencies {
   implementation(libs.coil.compose)
 
   // Datastore
-  implementation(libs.androidx.datastore.preferences)
+  // implementation(libs.androidx.datastore.preferences)
 
   // Biometric
   implementation("androidx.biometric:biometric:1.1.0")

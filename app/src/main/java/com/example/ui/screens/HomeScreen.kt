@@ -1,4 +1,5 @@
 package com.example.ui.screens
+import androidx.compose.material.icons.filled.Warning
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -380,11 +381,16 @@ data class SearchMatch(
 fun exportChatToPdf(
     context: android.content.Context,
     sessionTitle: String,
-    messages: List<com.example.data.model.MessageEntity>,
+    exportMessages: List<com.example.data.model.ExportMessage>,
     onComplete: (String) -> Unit,
     onError: (String) -> Unit
 ) {
     try {
+        val exportConversation = com.example.data.model.ExportConversation(
+            title = sessionTitle,
+            messages = exportMessages
+        )
+
         val pdfDocument = android.graphics.pdf.PdfDocument()
         val pageWidth = 595
         val pageHeight = 842
@@ -430,7 +436,7 @@ fun exportChatToPdf(
         canvas.drawLine(40f, y, 555f, y, paint)
         y += 25f
         
-        for (msg in messages) {
+        for (msg in exportConversation.messages) {
             if (y > pageHeight - 90) {
                 pdfDocument.finishPage(page)
                 pageNumber++
@@ -585,6 +591,9 @@ fun HomeScreen(
     onDeleteArchivedInsight: (String) -> Unit = {},
     activeMessages: List<com.example.data.model.MessageEntity> = emptyList(),
     isLoading: Boolean = false,
+    isSessionLoading: Boolean = false,
+    isSessionError: Boolean = false,
+    onRetryLoadSession: () -> Unit = {},
     onStopGeneration: () -> Unit = {},
     onRetryLastAnalysis: (String) -> Unit = {},
     onRegenerateLastAnalysis: (String) -> Unit = {},
@@ -764,6 +773,69 @@ fun HomeScreen(
     var replySelText by remember { mutableStateOf<String?>(null) }
     var replySelAnchor by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
+    // ── Stable Centralized Message Action System ──────────────────────
+    val activeMessagesState = androidx.compose.runtime.rememberUpdatedState(activeMessages)
+    
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    
+    // Capture latest callback references to prevent stale references in long-lived remembers
+    val currentOnRegenerateLastAnalysis by androidx.compose.runtime.rememberUpdatedState(onRegenerateLastAnalysis)
+    val currentOnCreateNewSession by androidx.compose.runtime.rememberUpdatedState(onCreateNewSession)
+    val currentOnSubmitQuery by androidx.compose.runtime.rememberUpdatedState(onSubmitQuery)
+    val currentSpeechManager by androidx.compose.runtime.rememberUpdatedState(speechManager)
+    val currentClipboardManager by androidx.compose.runtime.rememberUpdatedState(clipboardManager)
+    val currentContext by androidx.compose.runtime.rememberUpdatedState(context)
+    
+    val onAction: (MessageActionType, String) -> Unit = remember {
+        { actionType, messageId ->
+            val msgs = activeMessagesState.value
+            val msg = msgs.find { it.id == messageId }
+            if (msg != null) {
+                when (actionType) {
+                    MessageActionType.COPY -> {
+                        val textToCopy = try {
+                            val exported = ResponseParser.parse(msg.text).exportText()
+                            if (exported.isBlank()) "Analysis rendered visually." else exported
+                        } catch (e: Exception) {
+                            "Error copying text."
+                        }
+                        currentClipboardManager.setText(androidx.compose.ui.text.AnnotatedString(textToCopy))
+                        android.widget.Toast.makeText(currentContext, "Response copied", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    MessageActionType.SPEAK -> {
+                        val textToSpeak = try {
+                            val exported = ResponseParser.parse(msg.text).exportText()
+                            if (exported.isBlank()) "Analysis rendered visually." else exported
+                        } catch (e: Exception) {
+                            "Error parsing text for speech."
+                        }
+                        currentSpeechManager?.speak(msg.id, textToSpeak)
+                    }
+                    MessageActionType.RETRY -> {
+                        currentOnRegenerateLastAnalysis(msg.id)
+                    }
+                    MessageActionType.BRANCH -> {
+                        // Find user query associated with this message
+                        val indexOfMsg = msgs.indexOfFirst { it.id == msg.id }
+                        val associatedUserQuery = if (indexOfMsg >= 0) {
+                            msgs.subList(0, indexOfMsg).findLast { it.role == "user" }?.text ?: ""
+                        } else ""
+                        currentOnCreateNewSession()
+                        if (associatedUserQuery.isNotBlank()) currentOnSubmitQuery(associatedUserQuery)
+                    }
+                    MessageActionType.SEARCH -> {
+                        val indexOfMsg = msgs.indexOfFirst { it.id == msg.id }
+                        val associatedUserQuery = if (indexOfMsg >= 0) {
+                            msgs.subList(0, indexOfMsg).findLast { it.role == "user" }?.text ?: ""
+                        } else ""
+                        val q = associatedUserQuery.ifBlank { msg.text }
+                        currentOnSubmitQuery("[web] $q")
+                    }
+                }
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -774,6 +846,7 @@ fun HomeScreen(
             .imePadding()
     ) {
         val scrollState = rememberScrollState()
+
         // Hoisted here so the scroll arrow button can hide when keyboard is open
         var inputFocused by remember { mutableStateOf(false) }
 
@@ -1032,10 +1105,84 @@ fun HomeScreen(
                                             .clickable {
                                                 isMenuExpanded = false
                                                 val sessionTitle = activeMessages.firstOrNull { it.role == "user" }?.text?.take(30) ?: "DepthLens Chat"
+                                                
+                                                val exportMessages = activeMessages.map { msg ->
+                                                    val isUser = msg.role == "user"
+                                                    val cleanText = if (isUser) {
+                                                        msg.text
+                                                    } else {
+                                                        try {
+                                                            val parsed = ResponseParser.parse(msg.text)
+                                                            val exported = parsed.exportText()
+                                                            if (exported.isBlank()) "Analysis rendered visually." else exported
+                                                        } catch (e: Exception) {
+                                                            "Error rendering analysis."
+                                                        }
+                                                    }
+                                                    
+                                                    // Parse visual elements exactly as displayed in the UI
+                                                    val tables = mutableListOf<String>()
+                                                    val lists = mutableListOf<String>()
+                                                    val codeBlocks = mutableListOf<String>()
+                                                    
+                                                    val lines = cleanText.split("\n")
+                                                    var inCodeBlock = false
+                                                    val currentCodeBlock = java.lang.StringBuilder()
+                                                    val tableLines = mutableListOf<String>()
+                                                    
+                                                    for (line in lines) {
+                                                        val trimmed = line.trim()
+                                                        if (trimmed.startsWith("```")) {
+                                                            if (inCodeBlock) {
+                                                                inCodeBlock = false
+                                                                codeBlocks.add(currentCodeBlock.toString().trim())
+                                                                currentCodeBlock.setLength(0)
+                                                            } else {
+                                                                inCodeBlock = true
+                                                            }
+                                                            continue
+                                                        }
+                                                        
+                                                        if (inCodeBlock) {
+                                                            currentCodeBlock.append(line).append("\n")
+                                                            continue
+                                                        }
+                                                        
+                                                        if (trimmed.startsWith("•") || trimmed.startsWith("-") || trimmed.startsWith("*") || trimmed.startsWith("+")) {
+                                                            lists.add(trimmed)
+                                                        }
+                                                        
+                                                        if (trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.length > 2) {
+                                                            tableLines.add(trimmed)
+                                                        } else {
+                                                            if (tableLines.isNotEmpty()) {
+                                                                tables.add(tableLines.joinToString("\n"))
+                                                                tableLines.clear()
+                                                            }
+                                                        }
+                                                    }
+                                                    if (tableLines.isNotEmpty()) {
+                                                        tables.add(tableLines.joinToString("\n"))
+                                                    }
+                                                    if (inCodeBlock && currentCodeBlock.isNotEmpty()) {
+                                                        codeBlocks.add(currentCodeBlock.toString().trim())
+                                                    }
+                                                    
+                                                    com.example.data.model.ExportMessage(
+                                                        role = msg.role,
+                                                        text = cleanText,
+                                                        imageUri = msg.imageUri,
+                                                        tables = tables,
+                                                        lists = lists,
+                                                        codeBlocks = codeBlocks,
+                                                        charts = emptyList()
+                                                    )
+                                                }
+
                                                 exportChatToPdf(
                                                     context = context,
                                                     sessionTitle = sessionTitle,
-                                                    messages = activeMessages,
+                                                    exportMessages = exportMessages,
                                                     onComplete = { path ->
                                                         android.widget.Toast.makeText(context, "Chat exported to: $path", android.widget.Toast.LENGTH_LONG).show()
                                                     },
@@ -1069,7 +1216,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(scrollState)
-                    .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 12.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 180.dp),
                 verticalArrangement = Arrangement.Top
             ) {
 
@@ -1195,7 +1342,7 @@ fun HomeScreen(
 
             // Tagline section (only shown if Chat Feed is empty) with smooth auto-collapse
             androidx.compose.animation.AnimatedVisibility(
-                visible = activeMessages.isEmpty(),
+                visible = activeMessages.isEmpty() && !isSessionLoading && !isSessionError,
                 enter = fadeIn(animationSpec = tween(500)) + expandVertically(animationSpec = tween(500)),
                 exit = fadeOut(animationSpec = tween(300)) + shrinkVertically(animationSpec = tween(300))
             ) {
@@ -1334,6 +1481,73 @@ fun HomeScreen(
                             }
                         }
                     }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = activeMessages.isEmpty() && isSessionLoading,
+                enter = fadeIn(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(200))
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            color = ElectricViolet,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Loading conversation...",
+                            color = TextMutedColor,
+                            fontSize = 13.sp,
+                            fontFamily = InstrumentSansFontFamily
+                        )
+                    }
+                }
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = activeMessages.isEmpty() && isSessionError,
+                enter = fadeIn(animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(200))
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Error",
+                            tint = Color(0xFFFF5252),
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Failed to load conversation.",
+                            color = TextMutedColor,
+                            fontSize = 13.sp,
+                            fontFamily = InstrumentSansFontFamily
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        androidx.compose.material3.Button(
+                            onClick = onRetryLoadSession,
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = ElectricViolet
+                            )
+                        ) {
+                            Text(
+                                text = "Retry",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontFamily = InstrumentSansFontFamily,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
                 }
             }
 
@@ -1550,6 +1764,7 @@ fun HomeScreen(
                                                         }
                                                     }
                                                     CustomSelectionProvider(
+                                                        isMessageSelected = isMsgSelected,
                                                         onCopy = { text ->
                                                             clipboardForReply.setText(AnnotatedString(text))
                                                         },
@@ -1650,7 +1865,7 @@ fun HomeScreen(
                             }
 
                             Column(modifier = Modifier.fillMaxWidth()) {
-                                if (message.text.startsWith("Error:") || message.text.contains("Error invoking DepthLens")) {
+                                if (message.text.startsWith(com.example.data.repository.SYSTEM_ERROR_PREFIX) || message.text.contains("Error invoking DepthLens")) {
                                     Card(
                                         shape = RoundedCornerShape(12.dp),
                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF1A0A0A)),
@@ -1660,7 +1875,7 @@ fun HomeScreen(
                                         Column(modifier = Modifier.padding(12.dp)) {
                                             Text("Analysis failed", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF44336), fontFamily = InstrumentSansFontFamily)
                                             Spacer(modifier = Modifier.height(4.dp))
-                                            Text(message.text, fontSize = 10.sp, color = TextSecondaryColor, fontFamily = InstrumentSansFontFamily, lineHeight = 14.sp)
+                                            Text(message.text.removePrefix(com.example.data.repository.SYSTEM_ERROR_PREFIX).trim(), fontSize = 10.sp, color = TextSecondaryColor, fontFamily = InstrumentSansFontFamily, lineHeight = 14.sp)
                                             Spacer(modifier = Modifier.height(8.dp))
                                             TextButton(onClick = { onRetryLastAnalysis(message.id) }) {
                                                 Text("Retry", fontSize = 11.sp, color = ElectricViolet)
@@ -1671,9 +1886,10 @@ fun HomeScreen(
                                     val plainCleanedResponse = remember(message.text) {
                                         try {
                                             val parsed = ResponseParser.parse(message.text)
-                                            ResponseParser.getCopyableText(message.text)
+                                            val exported = parsed.exportText()
+                                            if (exported.isBlank()) "Analysis rendered visually." else exported
                                         } catch (e: Exception) {
-                                            cleanResponseText(message.text)
+                                            "Error rendering analysis."
                                         }
                                     }
                                     val annotatedPlainDisplayText = remember(plainCleanedResponse, searchQuery, isSearchActive, safeMatchIndex, searchMatches, selectedMessageId, selectedText) {
@@ -1800,6 +2016,7 @@ fun HomeScreen(
                                                 // Body text — wrapped in our native CustomSelectionProvider
                                                 // which supports Copy, Reply, Quote, Share, and Select All in a custom floating context menu.
                                                 CustomSelectionProvider(
+                                                    isMessageSelected = isAIsgSelected,
                                                     onCopy = { text ->
                                                         clipboardForReply.setText(AnnotatedString(text))
                                                     },
@@ -1846,19 +2063,9 @@ fun HomeScreen(
                                                 ResponseActionRow(
                                                     message = message,
                                                     displayText = plainCleanedResponse,
-                                                    associatedUserQuery = associatedUserQuery,
                                                     speechManager = speechManager,
-                                                    onDigDeeper = onDigDeeper,
-                                                    onRetry = { onRegenerateLastAnalysis(message.id) },
-                                                    onBranchNewChat = {
-                                                        onCreateNewSession()
-                                                        if (associatedUserQuery.isNotBlank()) onSubmitQuery(associatedUserQuery)
-                                                    },
-                                                    onSearchWeb = {
-                                                         val q = associatedUserQuery.ifBlank { message.text }
-                                                         onSubmitQuery("[web] $q")
-                                                     }
-                                                 )
+                                                    onAction = onAction
+                                                )
 
                                                  Spacer(modifier = Modifier.height(10.dp))
 
@@ -2464,28 +2671,30 @@ fun HomeScreen(
                                 }
                             }
 
-                            // RIGHT: PRIMARY round button (SEND/Waveform)
+                            // RIGHT: PRIMARY round button (SEND/Waveform/Stop)
                             val isFieldEmpty = rawText.text.trim().isEmpty() && attachedImageUri.isNullOrEmpty()
                             Box(
                                 modifier = Modifier
                                     .size(34.dp)
                                     .shadow(
-                                        elevation = if (isFieldEmpty) 0.dp else 6.dp,
+                                        elevation = if (isLoading || !isFieldEmpty) 6.dp else 0.dp,
                                         shape = CircleShape,
                                         clip = false
                                     )
                                     .clip(CircleShape)
                                     .background(
-                                        brush = if (isFieldEmpty) {
-                                            SolidColor(circleButtonBg)
-                                        } else {
+                                        brush = if (isLoading || !isFieldEmpty) {
                                             Brush.linearGradient(listOf(ElectricViolet, GradientEnd))
+                                        } else {
+                                            SolidColor(circleButtonBg)
                                         },
                                         shape = CircleShape
                                     )
-                                    .border(0.8.dp, if (isFieldEmpty) circleButtonBorder else Color.Transparent, CircleShape)
+                                    .border(0.8.dp, if (isLoading || !isFieldEmpty) Color.Transparent else circleButtonBorder, CircleShape)
                                     .clickable {
-                                        if (isFieldEmpty) {
+                                        if (isLoading) {
+                                            onStopGeneration()
+                                        } else if (isFieldEmpty) {
                                             onNavigateToVoiceMode()
                                         } else {
                                             if (rawText.text.isNotBlank() || !attachedImageUri.isNullOrEmpty()) {
@@ -2512,7 +2721,14 @@ fun HomeScreen(
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (isFieldEmpty) {
+                                if (isLoading) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Stop,
+                                        contentDescription = "Stop Generation",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                } else if (isFieldEmpty) {
                                     val waveformColor = if (isLightTheme) ElectricViolet else Color(0xFFEFEDFF)
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -2577,7 +2793,6 @@ fun HomeScreen(
             )
         }
     }
-}
 
     // ── Attachment file picker launcher ──────────────────────────────────────
     val attachPickerLauncher = rememberLauncherForActivityResult(
@@ -2709,50 +2924,52 @@ fun HomeScreen(
     }
 
     // Floating popup anchored to bottom-start (above the "+" button)
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomStart) {
-        androidx.compose.animation.AnimatedVisibility(
-            visible = showAttachBottomSheet,
-            enter = androidx.compose.animation.fadeIn(
-                animationSpec = androidx.compose.animation.core.tween(180)
-            ) + androidx.compose.animation.scaleIn(
-                initialScale = 0.88f,
-                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 1f),
-                animationSpec = androidx.compose.animation.core.spring(
-                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
-                    stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
-                )
-            ),
-            exit = androidx.compose.animation.fadeOut(
-                animationSpec = androidx.compose.animation.core.tween(120)
-            ) + androidx.compose.animation.scaleOut(
-                targetScale = 0.90f,
-                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 1f),
-                animationSpec = androidx.compose.animation.core.tween(120)
+    androidx.compose.animation.AnimatedVisibility(
+        visible = showAttachBottomSheet,
+        modifier = Modifier
+            .align(Alignment.BottomStart)
+            .imePadding(),
+        enter = androidx.compose.animation.fadeIn(
+            animationSpec = androidx.compose.animation.core.tween(180)
+        ) + androidx.compose.animation.scaleIn(
+            initialScale = 0.88f,
+            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 1f),
+            animationSpec = androidx.compose.animation.core.spring(
+                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
+                stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
             )
-        ) {
-            // Popup card
-            Column(
-                modifier = Modifier
-                    .padding(start = 14.dp, bottom = 80.dp)
-                    .width(220.dp)
-                    .background(
-                        color = if (ThemeManager.isDarkTheme) Color(0xEE16132E) else Color(0xEEFFFFFF),
-                        shape = RoundedCornerShape(22.dp)
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = Color.White.copy(alpha = 0.20f),
-                        shape = RoundedCornerShape(22.dp)
-                    )
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                val items = listOf(
-                    Triple("Photo / Image", Icons.Filled.Image, "image/*"),
-                    Triple("Video", Icons.Filled.Videocam, "video/*"),
-                    Triple("Document / PDF", Icons.Filled.PictureAsPdf, "application/pdf"),
-                    Triple("Camera", Icons.Filled.Videocam, "camera")
+        ),
+        exit = androidx.compose.animation.fadeOut(
+            animationSpec = androidx.compose.animation.core.tween(120)
+        ) + androidx.compose.animation.scaleOut(
+            targetScale = 0.90f,
+            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 1f),
+            animationSpec = androidx.compose.animation.core.tween(120)
+        )
+    ) {
+        // Popup card
+        Column(
+            modifier = Modifier
+                .padding(start = 14.dp, bottom = 80.dp)
+                .width(220.dp)
+                .background(
+                    color = if (ThemeManager.isDarkTheme) Color(0xEE16132E) else Color(0xEEFFFFFF),
+                    shape = RoundedCornerShape(22.dp)
                 )
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = 0.20f),
+                    shape = RoundedCornerShape(22.dp)
+                )
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+                    val items = listOf(
+                        Triple("Photo / Image", Icons.Filled.Image, "image/*"),
+                        Triple("Video", Icons.Filled.Videocam, "video/*"),
+                        Triple("Any Document", Icons.Filled.PictureAsPdf, "*/*"),
+                        Triple("Camera", Icons.Filled.Videocam, "camera")
+                    )
 
                 items.forEach { (label, icon, type) ->
                     Row(
@@ -2813,7 +3030,6 @@ fun HomeScreen(
                 }
             }
         }
-    }
 
     // ── Scan Setup permission dialog (compact redesign) ───────────────────────
     if (showPermissionOnboardingDialog) {
@@ -3154,7 +3370,7 @@ fun HomeScreen(
             messageToExport?.let { message ->
                 ExportOptionsDialog(
                     onDismiss = { showExportDialog = false },
-                    messageText = message.text,
+                    message = message,
                     context = context
                 )
             }
@@ -3296,19 +3512,18 @@ fun HomeScreen(
         }
 
         // ── Custom Floating Toolbar (Claude/ChatGPT style) ──────────────────────
-        Box(modifier = Modifier.fillMaxSize()) {
-            androidx.compose.animation.AnimatedVisibility(
-                visible = selectedMessageId != null && selectedText != null,
-                enter = androidx.compose.animation.fadeIn(animationSpec = tween(180)) + androidx.compose.animation.slideInVertically(initialOffsetY = { it / 2 }, animationSpec = tween(180)),
-                exit = androidx.compose.animation.fadeOut(animationSpec = tween(150)) + androidx.compose.animation.slideOutVertically(targetOffsetY = { it / 2 }, animationSpec = tween(150)),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 110.dp) // Float perfectly above chat input bar
-                    .shadow(12.dp, RoundedCornerShape(16.dp))
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(SurfaceCardColor.copy(alpha = 0.95f))
-                    .border(1.2.dp, ElectricViolet.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
-            ) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = selectedMessageId != null && selectedText != null,
+            enter = androidx.compose.animation.fadeIn(animationSpec = tween(180)) + androidx.compose.animation.slideInVertically(initialOffsetY = { it / 2 }, animationSpec = tween(180)),
+            exit = androidx.compose.animation.fadeOut(animationSpec = tween(150)) + androidx.compose.animation.slideOutVertically(targetOffsetY = { it / 2 }, animationSpec = tween(150)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 110.dp) // Float perfectly above chat input bar
+                .shadow(12.dp, RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(16.dp))
+                .background(SurfaceCardColor.copy(alpha = 0.95f))
+                .border(1.2.dp, ElectricViolet.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+        ) {
             val uClipboard = androidx.compose.ui.platform.LocalClipboardManager.current
             val context = androidx.compose.ui.platform.LocalContext.current
             val selectedMsgText = remember(selectedMessageId, activeMessages) {
@@ -3384,8 +3599,10 @@ fun HomeScreen(
                 }
             }
         }
-        }
+
+
     }
+}
 }
 
 // ───────────────────────────────────────────
@@ -3481,17 +3698,7 @@ private fun generatePdfReport(titleText: String, textContent: String): ByteArray
     paint.textSize = 10.5f
     
     fun sanitizePdfText(input: String): String {
-        var text = input.trim()
-        text = text.replace(Regex("""<questions>[\s\S]*?</questions>""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""<exploration>[\s\S]*?</exploration>""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""<memory_insight>[\s\S]*?</memory_insight>""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""System Instructions[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""SYSTEM_PROMPT[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""Developer Config[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""<[^>]+>"""), "")
-        text = text.replace(Regex("""applicationId\s*=[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""BuildConfig[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
-        return text.trim()
+        return input
     }
     
     val sanitizedContent = sanitizePdfText(textContent)
@@ -3613,7 +3820,7 @@ private fun generatePdfReport(titleText: String, textContent: String): ByteArray
 @Composable
 private fun ExportOptionsDialog(
     onDismiss: () -> Unit,
-    messageText: String,
+    message: com.example.data.model.MessageEntity,
     context: android.content.Context
 ) {
     androidx.compose.material3.AlertDialog(
@@ -3654,7 +3861,16 @@ private fun ExportOptionsDialog(
                             .background(Surface2, RoundedCornerShape(8.dp))
                             .border(1.dp, BorderSubtle, RoundedCornerShape(8.dp))
                             .clickable {
-                                val cleanText = ResponseParser.getCopyableText(messageText)
+                                val cleanText = try {
+                                    if (message.role == "user") {
+                                        message.text
+                                    } else {
+                                        val exported = ResponseParser.parse(message.text).exportText()
+                                        if (exported.isBlank()) "Analysis rendered visually." else exported
+                                    }
+                                } catch (e: Exception) {
+                                    "Error: Content could not be exported."
+                                }
                                 val finalBytes = when (mime) {
                                     "application/json" -> {
                                         try {
@@ -3902,22 +4118,20 @@ fun GlassTypingIndicator(modifier: Modifier = Modifier) {
     }
 }
 
+enum class MessageActionType {
+    COPY, SPEAK, RETRY, BRANCH, SEARCH
+}
+
 @Composable
 fun ResponseActionRow(
     message: MessageEntity,
     displayText: String,
-    associatedUserQuery: String,
     speechManager: SpeechManager?,
-    onDigDeeper: ((String, String) -> Unit)?,
-    onRetry: (() -> Unit)? = null,
-    onBranchNewChat: (() -> Unit)? = null,
-    onSearchWeb: (() -> Unit)? = null,
+    onAction: (MessageActionType, String) -> Unit,
     onReply: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
-    var showMore by remember { mutableStateOf(false) }
 
     // Voice state
     val currentlySpeakingId by (speechManager?.currentPlayingMessageId?.collectAsState() ?: remember { mutableStateOf(null) })
@@ -3950,8 +4164,7 @@ fun ResponseActionRow(
                     .background(Surface2, RoundedCornerShape(100.dp))
                     .border(0.8.dp, BorderSubtle, RoundedCornerShape(100.dp))
                     .clickable {
-                        clipboardManager.setText(AnnotatedString(displayText))
-                        android.widget.Toast.makeText(context, "Response copied", android.widget.Toast.LENGTH_SHORT).show()
+                        onAction(MessageActionType.COPY, message.id)
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -3970,7 +4183,7 @@ fun ResponseActionRow(
                         .size(32.dp)
                         .background(ElectricViolet.copy(alpha = 0.08f), RoundedCornerShape(100.dp))
                         .border(0.8.dp, ElectricViolet.copy(alpha = 0.3f), RoundedCornerShape(100.dp))
-                        .clickable { onReply?.invoke() },
+                        .clickable { onReply() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -3996,7 +4209,7 @@ fun ResponseActionRow(
                         RoundedCornerShape(100.dp)
                     )
                     .clickable {
-                        speechManager?.speak(message.id, displayText)
+                        onAction(MessageActionType.SPEAK, message.id)
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -4015,11 +4228,7 @@ fun ResponseActionRow(
                     .background(Surface2, RoundedCornerShape(100.dp))
                     .border(0.8.dp, BorderSubtle, RoundedCornerShape(100.dp))
                     .clickable {
-                        if (onRetry != null) {
-                            onRetry()
-                        } else {
-                            android.widget.Toast.makeText(context, "Retry not configured", android.widget.Toast.LENGTH_SHORT).show()
-                        }
+                        onAction(MessageActionType.RETRY, message.id)
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -4032,74 +4241,43 @@ fun ResponseActionRow(
             }
 
             // [ More ⋯ ] action button — Branch in a new chat / Search the Web
-            Box {
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .background(Surface2, RoundedCornerShape(100.dp))
-                        .border(0.8.dp, BorderSubtle, RoundedCornerShape(100.dp))
-                        .clickable { showMore = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.MoreHoriz,
-                        contentDescription = "More",
-                        tint = TextMutedColor,
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
+            var isMoreMenuExpanded by remember { mutableStateOf(false) }
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .background(Surface2, RoundedCornerShape(100.dp))
+                    .border(0.8.dp, BorderSubtle, RoundedCornerShape(100.dp))
+                    .clickable {
+                        isMoreMenuExpanded = true
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.MoreHoriz,
+                    contentDescription = "More",
+                    tint = TextMutedColor,
+                    modifier = Modifier.size(15.dp)
+                )
 
-                // Custom rounded popup (M3 DropdownMenu draws a square surface behind the
-                // rounded background → square corners bled out; this fixes that).
-                if (showMore) {
-                    val density = androidx.compose.ui.platform.LocalDensity.current
-                    androidx.compose.ui.window.Popup(
-                        alignment = Alignment.TopStart,
-                        offset = androidx.compose.ui.unit.IntOffset(0, with(density) { 34.dp.roundToPx() }),
-                        onDismissRequest = { showMore = false },
-                        properties = androidx.compose.ui.window.PopupProperties(
-                            focusable = true,
-                            dismissOnBackPress = true,
-                            dismissOnClickOutside = true
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .width(216.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(SurfaceCardColor.copy(alpha = 0.98f))
-                                .border(1.dp, GlassBorder, RoundedCornerShape(16.dp))
-                                .padding(5.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        showMore = false
-                                        if (onBranchNewChat != null) onBranchNewChat()
-                                        else android.widget.Toast.makeText(context, "Branch not configured", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                    .padding(horizontal = 12.dp, vertical = 11.dp)
-                            ) {
-                                Text("⑂  Branch in a new chat", color = TextPrimaryColor, fontSize = 13.sp, fontFamily = InstrumentSansFontFamily)
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        showMore = false
-                                        if (onSearchWeb != null) onSearchWeb()
-                                        else android.widget.Toast.makeText(context, "Web search not configured", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                    .padding(horizontal = 12.dp, vertical = 11.dp)
-                            ) {
-                                Text("⌕  Search the Web", color = TextPrimaryColor, fontSize = 13.sp, fontFamily = InstrumentSansFontFamily)
-                            }
+                DropdownMenu(
+                    expanded = isMoreMenuExpanded,
+                    onDismissRequest = { isMoreMenuExpanded = false },
+                    modifier = Modifier.background(SurfaceCardColor.copy(alpha = 0.95f))
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("🌿 Branch in New Chat", color = TextPrimaryColor, fontFamily = InstrumentSansFontFamily) },
+                        onClick = {
+                            isMoreMenuExpanded = false
+                            onAction(MessageActionType.BRANCH, message.id)
                         }
-                    }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("🌐 Search the Web", color = TextPrimaryColor, fontFamily = InstrumentSansFontFamily) },
+                        onClick = {
+                            isMoreMenuExpanded = false
+                            onAction(MessageActionType.SEARCH, message.id)
+                        }
+                    )
                 }
             }
         }
@@ -4289,6 +4467,9 @@ fun VoiceConversationOverlay(
     onSubmitQuery: (String, String?) -> Unit = { _, _ -> },
     onUserInterrupt: () -> Unit = {},
     isLoading: Boolean = false,
+    isSessionLoading: Boolean = false,
+    isSessionError: Boolean = false,
+    onRetryLoadSession: () -> Unit = {},
     speechManager: com.example.ui.viewmodel.SpeechManager? = null,
     activeMessages: List<com.example.data.model.MessageEntity> = emptyList(),
     voiceOutputEnabled: Boolean = true,
@@ -6246,6 +6427,7 @@ private fun ReplyHeaderBlock(
 
 @Composable
 fun CustomSelectionProvider(
+    isMessageSelected: Boolean,
     onCopy: (String) -> Unit,
     onReply: (String) -> Unit,
     onQuote: (String) -> Unit,
@@ -6253,12 +6435,24 @@ fun CustomSelectionProvider(
     onSelectAll: () -> Unit,
     content: @Composable (selectionKey: Int) -> Unit
 ) {
+    val currentOnCopy by androidx.compose.runtime.rememberUpdatedState(onCopy)
+    val currentOnReply by androidx.compose.runtime.rememberUpdatedState(onReply)
+    val currentOnQuote by androidx.compose.runtime.rememberUpdatedState(onQuote)
+    val currentOnShare by androidx.compose.runtime.rememberUpdatedState(onShare)
+    val currentOnSelectAll by androidx.compose.runtime.rememberUpdatedState(onSelectAll)
+
     val systemToolbar = androidx.compose.ui.platform.LocalTextToolbar.current
     val systemClipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     
     var lastCapturedText by remember { mutableStateOf("") }
     var selectionKey by remember { mutableStateOf(0) }
     var popupMenuState by remember { mutableStateOf<PopupMenuState?>(null) }
+
+    androidx.compose.runtime.LaunchedEffect(isMessageSelected) {
+        if (!isMessageSelected) {
+            popupMenuState = null
+        }
+    }
     
     val customClipboardManager = remember {
         object : androidx.compose.ui.platform.ClipboardManager {
@@ -6298,28 +6492,28 @@ fun CustomSelectionProvider(
                     rect = rect,
                     selectedText = "",
                     onCopy = {
-                        onCopy(grabSelectedText())
+                        currentOnCopy(grabSelectedText())
                         selectionKey++
                         popupMenuState = null
                     },
                     onReply = {
-                        onReply(grabSelectedText())
+                        currentOnReply(grabSelectedText())
                         selectionKey++
                         popupMenuState = null
                     },
                     onQuote = {
-                        onQuote(grabSelectedText())
+                        currentOnQuote(grabSelectedText())
                         selectionKey++
                         popupMenuState = null
                     },
                     onShare = {
-                        onShare(grabSelectedText())
+                        currentOnShare(grabSelectedText())
                         selectionKey++
                         popupMenuState = null
                     },
                     onSelectAll = {
                         onSelectAllRequested?.invoke()
-                        onSelectAll()
+                        currentOnSelectAll()
                     }
                 )
             }

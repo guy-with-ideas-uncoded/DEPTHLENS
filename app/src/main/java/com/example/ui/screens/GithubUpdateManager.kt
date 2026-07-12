@@ -252,8 +252,8 @@ object GithubUpdateManager {
                                 "- **Polished Attachment Previews**: Rebuilt attachment thumbnail previews with rounded corners and adaptive aspect ratios that wrap content perfectly.\n" +
                                 "- **Diagnostic Card Streamlining**: The Reality Layer Activation diagnostic visualizer card is removed from settings and follow-up threads per client request for an elegant, expert-conversational direct response flow.\n" +
                                 "- **Polished Aesthetics & Layouts**: Smoothed spacing, paddings, and card alignment across conversational screens.",
-                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v6.0.0/DepthLens_v6.0.0.apk",
-                        apkFileName = "DepthLens_v6.0.0.apk",
+                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v6.0.0/DepthLens_v_6.0.0.apk",
+                        apkFileName = "DepthLens_v_6.0.0.apk",
                         apkSize = 41943040L
                     )
                     
@@ -544,11 +544,7 @@ object GithubUpdateManager {
             Toast.makeText(context, friendlyMsg, Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             e.printStackTrace()
-            val friendlyMsg = if (e.message?.contains("android.permission.REQUEST_INSTALL_PACKAGES", ignoreCase = true) == true) {
-                "DepthLens needs permission to install updates. Please allow installation and try again."
-            } else {
-                "DepthLens needs permission to install updates. Please allow installation and try again."
-            }
+            val friendlyMsg = "Update failed. Please check app permissions or install manually from GitHub."
             _updateError.value = friendlyMsg
             Toast.makeText(context, friendlyMsg, Toast.LENGTH_LONG).show()
         }

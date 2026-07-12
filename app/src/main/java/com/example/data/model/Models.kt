@@ -139,44 +139,65 @@ data class ParsedResponse(
 ) {
     fun exportText(): String {
         val builder = java.lang.StringBuilder()
-        builder.append("=== DEPTHLENS STRATEGIC RECONSTRUCTION REPORT ===\n\n")
         
-        fun sanitize(input: String): String {
-            var text = input.trim()
-            text = text.replace(Regex("""<questions>[\s\S]*?</questions>""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""<exploration>[\s\S]*?</exploration>""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""<memory_insight>[\s\S]*?</memory_insight>""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""System Instructions[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""SYSTEM_PROMPT[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""Developer Config[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""<[^>]+>"""), "")
-            text = text.replace(Regex("""applicationId\s*=[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""BuildConfig[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
-            return text.trim()
+        // 1. Replicate cleanIntroDisplay logic from the UI
+        val summaryText = executiveSummary ?: ""
+        var intro = introduction.trim()
+        
+        if (summaryText.isNotBlank()) {
+            if (intro == summaryText) {
+                intro = ""
+            } else if (intro.contains(summaryText)) {
+                intro = intro.replace(summaryText, "").trim()
+            } else {
+                val paragraphs = intro.split("\n\n")
+                val filtered = paragraphs.filter { p ->
+                    val pClean = p.trim()
+                    pClean.isNotBlank() && !summaryText.contains(pClean) && !pClean.contains(summaryText)
+                }
+                intro = filtered.joinToString("\n\n").trim()
+            }
         }
-
-        val cleanIntro = sanitize(introduction)
+        
+        // 2. Strip leaked markdown metadata just like the UI
+        val leakedMetadataRegex = Regex(
+            "^(?:(\\s*[-*+•]\\s*|\\s*\\d+\\.\\s*))?\\*?\\*?(?:(?:importance|emphasis|priority|confidence|severity|level|reasoning)\\s*:\\s*)?(?:high|medium|low|critical)\\*?\\*?\\s*\\.?\\s*",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
+        )
+        intro = intro.replace(leakedMetadataRegex, "$1").replace(Regex("^(?:high|medium|low|critical)\\\\.\\s*", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)), "").trim()
+        
+        // 3. AGGRESSIVELY strip ANY remaining XML tags to guarantee they never leak into the PDF
+        // This is critical to prevent the raw backend payload from appearing in the exported PDF.
+        val xmlTagRegex = Regex("<[^>]+>")
+        intro = intro.replace(xmlTagRegex, "").trim()
+        
+        val isComplex = executiveSummary != null || rootCauseReport != null || depthLayers.isNotEmpty() || humanDrivers != null || futureScenarios.isNotEmpty()
+        
+        if (isComplex) {
+            builder.append("=== DEPTHLENS ANALYSIS REPORT ===\n\n")
+        }
+        
+        val cleanIntro = intro
         if (cleanIntro.isNotBlank()) {
-            builder.append("INTRODUCTION\n")
             builder.append(cleanIntro).append("\n\n")
         }
         
-        val summary = executiveSummary?.let { sanitize(it) }
+        val summary = executiveSummary?.trim()
         if (!summary.isNullOrBlank()) {
             builder.append("EXECUTIVE SUMMARY\n")
             builder.append(summary).append("\n\n")
         }
-
-        val ds = deepSynthesis?.let { sanitize(it) }
-        if (!ds.isNullOrBlank()) {
+        
+        val synthesis = deepSynthesis?.trim()
+        if (!synthesis.isNullOrBlank()) {
             builder.append("DEEP SYNTHESIS\n")
-            builder.append(ds).append("\n\n")
+            builder.append(synthesis).append("\n\n")
         }
 
         if (depthLayers.isNotEmpty()) {
             builder.append("DEPTH LAYERS OF REALITY\n")
             depthLayers.forEach { layer ->
-                builder.append("Layer ").append(layer.layerNumber).append(" - ").append(layer.layerName).append(": ").append(sanitize(layer.description)).append("\n")
+                builder.append("Layer ").append(layer.layerNumber).append(" - ").append(layer.layerName).append(": ").append(layer.description.trim()).append("\n")
             }
             builder.append("\n")
         }
@@ -184,14 +205,14 @@ data class ParsedResponse(
         val rcr = rootCauseReport
         if (rcr != null) {
             builder.append("ROOT CAUSE REPORT (THE 'WHY')\n")
-            builder.append("Surface Cause: ").append(sanitize(rcr.symptom)).append("\n")
-            builder.append("Immediate Cause: ").append(sanitize(rcr.immediateCause)).append("\n")
-            builder.append("Underlying Cause: ").append(sanitize(rcr.underlyingCause)).append("\n")
-            builder.append("Deeper Cause: ").append(sanitize(rcr.deeperCause)).append("\n")
-            builder.append("Root Cause Conclusion: ").append(sanitize(rcr.rootCauseEstimate)).append("\n")
-            builder.append("Supporting Evidence: ").append(sanitize(rcr.supportingEvidence)).append("\n")
+            builder.append("Surface Cause: ").append(rcr.symptom.trim()).append("\n")
+            builder.append("Immediate Cause: ").append(rcr.immediateCause.trim()).append("\n")
+            builder.append("Underlying Cause: ").append(rcr.underlyingCause.trim()).append("\n")
+            builder.append("Deeper Cause: ").append(rcr.deeperCause.trim()).append("\n")
+            builder.append("Root Cause Conclusion: ").append(rcr.rootCauseEstimate.trim()).append("\n")
+            builder.append("Supporting Evidence: ").append(rcr.supportingEvidence.trim()).append("\n")
             if (rcr.alternativeExplanation.isNotBlank()) {
-                builder.append("Alternative Explanation: ").append(sanitize(rcr.alternativeExplanation)).append("\n")
+                builder.append("Alternative Explanation: ").append(rcr.alternativeExplanation.trim()).append("\n")
             }
             builder.append("\n")
         }
@@ -199,13 +220,13 @@ data class ParsedResponse(
         val hd = humanDrivers
         if (hd != null) {
             builder.append("HUMAN DRIVERS (PSYCHOMOTIVE ANATOMY)\n")
-            builder.append("Surface Intention: ").append(sanitize(hd.surfaceIntention)).append("\n")
-            builder.append("Emotional Driver: ").append(sanitize(hd.emotionalDriver)).append("\n")
-            builder.append("Core Need: ").append(sanitize(hd.needDriver)).append("\n")
-            builder.append("Core Fear: ").append(sanitize(hd.fearDriver)).append("\n")
-            builder.append("Incentives: ").append(sanitize(hd.incentiveDriver)).append("\n")
-            builder.append("Identity Alignment: ").append(sanitize(hd.identityDriver)).append("\n")
-            builder.append("Hidden Motives: ").append(sanitize(hd.hiddenMotives)).append("\n")
+            builder.append("Surface Intention: ").append(hd.surfaceIntention.trim()).append("\n")
+            builder.append("Emotional Driver: ").append(hd.emotionalDriver.trim()).append("\n")
+            builder.append("Core Need: ").append(hd.needDriver.trim()).append("\n")
+            builder.append("Core Fear: ").append(hd.fearDriver.trim()).append("\n")
+            builder.append("Incentives: ").append(hd.incentiveDriver.trim()).append("\n")
+            builder.append("Identity Alignment: ").append(hd.identityDriver.trim()).append("\n")
+            builder.append("Hidden Motives: ").append(hd.hiddenMotives.trim()).append("\n")
             builder.append("\n")
         }
         
@@ -213,23 +234,103 @@ data class ParsedResponse(
             builder.append("FUTURE SCENARIOS & PROBABILITIES\n")
             futureScenarios.forEach { scenario ->
                 builder.append("- ").append(scenario.codeName.uppercase()).append(" - ").append(scenario.displayName).append(" (Prob: ").append(scenario.probability).append("%)\n")
-                builder.append("  Outcome: ").append(sanitize(scenario.impactText)).append("\n")
+                builder.append("  Outcome: ").append(scenario.impactText.trim()).append("\n")
                 if (scenario.earlyWarningSigns.isNotEmpty()) {
                     builder.append("  Early Warning Signs:\n")
                     scenario.earlyWarningSigns.forEach { sign ->
-                        builder.append("    * ").append(sanitize(sign)).append("\n")
+                        builder.append("    * ").append(sign.trim()).append("\n")
                     }
                 }
             }
             builder.append("\n")
         }
         
-        val conf = confidence
-        if (!conf.isNullOrBlank()) {
-            builder.append("Confidence Level: ").append(sanitize(conf)).append("\n")
+        if (probabilityMetrics != null) {
+            builder.append("PROBABILITY METRICS\n")
+            builder.append("Confidence: ").append(probabilityMetrics!!.confidence).append("%\n")
+            builder.append("Likelihood: ").append(probabilityMetrics!!.likelihood).append("%\n")
+            builder.append("Risk: ").append(probabilityMetrics!!.risk).append("%\n")
+            builder.append("Opportunity: ").append(probabilityMetrics!!.opportunity).append("%\n\n")
         }
-        builder.append("=================================================")
-        return builder.toString()
+
+        if (probabilityAssessment != null) {
+            builder.append("PROBABILITY ASSESSMENT\n")
+            builder.append("Likelihood: ").append(probabilityAssessment!!.likelihood).append("%\n")
+            builder.append("Confidence: ").append(probabilityAssessment!!.confidence).append("\n")
+            if (probabilityAssessment!!.reasoningFactors.isNotEmpty()) {
+                builder.append("Reasoning Factors:\n")
+                probabilityAssessment!!.reasoningFactors.forEach { factor ->
+                    builder.append("- ").append(factor.trim()).append("\n")
+                }
+            }
+            builder.append("\n")
+        }
+
+        if (futurePathways.isNotEmpty()) {
+            builder.append("FUTURE PATHWAYS\n")
+            futurePathways.forEach { pathway ->
+                builder.append("- ").append(pathway.title).append(" (Prob: ").append(pathway.probability).append("%)\n")
+                builder.append("  Description: ").append(pathway.description.trim()).append("\n")
+                if (pathway.drivers.isNotBlank()) builder.append("  Drivers: ").append(pathway.drivers.trim()).append("\n")
+                if (pathway.risks.isNotBlank()) builder.append("  Risks: ").append(pathway.risks.trim()).append("\n")
+                if (pathway.opportunities.isNotBlank()) builder.append("  Opportunities: ").append(pathway.opportunities.trim()).append("\n")
+            }
+            builder.append("\n")
+        }
+
+        if (timelineForecast != null) {
+            builder.append("TIMELINE FORECAST\n")
+            builder.append("Short Term: ").append(timelineForecast!!.shortTermDesc.trim()).append(" (Prob: ").append(timelineForecast!!.shortTermProb).append("%)\n")
+            builder.append("Mid Term: ").append(timelineForecast!!.midTermDesc.trim()).append(" (Prob: ").append(timelineForecast!!.midTermProb).append("%)\n")
+            builder.append("Long Term: ").append(timelineForecast!!.longTermDesc.trim()).append(" (Prob: ").append(timelineForecast!!.longTermProb).append("%)\n")
+            builder.append("Explanation: ").append(timelineForecast!!.explanation.trim()).append("\n\n")
+        }
+
+        if (decisionImpact != null) {
+            builder.append("DECISION IMPACT\n")
+            builder.append("If Nothing Changes: ").append(decisionImpact!!.statusQuoDesc.trim()).append(" (Prob: ").append(decisionImpact!!.statusQuoProb).append("%)\n")
+            builder.append("If Action Is Taken: ").append(decisionImpact!!.actionDesc.trim()).append(" (Prob: ").append(decisionImpact!!.actionProb).append("%)\n")
+            if (decisionImpact!!.comparison.isNotBlank()) builder.append("Comparison: ").append(decisionImpact!!.comparison.trim()).append("\n")
+            if (decisionImpact!!.risks.isNotBlank()) builder.append("Risks: ").append(decisionImpact!!.risks.trim()).append("\n")
+            if (decisionImpact!!.benefits.isNotBlank()) builder.append("Benefits: ").append(decisionImpact!!.benefits.trim()).append("\n")
+            if (decisionImpact!!.tradeoffs.isNotBlank()) builder.append("Tradeoffs: ").append(decisionImpact!!.tradeoffs.trim()).append("\n")
+            builder.append("\n")
+        }
+
+        if (forecastSummary != null) {
+            builder.append("FORECAST SUMMARY\n")
+            builder.append("Most Likely Outcome: ").append(forecastSummary!!.mostLikelyOutcome).append("%\n")
+            builder.append("Key Risk: ").append(forecastSummary!!.keyRisk).append("%\n")
+            builder.append("Opportunity Window: ").append(forecastSummary!!.opportunityWindow).append("%\n")
+            builder.append("Prediction Confidence: ").append(forecastSummary!!.predictionConfidence).append("\n\n")
+        }
+
+        if (suggestedQuestions.isNotEmpty()) {
+            builder.append("SUGGESTED QUESTIONS\n")
+            suggestedQuestions.forEach { q ->
+                builder.append("- ").append(q.trim()).append("\n")
+            }
+            builder.append("\n")
+        }
+
+        if (explorationPaths.isNotEmpty()) {
+            builder.append("EXPLORATION PATHS\n")
+            explorationPaths.forEach { p ->
+                builder.append("- ").append(p.trim()).append("\n")
+            }
+            builder.append("\n")
+        }
+
+        val conf = confidence
+        if (!conf.isNullOrBlank() && isComplex) {
+            builder.append("Confidence Level: ").append(conf.trim()).append("\n")
+        }
+        
+        if (isComplex) {
+            builder.append("=================================================")
+        }
+        
+        return builder.toString().trim()
     }
 }
 
@@ -347,3 +448,21 @@ fun parseArchivedJson(jsonStr: String): ParsedResponse {
         return ParsedResponse()
     }
 }
+
+@Immutable
+data class ExportMessage(
+    val role: String, // "user" or "model"
+    val text: String, // Cleaned, final rendered visible text
+    val imageUri: String? = null,
+    val tables: List<String> = emptyList(),
+    val lists: List<String> = emptyList(),
+    val codeBlocks: List<String> = emptyList(),
+    val charts: List<String> = emptyList()
+)
+
+@Immutable
+data class ExportConversation(
+    val title: String,
+    val messages: List<ExportMessage>
+)
+

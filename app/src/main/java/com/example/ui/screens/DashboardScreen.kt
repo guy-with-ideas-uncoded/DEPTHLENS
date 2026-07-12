@@ -89,6 +89,7 @@ fun DashboardScreen(
         sessions.find { it.id == activeSessionId }
     }
     val isLoading by viewModel.isLoading.collectAsState()
+    val sessionLoadState by viewModel.sessionLoadState.collectAsState()
     val attachedImageUri by viewModel.attachedImageUri.collectAsState()
     val memoryInsights by viewModel.memoryInsights.collectAsState()
     
@@ -2093,7 +2094,7 @@ Text(
             val bottomPadding = if (WindowInsets.isImeVisible) {
                 0.dp
             } else {
-                (innerPadding.calculateBottomPadding() - 10.dp).coerceAtLeast(0.dp)
+                innerPadding.calculateBottomPadding()
             }
             Box(
                 modifier = Modifier
@@ -2143,6 +2144,9 @@ Text(
                                 onDeleteArchivedInsight = { id -> viewModel.deleteArchivedInsight(id) },
                                 activeMessages = activeMessages,
                                 isLoading = isLoading,
+                                isSessionLoading = activeSessionId?.let { sessionLoadState[it] == "LOADING" } ?: false,
+                                isSessionError = activeSessionId?.let { sessionLoadState[it] == "ERROR" } ?: false,
+                                onRetryLoadSession = { activeSessionId?.let { viewModel.retryLoadSession(it) } },
                                 onStopGeneration = { viewModel.stopActiveGeneration() },
                                 onRetryLastAnalysis = { msgId -> viewModel.retryLastAnalysis(msgId) },
                                 onRegenerateLastAnalysis = { msgId -> viewModel.regenerateLastAnalysis(msgId) },
@@ -2288,371 +2292,8 @@ Text(
             }
         }
 
-        Box(modifier = Modifier.size(0.dp)) {
-            val legacyContentToIgnore = @Composable {
-                Scaffold(
-            topBar = {
-                androidx.compose.foundation.layout.Row(
-                    modifier = Modifier
-                        .statusBarsPadding()
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .background(Color(0xFF0D0D14))
-                        .drawBehind {
-                            val strokeWidth = 1.dp.toPx()
-                            drawLine(
-                                color = Color(0x0FFFFFFF), // Border subtle
-                                start = androidx.compose.ui.geometry.Offset(0f, size.height - strokeWidth/2),
-                                end = androidx.compose.ui.geometry.Offset(size.width, size.height - strokeWidth/2),
-                                strokeWidth = strokeWidth
-                            )
-                        }
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    androidx.compose.foundation.layout.Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        // Hamburger menu removed as per bottom-nav constraint
-
-                        // App icon area: theme accent tint background, border
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .background(ThemeManager.accentColor.copy(alpha = 0.18f), shape = RoundedCornerShape(8.dp))
-                                .border(1.dp, ThemeManager.accentColor.copy(alpha = 0.45f), shape = RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Canvas(modifier = Modifier.size(16.dp)) {
-                                val w = size.width
-                                val h = size.height
-                                val outerPath = Path().apply {
-                                    moveTo(w * 0.15f, h * 0.5f)
-                                    cubicTo(w * 0.35f, h * 0.25f, w * 0.65f, h * 0.25f, w * 0.85f, h * 0.5f)
-                                    cubicTo(w * 0.65f, h * 0.75f, w * 0.35f, h * 0.75f, w * 0.15f, h * 0.5f)
-                                    close()
-                                }
-                                drawPath(path = outerPath, color = ThemeManager.accentColor, style = Stroke(width = 1.2.dp.toPx()))
-                                drawCircle(color = Color(0xFF00D4FF), radius = w * 0.18f, style = Stroke(width = 1.dp.toPx()))
-                            }
-                        }
-
-                        Text(
-                            text = "DEPTHLENS",
-                            fontSize = 11.sp,
-                            letterSpacing = 1.3.sp,
-                            color = Color(0x99F0EEFF), // ink-2
-                            fontFamily = DMMonoFontFamily,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    androidx.compose.foundation.layout.Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Mode badge: theme accent text, theme accent-dim background, rounded pill shape
-                        Box(
-                            modifier = Modifier
-                                .background(ThemeManager.accentColor.copy(alpha = 0.18f), shape = RoundedCornerShape(20.dp))
-                                .border(1.dp, ThemeManager.accentColor.copy(alpha = 0.45f), shape = RoundedCornerShape(20.dp))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = selectedMode.uppercase(),
-                                fontSize = 9.sp,
-                                color = ThemeManager.accentColor,
-                                fontFamily = DMMonoFontFamily,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        IconButton(onClick = { viewModel.createSession("") }) {
-                            Icon(Icons.Default.Create, contentDescription = "New Session", tint = Color(0xFF00D4FF))
-                        }
-                    }
-                }
-            },
-            containerColor = Color(0xFF0D0D14) // Overall screen background: Color(0xFF0D0D14)
-        ) { innerPadding ->
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                // Background radial glows for Apple / Linear depth atmospheric styling
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(ElectricViolet.copy(alpha = 0.08f), Color.Transparent),
-                                radius = 2200f
-                            )
-                        )
-                )
-
-                Column(modifier = Modifier.fillMaxSize()) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (activeMessages.isEmpty()) {
-                            // Centered spacious Homepage / Landing Screen redesign
-                            LandingScreen(
-                                onQuerySelected = { query -> viewModel.sendQuery(query) },
-                                onAddAttachment = { showAttachmentSelector = true },
-                                onRemoveAttachment = { viewModel.clearAttachment() },
-                                onRemoveAttachmentUri = { uri -> viewModel.removeAttachmentUri(uri) },
-                                attachedImageUri = attachedImageUri,
-                                isLoading = isLoading
-                            )
-                        } else {
-                            // Comfortably padded scrolling Chat Feed
-                            val onGetAttachmentsFlowCached = remember(viewModel) {
-                                { msgId: String, uriField: String -> viewModel.getAttachmentsForMessageFlow(msgId, uriField) }
-                            }
-                            val onPromptSelectedCached = remember(viewModel) {
-                                { query: String -> viewModel.sendQuery(query) }
-                            }
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 90.dp),
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                items(activeMessages, key = { it.id }) { message ->
-                                    if (message.role == "user") {
-                                        UserMessageBubble(
-                                            message = message,
-                                            onGetAttachmentsFlow = onGetAttachmentsFlowCached,
-                                            onAttachmentClick = { viewerAttachment = it }
-                                        )
-                                    } else {
-                                        if (message.text.startsWith("Error:") || message.text.contains("Error invoking DepthLens")) {
-                                            val onRetryCached = remember(message.id, viewModel) {
-                                                { viewModel.retryLastAnalysis(message.id) }
-                                            }
-                                            val onCancelCached = remember(message.id, viewModel) {
-                                                { viewModel.deleteMessage(message.id) }
-                                            }
-                                            val onReportBugCached = remember {
-                                                { showReportBugDialog = true }
-                                            }
-                                            AnalysisFailureErrorCard(
-                                                errorMessage = message.text,
-                                                onRetry = onRetryCached,
-                                                onReportBug = onReportBugCached,
-                                                onCancel = onCancelCached
-                                            )
-                                        } else {
-                                            val associatedUserQuery = remember(message.id) {
-                                                val idx = activeMessages.indexOfFirst { it.id == message.id }
-                                                if (idx > 0) {
-                                                     activeMessages.subList(0, idx).findLast { it.role == "user" }?.text ?: ""
-                                                } else {
-                                                     ""
-                                                }
-                                            }
-                                            val onRegenerateCached = remember(message.id, viewModel) {
-                                                { viewModel.regenerateLastAnalysis(message.id) }
-                                            }
-                                            AssistantMessageBubble(
-                                                message = message,
-                                                associatedUserQuery = associatedUserQuery,
-                                                onPromptSelected = onPromptSelectedCached,
-                                                onRegenerate = onRegenerateCached
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                    // Dynamic non-blocking Inline Loading State
-                    if (isLoading && activeMessages.isNotEmpty()) {
-                        InlineLoadingIndicator()
-                    }
-
-                    // Bottom chat panel handles voice recording overrides & triggers
-                    if (isRecordingAudio) {
-                        RecordingVoiceHud(
-                            durationSeconds = recordingDuration,
-                            onSave = { toggleRecording() },
-                            onCancel = {
-                                isRecordingAudio = false
-                                voiceRecorder.stopRecording()
-                            }
-                        )
-                    } else if (activeMessages.isNotEmpty()) {
-                        BottomInputPanel(
-                            selectedMode = selectedMode,
-                            attachedImageUri = attachedImageUri,
-                            isLoading = isLoading,
-                            onAddAttachment = { showAttachmentSelector = true },
-                            onRemoveAttachment = { viewModel.clearAttachment() },
-                            onSubmit = { text -> viewModel.sendQuery(text) },
-                            onModeChanged = { viewModel.setSelectedMode(it) },
-                            onInputFocusChanged = { inputFocused = it }
-                        )
-                    }
-                }
-
-                // Floating Navigation Buttons — hidden when keyboard is open
-                if (activeMessages.isNotEmpty()) {
-                    AnimatedVisibility(
-                        visible = !inputFocused,
-                        enter = scaleIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
-                        exit = scaleOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .wrapContentSize(Alignment.BottomEnd)
-                            .padding(bottom = 100.dp, end = 16.dp)
-                    ) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            // Scroll to Top Button
-                            androidx.compose.material3.IconButton(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        listState.animateScrollToItem(0)
-                                    }
-                                },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(Surface2.copy(alpha = 0.85f), CircleShape)
-                                    .border(1.0.dp, ElectricViolet.copy(alpha = 0.4f), CircleShape)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowUp,
-                                    contentDescription = "Scroll to Top",
-                                    tint = TextPrimaryColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            
-                            // Scroll to Bottom Button
-                            androidx.compose.material3.IconButton(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        listState.animateScrollToItem(activeMessages.size - 1)
-                                    }
-                                },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(Surface2.copy(alpha = 0.85f), CircleShape)
-                                    .border(1.0.dp, ElectricViolet.copy(alpha = 0.4f), CircleShape)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "Scroll to Bottom",
-                                    tint = TextPrimaryColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-                }
-
-                if (showAttachmentSelector) {
-                    androidx.compose.ui.window.Dialog(onDismissRequest = { showAttachmentSelector = false }) {
-                        Card(
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = DeepMidnight),
-                            border = BorderStroke(1.2.dp, ElectricViolet),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(18.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "UNIVERSAL INPUT SELECTION™",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = PremiumCyan,
-                                    letterSpacing = 1.sp
-                                )
-                                Spacer(modifier = Modifier.height(14.dp))
-                                
-                                Button(
-                                    onClick = {
-                                        showAttachmentSelector = false
-                                        requestMediaPermissionAndLaunch(getStoragePermissionForType("image")) {
-                                            pickMediaLauncher.launch(
-                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                            )
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = RichNavy),
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.Share, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Photo / Image Asset", color = TextPrimaryColor, fontSize = 12.sp)
-                                }
-
-                                Button(
-                                    onClick = {
-                                        showAttachmentSelector = false
-                                        requestMediaPermissionAndLaunch(getStoragePermissionForType("video")) {
-                                            pickDocumentLauncher.launch("*/*")
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = RichNavy),
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.List, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("PDF, Video or Data Document", color = TextPrimaryColor, fontSize = 12.sp)
-                                }
-
-                                Button(
-                                    onClick = {
-                                        showAttachmentSelector = false
-                                        toggleRecording()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = RichNavy),
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.Place, contentDescription = null, tint = PremiumCyan, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Live Voice Recording Input", color = TextPrimaryColor, fontSize = 12.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Fullscreen loading overlay removed. Interactive inline loading active.
-
-                if (isDownloadingUpdate) {
-                    SoftwareDownloadProgressBarCard(
-                        progress = updateDownloadProgress,
-                        downloadedBytes = updateDownloadedBytes,
-                        totalBytes = updateServerTotalBytes,
-                        onCancel = {
-                            GithubUpdateManager.cancelDownload()
-                        },
-                        modifier = Modifier.align(Alignment.BottomCenter)
-                    )
-                }
-            }
-        }
-        viewerAttachment?.let { att ->
-            InAppAttachmentViewer(att) { viewerAttachment = null }
         }
     }
-    }
-    }
-}
 
 // Custom TopBar colors mapping rule
 @OptIn(ExperimentalMaterial3Api::class)
@@ -4028,6 +3669,7 @@ fun BottomInputPanel(
     onSubmit: (String) -> Unit,
     onModeChanged: (String) -> Unit = {},
     onInputFocusChanged: (Boolean) -> Unit = {},
+    onStopGeneration: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var rawText by remember { mutableStateOf("") }
@@ -4243,7 +3885,9 @@ fun BottomInputPanel(
             IconButton(
                 onClick = {
                     hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                    if (rawText.trim().isNotEmpty() || attachedImageUri != null) {
+                    if (isLoading) {
+                        onStopGeneration()
+                    } else if (rawText.trim().isNotEmpty() || attachedImageUri != null) {
                         val promptWithMode = if (selectedMode != "Root Cause") {
                             "[$selectedMode Mode] ${rawText.trim()}"
                         } else {
@@ -4253,15 +3897,15 @@ fun BottomInputPanel(
                         rawText = ""
                     }
                 },
-                enabled = !isLoading && (rawText.trim().isNotBlank() || attachedImageUri != null),
+                enabled = isLoading || (rawText.trim().isNotBlank() || attachedImageUri != null),
                 modifier = Modifier
                     .size(40.dp)
-                    .background(ThemeManager.accentColor, CircleShape) // Theme-dependent Send Button
+                    .background(if (isLoading) Color(0xFFEF4444) else ThemeManager.accentColor, CircleShape)
                     .clip(CircleShape)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Send,
-                    contentDescription = "Transmit",
+                    imageVector = if (isLoading) Icons.Rounded.Stop else Icons.Default.Send,
+                    contentDescription = if (isLoading) "Stop Generation" else "Transmit",
                     tint = Color.White,
                     modifier = Modifier.size(16.dp)
                 )
@@ -5343,7 +4987,7 @@ fun AnalysisFailureErrorCard(
                     .padding(8.dp)
             ) {
                 Text(
-                    text = errorMessage.removePrefix("Error invoking DepthLens engine:").trim(),
+                    text = errorMessage.removePrefix(com.example.data.repository.SYSTEM_ERROR_PREFIX).removePrefix("Error invoking DepthLens engine:").trim(),
                     fontSize = 11.sp,
                     color = ErrorColor.copy(alpha = 0.9f),
                     fontFamily = FontFamily.Monospace,
@@ -5817,17 +5461,7 @@ private fun generatePdfReport(titleText: String, textContent: String): ByteArray
     paint.textSize = 10.5f
     
     fun sanitizePdfText(input: String): String {
-        var text = input.trim()
-        text = text.replace(Regex("""<questions>[\s\S]*?</questions>""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""<exploration>[\s\S]*?</exploration>""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""<memory_insight>[\s\S]*?</memory_insight>""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""System Instructions[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""SYSTEM_PROMPT[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""Developer Config[\s\S]*?(?=\n\n|\z)""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""<[^>]+>"""), "")
-        text = text.replace(Regex("""applicationId\s*=[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
-        text = text.replace(Regex("""BuildConfig[\s\S]*?(?=\n|\z)""", RegexOption.IGNORE_CASE), "")
-        return text.trim()
+        return input
     }
     
     val sanitizedContent = sanitizePdfText(textContent)

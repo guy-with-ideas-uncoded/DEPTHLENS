@@ -99,6 +99,26 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     }
     private val _activeSessionId = MutableStateFlow<String?>(null)
     val activeSessionId: StateFlow<String?> = _activeSessionId.asStateFlow()
+    private val _sessionLoadState = MutableStateFlow<Map<String, String>>(emptyMap())
+    val sessionLoadState: StateFlow<Map<String, String>> = _sessionLoadState.asStateFlow()
+
+    fun retryLoadSession(sessionId: String) {
+        loadSessionFromCloud(sessionId)
+    }
+
+    private fun loadSessionFromCloud(sessionId: String) {
+        val uid = userId.value
+        if (uid == "guest_local" || uid.isBlank()) return
+        viewModelScope.launch {
+            _sessionLoadState.update { it + (sessionId to "LOADING") }
+            val success = repository.syncSingleSession(uid, sessionId)
+            if (success) {
+                _sessionLoadState.update { it + (sessionId to "LOADED") }
+            } else {
+                _sessionLoadState.update { it + (sessionId to "ERROR") }
+            }
+        }
+    }
 
     private var isFirstLaunchSessionSetup = true
     private var wasChatDeleted = false
@@ -116,8 +136,14 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     // Selected analysis mode (synced from UI)
     private val _selectedMode = MutableStateFlow("Multi-Layer")
     val selectedMode: StateFlow<String> = _selectedMode.asStateFlow()
+    private var isManualModeSelected = false
 
     fun setSelectedMode(mode: String?) {
+        setSelectedMode(mode, isManual = true)
+    }
+
+    fun setSelectedMode(mode: String?, isManual: Boolean) {
+        val oldMode = _selectedMode.value
         val allValidModes = listOf(
             "Multi-Layer", "Quick Insight",
             "Pattern Map", "Psychology", "Systems", "Probability", "Business", "Relationships", "Spiritual",
@@ -129,6 +155,33 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             mode
         }
         _selectedMode.value = finalMode
+        isManualModeSelected = isManual
+
+        val stackTrace = Throwable().stackTrace
+        val caller = stackTrace.firstOrNull { element ->
+            element.className.contains("com.example") && 
+            !element.methodName.equals("setSelectedMode")
+        } ?: stackTrace.getOrNull(1)
+
+        val callerFile = caller?.fileName ?: "UnknownFile"
+        val callerLine = caller?.lineNumber ?: 0
+        val callerMethod = caller?.methodName ?: "UnknownMethod"
+
+        android.util.Log.d("IntelligenceViewModel", """
+            ============================
+            MODE ASSIGNMENT DETECTED
+            OLD VALUE:
+            $oldMode
+            
+            NEW VALUE:
+            $finalMode
+            
+            Changed At:
+            $callerFile
+            $callerLine
+            $callerMethod
+            ============================
+        """.trimIndent())
     }
 
     // Selected analysis depth (synced from UI)
@@ -565,9 +618,16 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             prefs.edit().remove("last_active_session_id").apply()
         } else {
             prefs.edit().putString("last_active_session_id", sessionId).apply()
+            if (targetId != "draft_session_id") {
+                val currentState = _sessionLoadState.value[targetId]
+                if (currentState != "LOADED" && currentState != "LOADING") {
+                    loadSessionFromCloud(targetId)
+                }
+            }
         }
         clearAttachment()
         clearContinuityBrief()
+        setSelectedMode("Multi-Layer", isManual = false)
     }
 
     fun createSession(title: String) {
@@ -580,6 +640,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 _activeSessionId.value = newSession.id
                 prefs.edit().putString("last_active_session_id", newSession.id).apply()
                 clearAttachment()
+                setSelectedMode("Multi-Layer", isManual = false)
             }
         }
     }
@@ -780,15 +841,16 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         if (cleanQuery.isEmpty() && _attachedImageUri.value == null) return
 
         // Auto Layer Selection logic: automatically select most suitable analysis mode based on the prompt
-        if (_autoLayerSelection.value) {
+        val autoLayerSelectionEnabled = prefs.getBoolean("auto_layer_selection", false)
+        if (autoLayerSelectionEnabled && !isManualModeSelected) {
             val qLower = cleanQuery.lowercase()
             val predictedMode = when {
                 qLower.contains("pattern") || qLower.contains("repeat") || qLower.contains("trend") || qLower.contains("loop") || qLower.contains("mapping") || qLower.contains("map") || qLower.contains("cycle") || qLower.contains("habit") -> "Pattern Map"
                 qLower.contains("layer") || qLower.contains("multi") || qLower.contains("dimension") || qLower.contains("level") || qLower.contains("complex") -> "Multi-Layer"
                 qLower.contains("summary") || qLower.contains("brief") || qLower.contains("surface") || qLower.contains("quick") || qLower.contains("outline") || qLower.contains("overview") -> "Surface Read"
-                else -> "Deep Scan" // Default high-fidelity mode
+                else -> "Multi-Layer" // Default high-fidelity mode
             }
-            setSelectedMode(predictedMode)
+            setSelectedMode(predictedMode, isManual = false)
         }
 
         val attachedUri = _attachedImageUri.value
@@ -1835,7 +1897,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                     geminiStr = "Error"
                     lastRequestStr = when {
                         "403" in msg || "401" in msg || "API_KEY" in msg || "unauthorized" in msg.lowercase() -> "Authentication Error"
-                        "429" in msg || "quota" in msg.lowercase() || "limit" in msg.lowercase() -> "Rate Limited / Quota Exceeded"
+                        "429" in msg || "RESOURCE_EXHAUSTED" in msg -> "Rate Limited / Quota Exceeded"
                         "404" in msg || "not found" in msg.lowercase() || "model" in msg.lowercase() -> "Endpoint Not Found (404)"
                         "timeout" in msg.lowercase() || "time out" in msg.lowercase() -> "Network Timeout"
                         else -> "Failed (${msg.take(40)})"

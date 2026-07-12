@@ -705,7 +705,9 @@ class SpeechManager(private val context: Context) : TextToSpeech.OnInitListener 
                     if (bestVoice != null) {
                         Log.d("SpeechManager", "Successfully matched voice: ${bestVoice.name} for requested locale: $requestedLocale")
                         ttsInstance.language = bestVoice.locale // Set language first to avoid voice resetting!
-                        ttsInstance.voice = bestVoice
+                        // Avoid setting ttsInstance.voice directly as it often causes silent failures
+                        // when the high-quality network/offline voice package is not fully downloaded.
+                        // Setting language is the industry standard and most robust across all devices.
                         return bestVoice.locale
                     }
                 }

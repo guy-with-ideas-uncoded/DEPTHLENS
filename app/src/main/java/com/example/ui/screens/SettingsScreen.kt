@@ -1239,7 +1239,7 @@ fun AiIntelligenceSubscreen(
     val scrollState = rememberScrollState()
     val prefs = remember { context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE) }
     
-    var autoModel by remember { mutableStateOf(prefs.getBoolean("auto_layer_selection", true)) }
+    var autoModel by remember { mutableStateOf(prefs.getBoolean("auto_layer_selection", false)) }
     var responseDepth by remember { mutableStateOf(prefs.getString("response_depth", "Balanced") ?: "Balanced") }
     var personalityTone by remember { mutableStateOf(prefs.getString("ai_personality", "Clinical") ?: "Clinical") }
     var deepThought by remember { mutableStateOf(prefs.getBoolean("is_deep_thought_enabled", false)) }

@@ -25,6 +25,9 @@ import kotlinx.coroutines.ensureActive
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import com.example.data.network.CloudSyncService
+import com.example.AnalysisService
+
+const val SYSTEM_ERROR_PREFIX = "[DEPTHLENS_SYSTEM_ERROR]"
 
 class IntelligenceRepository(private val context: Context) {
 
@@ -381,7 +384,7 @@ class IntelligenceRepository(private val context: Context) {
                     }
                 } catch (e: Exception) {
                     val msg = e.message ?: ""
-                    val is429 = msg.contains("429") || msg.contains("quota", ignoreCase = true) || msg.contains("rate", ignoreCase = true)
+                    val is429 = msg.contains("429") || msg.contains("RESOURCE_EXHAUSTED", ignoreCase = true)
                     if (is429 && attempt < retryDelays.size - 1) {
                         kotlinx.coroutines.delay(delay)
                         continue
@@ -763,12 +766,21 @@ class IntelligenceRepository(private val context: Context) {
         val currentJob = coroutineContext[kotlinx.coroutines.Job]
         try {
             val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
-            val isDeepThought = prefs.getBoolean("is_deep_thought_enabled", false)
-            val sessionCategory = category ?: "Root Cause"
-            val sessionDepth = depth ?: "Standard Analysis"
+            val rawCategory = category ?: "Root Cause"
+            val rawDepth = depth ?: "Standard Analysis"
+
+            // Dynamically route depth-related categories to the correct sessionDepth and default their category
+            val (sessionCategory, sessionDepth, isDeepThoughtFromMode) = when (rawCategory) {
+                "Quick Insight" -> Triple("Root Cause", "Quick Insight", false)
+                "Full Investigation" -> Triple("Root Cause", "Full Investigation", false)
+                "Deep Scan" -> Triple("Root Cause", "Deep Analysis", false)
+                "Deep Thought" -> Triple("Root Cause", "Full Investigation", true)
+                else -> Triple(rawCategory, rawDepth, false)
+            }
+            val isDeepThought = prefs.getBoolean("is_deep_thought_enabled", false) || isDeepThoughtFromMode
             val apiKey = BuildConfig.GEMINI_API_KEY
             if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-                val errorMsg = "Error: Missing Gemini API Key. Please add your key to the Secrets panel in Google AI Studio to unlock DepthLens's operations."
+                val errorMsg = SYSTEM_ERROR_PREFIX + "Error: Missing Gemini API Key. Please add your key to the Secrets panel in Google AI Studio to unlock DepthLens's operations."
                 try {
                     val assistantMsg = MessageEntity(
                         id = UUID.randomUUID().toString(),
@@ -791,7 +803,7 @@ class IntelligenceRepository(private val context: Context) {
             val rawHistory = historyDeferred.await()
             val history = validateAndRepairHistory(rawHistory)
             if (history.isEmpty()) {
-                val errorMsg = "Error: Session history is empty."
+                val errorMsg = SYSTEM_ERROR_PREFIX + "Error: Session history is empty."
                 try {
                     val assistantMsg = MessageEntity(
                         id = UUID.randomUUID().toString(),
@@ -1942,20 +1954,15 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
 """.trimIndent()
 
         val lowercaseQuery = latestUserMsgText.lowercase()
-        val needsGrounding = lowercaseQuery.contains("today") ||
-                lowercaseQuery.contains("latest") ||
-                lowercaseQuery.contains("current") ||
-                lowercaseQuery.contains("this year") ||
-                lowercaseQuery.contains("news") ||
-                lowercaseQuery.contains("price") ||
-                lowercaseQuery.contains("now") ||
-                lowercaseQuery.contains("recent") ||
-                lowercaseQuery.contains("weather") ||
-                lowercaseQuery.contains("time") ||
-                lowercaseQuery.contains("date") ||
-                lowercaseQuery.contains("year") ||
-                lowercaseQuery.contains("who is") ||
-                lowercaseQuery.contains("what is")
+        val needsGrounding = (lowercaseQuery.contains("today") && lowercaseQuery.contains("weather")) ||
+                lowercaseQuery.contains("latest news") ||
+                lowercaseQuery.contains("current stock price") ||
+                lowercaseQuery.contains("current price of") ||
+                (lowercaseQuery.contains("news") && (lowercaseQuery.contains("today") || lowercaseQuery.contains("latest"))) ||
+                lowercaseQuery.contains("weather forecast") ||
+                (lowercaseQuery.contains("what is the") && lowercaseQuery.contains("today")) ||
+                (lowercaseQuery.contains("who is the") && lowercaseQuery.contains("current")) ||
+                (lowercaseQuery.contains("current event") || lowercaseQuery.contains("latest update"))
 
         // User explicitly tapped "Search the Web" on a reply → force live grounding
         val forceWeb = consumeForceWeb(sessionId)
@@ -1969,7 +1976,13 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             contents = contentsPayload,
             generationConfig = GenerationConfig(temperature = 0.72f),
             systemInstruction = Content(parts = listOf(Part(text = calibratedSystemText))),
-            tools = toolsPayload
+            tools = toolsPayload,
+            safetySettings = listOf(
+                SafetySetting("HARM_CATEGORY_HARASSMENT", "BLOCK_NONE"),
+                SafetySetting("HARM_CATEGORY_HATE_SPEECH", "BLOCK_NONE"),
+                SafetySetting("HARM_CATEGORY_SEXUALLY_EXPLICIT", "BLOCK_NONE"),
+                SafetySetting("HARM_CATEGORY_DANGEROUS_CONTENT", "BLOCK_NONE")
+            )
         )
 
         val startTime = System.currentTimeMillis()
@@ -1994,6 +2007,45 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
         var geminiErrorCode = "None"
         var finishReason = "None"
         var safetyBlockInfo = "None"
+
+        var bestException: Exception? = null
+        var bestHttpStatus = 0
+        var bestGeminiErrorCode = "None"
+
+        val updateCallErrorState = { ex: Exception ->
+            lastException = ex
+            if (ex is retrofit2.HttpException) {
+                lastHttpStatus = ex.code()
+                try {
+                    val errorBody = ex.response()?.errorBody()?.string() ?: ""
+                    geminiErrorCode = errorBody
+                    if (errorBody.isNotEmpty()) {
+                        val moshi = com.squareup.moshi.Moshi.Builder().build()
+                        val adapter = moshi.adapter(Map::class.java)
+                        val errorMap = adapter.fromJson(errorBody)
+                        val errorDetail = errorMap?.get("error") as? Map<*, *>
+                        val errorStatus = errorDetail?.get("status")?.toString() ?: ""
+                        val errorMessage = errorDetail?.get("message")?.toString() ?: ""
+                        if (errorStatus.isNotEmpty()) {
+                            geminiErrorCode = "$errorStatus: $errorMessage"
+                        }
+                    }
+                } catch (pe: Exception) {
+                    pe.printStackTrace()
+                }
+            } else {
+                lastHttpStatus = 0
+                geminiErrorCode = ex.message ?: "None"
+            }
+
+            val isUninformative = ex is retrofit2.HttpException && (ex.code() == 404 || ex.code() == 403)
+            val isBestUninformative = bestException is retrofit2.HttpException && ((bestException as retrofit2.HttpException).code() == 404 || (bestException as retrofit2.HttpException).code() == 403)
+            if (bestException == null || !isUninformative || isBestUninformative) {
+                bestException = lastException
+                bestHttpStatus = lastHttpStatus
+                bestGeminiErrorCode = geminiErrorCode
+            }
+        }
 
         // We define the assistant message template, but DO NOT insert it prematurely into the database.
         // It will be created when we receive the first chunk of text, avoiding empty or placeholder message cards.
@@ -2115,28 +2167,8 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                         break
                     }
                 } catch (e: Exception) {
-                    lastException = e
+                    updateCallErrorState(e)
                     android.util.Log.e("IntelligenceRepository", "Streaming failed for model $modelName, falling back. Error: ${e.message}", e)
-                    if (e is retrofit2.HttpException) {
-                        lastHttpStatus = e.code()
-                        try {
-                            val errorBody = e.response()?.errorBody()?.string() ?: ""
-                            geminiErrorCode = errorBody
-                            if (errorBody.isNotEmpty()) {
-                                val moshi = com.squareup.moshi.Moshi.Builder().build()
-                                val adapter = moshi.adapter(Map::class.java)
-                                val errorMap = adapter.fromJson(errorBody)
-                                val errorDetail = errorMap?.get("error") as? Map<*, *>
-                                val errorStatus = errorDetail?.get("status")?.toString() ?: ""
-                                val errorMessage = errorDetail?.get("message")?.toString() ?: ""
-                                if (errorStatus.isNotEmpty()) {
-                                    geminiErrorCode = "$errorStatus: $errorMessage"
-                                }
-                            }
-                        } catch (ex: Exception) {
-                            ex.printStackTrace()
-                        }
-                    }
                     if (e.message?.contains("Safety block detected") == true) {
                         break // immediately terminate loop on safety blocks
                     }
@@ -2236,7 +2268,7 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                                 break
                             }
                         } catch (fallbackEx: Exception) {
-                            lastException = fallbackEx
+                            updateCallErrorState(fallbackEx)
                             android.util.Log.e("IntelligenceRepository", "Streaming fallback failed: ${fallbackEx.message}", fallbackEx)
                         }
                     }
@@ -2273,28 +2305,8 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                         break
                     }
                 } catch (e: Exception) {
-                    lastException = e
+                    updateCallErrorState(e)
                     val msg = e.message ?: ""
-                    if (e is retrofit2.HttpException) {
-                        lastHttpStatus = e.code()
-                        try {
-                            val errorBody = e.response()?.errorBody()?.string() ?: ""
-                            geminiErrorCode = errorBody
-                            if (errorBody.isNotEmpty()) {
-                                val moshi = com.squareup.moshi.Moshi.Builder().build()
-                                val adapter = moshi.adapter(Map::class.java)
-                                val errorMap = adapter.fromJson(errorBody)
-                                val errorDetail = errorMap?.get("error") as? Map<*, *>
-                                val errorStatus = errorDetail?.get("status")?.toString() ?: ""
-                                val errorMessage = errorDetail?.get("message")?.toString() ?: ""
-                                if (errorStatus.isNotEmpty()) {
-                                    geminiErrorCode = "$errorStatus: $errorMessage"
-                                }
-                            }
-                        } catch (ex: Exception) {
-                            ex.printStackTrace()
-                        }
-                    }
 
                     // INTELLIGENT RETRY FALLBACK: if tools were enabled, retry the standard call immediately without tools!
                     if (currentRequest.tools != null) {
@@ -2314,12 +2326,12 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                                 break
                             }
                         } catch (fallbackEx: Exception) {
-                            lastException = fallbackEx
+                            updateCallErrorState(fallbackEx)
                             android.util.Log.e("IntelligenceRepository", "Standard fallback failed: ${fallbackEx.message}", fallbackEx)
                         }
                     }
 
-                    val is429 = msg.contains("429") || msg.contains("quota exceeded", ignoreCase = true) || msg.contains("rate limit exceeded", ignoreCase = true) || msg.contains("RESOURCE_EXHAUSTED", ignoreCase = true)
+                    val is429 = lastHttpStatus == 429 || geminiErrorCode.contains("RESOURCE_EXHAUSTED", ignoreCase = true)
                     if (is429 && attempt < retryDelays.size - 1) {
                         kotlinx.coroutines.delay(delay)
                         continue
@@ -2329,6 +2341,12 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                 }
             }
             if (modelText != null) break
+        }
+
+        if (modelText == null && bestException != null) {
+            lastException = bestException
+            lastHttpStatus = bestHttpStatus
+            geminiErrorCode = bestGeminiErrorCode
         }
 
         // --- DEVELOPER DIAGNOSTICS & PIPELINE INVESTIGATION LOGGING ---
@@ -2412,27 +2430,6 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             var httpStatus = lastHttpStatus
             var apiErrCode = geminiErrorCode
             
-            if (lastException is retrofit2.HttpException) {
-                httpStatus = lastException.code()
-                try {
-                    val errorBody = lastException.response()?.errorBody()?.string() ?: ""
-                    apiErrCode = errorBody
-                    if (errorBody.isNotEmpty()) {
-                        val moshi = com.squareup.moshi.Moshi.Builder().build()
-                        val adapter = moshi.adapter(Map::class.java)
-                        val errorMap = adapter.fromJson(errorBody)
-                        val errorDetail = errorMap?.get("error") as? Map<*, *>
-                        val errorStatus = errorDetail?.get("status")?.toString() ?: ""
-                        val errorMessage = errorDetail?.get("message")?.toString() ?: ""
-                        if (errorStatus.isNotEmpty()) {
-                            apiErrCode = "$errorStatus: $errorMessage"
-                        }
-                    }
-                } catch (ex: Exception) {
-                    ex.printStackTrace()
-                }
-            }
-
             val msgState = lastException?.message ?: "unknown cause"
             val userFriendlyError = when {
                 msgState.contains("Safety block detected", ignoreCase = true) ->
@@ -2444,7 +2441,13 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                 httpStatus == 404 -> "Error: Endpoint Not Found (404). The requested model or API version could not be found. Details: ${apiErrCode.ifEmpty { msgState }}"
                 httpStatus == 408 -> "Error: Request Timeout (408). The analysis took too long. Please try again."
                 httpStatus == 413 -> "Error: Request Too Large (413). The prompt exceeds the context length limit."
-                httpStatus == 429 -> "Error: API quota exceeded or rate limit hit (429). You have reached your current Gemini API usage limits. Please wait a moment or check your Google AI Studio quota."
+                httpStatus == 429 -> {
+                    if (apiErrCode.contains("grounding", ignoreCase = true) || apiErrCode.contains("search", ignoreCase = true) || msgState.contains("grounding", ignoreCase = true)) {
+                        "Error: Google Search Grounding tool is currently rate-limited or not supported on this project/key. Please try again or disable Web Grounding. Details: $apiErrCode"
+                    } else {
+                        "Error: API quota exceeded or rate limit hit (429). You have reached your current Gemini API usage limits. Please wait a moment or check your Google AI Studio quota."
+                    }
+                }
                 httpStatus == 500 -> "Error: Gemini Internal Server Error (500). Google's servers encountered an unexpected failure. Please retry."
                 httpStatus == 502 -> "Error: Bad Gateway (502). Network routing error to Gemini. Please try again."
                 httpStatus == 503 -> "Error: Service Unavailable (503). Gemini servers are temporarily unavailable or overloaded."
@@ -2471,12 +2474,13 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
 
                 // Rate limiting fallback (ONLY genuine rate limiting checks!)
                 httpStatus == 429 ||
-                msgState.contains("quota exceeded", ignoreCase = true) ||
-                msgState.contains("rate limit exceeded", ignoreCase = true) ||
-                msgState.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ||
-                apiErrCode.contains("RESOURCE_EXHAUSTED", ignoreCase = true) ||
-                apiErrCode.contains("quota exceeded", ignoreCase = true) ->
-                    "Error: API quota exceeded or rate limit hit. You have reached your current Gemini API usage limits. Please wait a moment or check your Google AI Studio quota."
+                geminiErrorCode.contains("RESOURCE_EXHAUSTED", ignoreCase = true) -> {
+                    if (geminiErrorCode.contains("grounding", ignoreCase = true) || geminiErrorCode.contains("search", ignoreCase = true) || msgState.contains("grounding", ignoreCase = true)) {
+                        "Error: Google Search Grounding tool is currently rate-limited or not supported on this project/key. Please try again or disable Web Grounding. Details: $geminiErrorCode"
+                    } else {
+                        "Error: API quota exceeded or rate limit hit. You have reached your current Gemini API usage limits. Please wait a moment or check your Google AI Studio quota."
+                    }
+                }
 
                 // Authentication fallback
                 msgState.contains("auth", ignoreCase = true) ||
@@ -2517,7 +2521,7 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             }
             com.example.data.diagnostics.DiagnosticsManager.commitSession()
 
-            val errorMsg = userFriendlyError
+            val errorMsg = SYSTEM_ERROR_PREFIX + userFriendlyError
             try {
                 val assistantMsg = MessageEntity(
                     id = UUID.randomUUID().toString(),
@@ -2584,6 +2588,18 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                                 "webp" -> "image/webp"
                                 "gif" -> "image/gif"
                                 "pdf" -> "application/pdf"
+                                "txt", "log", "md", "csv" -> "text/plain"
+                                "html", "htm" -> "text/html"
+                                "json" -> "application/json"
+                                "xml" -> "application/xml"
+                                "js" -> "application/javascript"
+                                "py" -> "text/x-python"
+                                "kt", "kotlin" -> "text/x-kotlin"
+                                "java" -> "text/x-java-source"
+                                "c", "cpp", "h" -> "text/x-csrc"
+                                "doc", "docx" -> "application/msword"
+                                "xls", "xlsx" -> "application/vnd.ms-excel"
+                                "ppt", "pptx" -> "application/vnd.ms-powerpoint"
                                 else -> "application/octet-stream"
                             }
                         }
@@ -2746,6 +2762,9 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                 _runningAnalyses.value = _runningAnalyses.value + sessionId
             }
             try {
+                // Start foreground service to ensure network access and process survival in background
+                AnalysisService.start(context)
+                
                 generateAnalysis(sessionId, category, depth)
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
@@ -2756,6 +2775,11 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                     _runningAnalyses.value = _runningAnalyses.value - sessionId
                 }
                 activeJobs.remove(sessionId)
+
+                // Stop foreground service if no other analyses are running
+                if (_runningAnalyses.value.isEmpty()) {
+                    AnalysisService.stop(context)
+                }
 
                 // If privacy mode is enabled, clean up files and retain only the final prompt answer
                 val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
@@ -2826,27 +2850,35 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
 
             try {
                 val messages = db.messageDao().getMessagesForSession(sessionId)
-                val lastUserMsg = messages.lastOrNull { it.role == "user" }
-                val textLower = lastUserMsg?.text?.lowercase() ?: ""
-                val hasAttachment = lastUserMsg?.imageUri != null || 
-                                    textLower.contains("🔍") ||
-                                    textLower.contains("deep-lens") ||
-                                    textLower.contains("scanning") ||
-                                    textLower.contains("analysis") ||
-                                    textLower.contains("analyze") ||
-                                    textLower.contains("scan") ||
-                                    textLower.contains("digging") ||
-                                    textLower.contains("document") ||
-                                    textLower.contains("pdf") ||
-                                    textLower.contains("video") ||
-                                    textLower.contains("image")
+                val lastMsg = messages.lastOrNull()
+                val isError = lastMsg?.role == "model" && (lastMsg.text.startsWith(SYSTEM_ERROR_PREFIX) || lastMsg.text.contains("Error invoking DepthLens"))
                 
-                if (hasAttachment) {
-                    title = "Analysis Complete"
-                    content = "Your DepthLens analysis is ready."
+                if (isError) {
+                    title = "Analysis Failed"
+                    content = "DepthLens encountered an error during analysis. Tap to view."
                 } else {
-                    title = "New AI Response"
-                    content = "Tap to continue your conversation."
+                    val lastUserMsg = messages.lastOrNull { it.role == "user" }
+                    val textLower = lastUserMsg?.text?.lowercase() ?: ""
+                    val hasAttachment = lastUserMsg?.imageUri != null || 
+                                        textLower.contains("🔍") ||
+                                        textLower.contains("deep-lens") ||
+                                        textLower.contains("scanning") ||
+                                        textLower.contains("analysis") ||
+                                        textLower.contains("analyze") ||
+                                        textLower.contains("scan") ||
+                                        textLower.contains("digging") ||
+                                        textLower.contains("document") ||
+                                        textLower.contains("pdf") ||
+                                        textLower.contains("video") ||
+                                        textLower.contains("image")
+                    
+                    if (hasAttachment) {
+                        title = "Analysis Complete"
+                        content = "Your DepthLens analysis is ready."
+                    } else {
+                        title = "New AI Response"
+                        content = "Tap to continue your conversation."
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -3160,6 +3192,11 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
         return callGeminiForModule(apiKey, contentsPayload, prompt)
     }
 
+    suspend fun syncSingleSession(userId: String, sessionId: String): Boolean {
+        return com.example.data.network.CloudSyncService.syncSingleSession(
+            userId, sessionId, db.sessionDao(), db.messageDao(), db.attachmentDao()
+        )
+    }
     suspend fun fetchAndSyncFromFirestore(userId: String): Boolean {
         return com.example.data.network.CloudSyncService.fetchAndSyncAll(userId, sessionDao, messageDao, attachmentDao)
     }
@@ -3213,29 +3250,9 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
 
 object ResponseParser {
     private val parsedCache = java.util.concurrent.ConcurrentHashMap<String, ParsedResponse>()
-    private val copyableCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     fun getCopyableText(rawResponse: String): String {
-        return copyableCache.getOrPut(rawResponse) {
-            var text = rawResponse
-            // Remove questions, exploration paths and memory insight tags completely
-            text = text.replace(Regex("""<questions>[\s\S]*?</questions>""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""<exploration>[\s\S]*?</exploration>""", RegexOption.IGNORE_CASE), "")
-            text = text.replace(Regex("""<memory_insight>[\s\S]*?</memory_insight>""", RegexOption.IGNORE_CASE), "")
-            
-            // Remove XML tags
-            text = text.replace(Regex("""<[^>]+>"""), "")
-            
-            // Strip leaked AI metadata words (like "High.", "Importance: High") at the beginning of lines
-            val leakedMetadataRegex = Regex(
-                "^(?:(\\s*[-*+•]\\s*|\\s*\\d+\\.\\s*))?\\*?\\*?(?:(?:importance|emphasis|priority|confidence|severity|level|reasoning)\\s*:\\s*)?(?:high|medium|low|critical)\\*?\\*?\\s*\\.?\\s*",
-                setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
-            )
-            text = text.replace(leakedMetadataRegex, "$1").replace(Regex("^(?:high|medium|low|critical)\\\\.\\s*", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)), "")
-            
-            // Trim and clean extra empty lines
-            text.trim()
-        }
+        return parse(rawResponse).exportText()
     }
 
     fun parse(rawResponse: String): ParsedResponse {
@@ -3253,7 +3270,24 @@ object ResponseParser {
         val explorationRaw = extractTagContent(rawResponse, "exploration")
         val probabilityMetricsRaw = extractTagContent(rawResponse, "probability_metrics")
 
-        val cleanIntro = cleanTags(introduction)
+        val firstTagIndex = rawResponse.indexOf("<summary>")
+            .takeIf { it != -1 } ?: rawResponse.indexOf("<depth>")
+            .takeIf { it != -1 } ?: rawResponse.indexOf("<root_cause>")
+            .takeIf { it != -1 } ?: rawResponse.indexOf("<human_intel>")
+            .takeIf { it != -1 } ?: rawResponse.indexOf("<future_prob>")
+            .takeIf { it != -1 } ?: rawResponse.indexOf("<deep_synthesis>")
+            .takeIf { it != -1 } ?: rawResponse.indexOf("<probability_metrics>")
+            .takeIf { it != -1 } ?: rawResponse.indexOf("<questions>")
+            .takeIf { it != -1 } ?: rawResponse.indexOf("<exploration>")
+            .takeIf { it != -1 } ?: -1
+            
+        val cleanIntro = if (firstTagIndex > 0) {
+            rawResponse.substring(0, firstTagIndex)
+        } else if (firstTagIndex == 0) {
+            ""
+        } else {
+            rawResponse
+        }
 
         val depthLayers = mutableListOf<DepthLayerInsight>()
         depthRaw?.trim()?.split("\n")?.forEach { line ->
@@ -3535,28 +3569,7 @@ object ResponseParser {
         return null
     }
 
-    private fun cleanTags(text: String): String {
-        var cleaned = text
-        val tags = listOf(
-            "summary", "deep_synthesis", "confidence", "depth", "root_cause",
-            "human_intel", "future_prob", "memory_insight", "questions", "exploration", "probability_metrics",
-            "probability_assessment", "future_pathways", "timeline_forecast", "decision_impact", "forecast_summary"
-        )
-        for (tag in tags) {
-            cleaned = cleaned.replace("<$tag>(.*?)</$tag>".toRegex(RegexOption.DOT_MATCHES_ALL), "")
-            cleaned = cleaned.replace("<$tag>([^<]*)".toRegex(RegexOption.DOT_MATCHES_ALL), "")
-        }
-        cleaned = cleaned.replace("<[^>]*>".toRegex(), "").trim()
-        
-        // Strip leaked AI metadata words (like "High.", "Importance: High") at the beginning of lines
-        val leakedMetadataRegex = Regex(
-            "^(?:(\\s*[-*+•]\\s*|\\s*\\d+\\.\\s*))?\\*?\\*?(?:(?:importance|emphasis|priority|confidence|severity|level|reasoning)\\s*:\\s*)?(?:high|medium|low|critical)\\*?\\*?\\s*\\.?\\s*",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
-        )
-        cleaned = cleaned.replace(leakedMetadataRegex, "$1").replace(Regex("^(?:high|medium|low|critical)\\\\.\\s*", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)), "")
-        
-        return cleaned.trim()
-    }
+
 
     private fun parseField(rawText: String, fieldName: String): String {
         val lines = rawText.split("\n")
