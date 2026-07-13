@@ -23,7 +23,7 @@ object SupabaseStorageClient {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val supabaseUrl: String
+    val supabaseUrl: String
         get() {
             var url = BuildConfig.SUPABASE_URL.trim().removeSuffix("/")
             if (url.endsWith("/rest/v1")) {
@@ -168,6 +168,41 @@ object SupabaseStorageClient {
         } catch (e: Exception) {
             Log.e(TAG, "Exception during deletion", e)
             false
+        }
+    }
+
+    /**
+     * Generates a signed URL for a private object in Supabase Storage.
+     */
+    fun getSignedUrl(bucket: String, path: String, expiresIn: Int = 3600): String? {
+        val sUrl = supabaseUrl
+        val aKey = anonKey
+        val encodedPath = path.split("/").joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
+        val url = "$sUrl/storage/v1/object/sign/$bucket/$encodedPath"
+
+        val json = JSONObject().apply { put("expiresIn", expiresIn) }
+        val requestBody = json.toString().toRequestBody("application/json".toMediaTypeOrNull())
+
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $aKey")
+            .header("apikey", aKey)
+            .post(requestBody)
+            .build()
+
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyString = response.body?.string()
+                    JSONObject(bodyString ?: "").getString("signedUrl")
+                } else {
+                    Log.e(TAG, "Error generating signed URL: ${response.code} ${response.body?.string()}")
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception generating signed URL", e)
+            null
         }
     }
 

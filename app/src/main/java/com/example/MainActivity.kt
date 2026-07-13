@@ -60,11 +60,6 @@ class MainActivity : FragmentActivity() {
   }
 
   fun requestMediaProjection() {
-      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(this)) {
-          checkAndRequestOverlayPermission()
-          return
-      }
-      
       launchMediaProjectionDirectly()
   }
 
@@ -74,50 +69,6 @@ class MainActivity : FragmentActivity() {
           screenShareLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
       } catch (e: Exception) {
           android.util.Log.e("MainActivity", "Failed to launch media projection permission intent", e)
-      }
-  }
-
-  fun checkAndRequestOverlayPermission() {
-      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-          if (!android.provider.Settings.canDrawOverlays(this)) {
-              android.app.AlertDialog.Builder(this)
-                  .setTitle("Display Over Other Apps Required")
-                  .setMessage("DepthLens uses a floating overlay to control screen sharing and voice assistant when you leave the app.\n\n" +
-                              "⚠️ IMPORTANT: Android 13+ Restricted Settings\n" +
-                              "If you see a 'Restricted Setting' message:\n" +
-                              "1. Click 'Go to App Info' below.\n" +
-                              "2. Tap the ⋮ (three dots) in the top-right corner.\n" +
-                              "3. Tap 'Allow restricted settings' and verify with your PIN/Fingerprint.\n" +
-                              "4. Now come back here and click 'Enable Overlay'.\n\n" +
-                              "This is a standard Android security step for apps installed from outside the Play Store.")
-                  .setPositiveButton("Enable Overlay") { _, _ ->
-                      try {
-                          val intent = Intent(
-                              android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                              android.net.Uri.parse("package:$packageName")
-                          )
-                          startActivity(intent)
-                      } catch (e: Exception) {
-                          try {
-                              val intent = Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
-                              startActivity(intent)
-                          } catch (ex: Exception) {
-                              android.util.Log.e("MainActivity", "Failed to open settings overlay screen", ex)
-                          }
-                      }
-                  }
-                  .setNeutralButton("Go to App Info") { _, _ ->
-                      try {
-                          val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                          intent.data = android.net.Uri.parse("package:$packageName")
-                          startActivity(intent)
-                      } catch (e: Exception) {
-                          android.util.Log.e("MainActivity", "Failed to open app info settings", e)
-                      }
-                  }
-                  .setNegativeButton("Cancel", null)
-                  .show()
-          }
       }
   }
 

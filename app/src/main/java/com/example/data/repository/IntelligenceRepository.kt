@@ -602,6 +602,7 @@ class IntelligenceRepository(private val context: Context) {
         }
     }
 
+
     suspend fun deleteSession(sessionId: String) = withContext(Dispatchers.IO) {
         attachmentDao.deleteAttachmentsForSession(sessionId)
         messageDao.deleteMessagesForSession(sessionId)

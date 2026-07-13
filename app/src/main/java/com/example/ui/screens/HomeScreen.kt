@@ -3,6 +3,8 @@ import androidx.compose.material.icons.filled.Warning
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 
@@ -5883,46 +5885,79 @@ fun findActivity(context: android.content.Context): android.app.Activity? {
 }
 
 fun openAttachment(context: android.content.Context, uriString: String, mimeType: String) {
-    try {
-        val rawUri = android.net.Uri.parse(uriString)
-        val uri = if (rawUri.scheme == "file") {
-            val path = rawUri.path
-            if (path != null) {
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        var finalUriString = uriString
+        
+        // 1. Check if it's a Supabase URL and we need to download it
+        val supabaseUrl = com.example.data.network.SupabaseStorageClient.supabaseUrl
+        if (uriString.startsWith("$supabaseUrl/storage/v1/object/public/attachments/")) {
+            val path = uriString.removePrefix("$supabaseUrl/storage/v1/object/public/attachments/")
+            val signedUrl = com.example.data.network.SupabaseStorageClient.getSignedUrl("attachments", path)
+            if (signedUrl != null) {
+                // Download file
                 try {
-                    androidx.core.content.FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        java.io.File(path)
-                    )
+                    val cacheFile = java.io.File(context.cacheDir, "temp_${System.currentTimeMillis()}_${java.io.File(path).name}")
+                    val client = okhttp3.OkHttpClient()
+                    val request = okhttp3.Request.Builder().url(signedUrl).build()
+                    client.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            response.body?.byteStream()?.use { input ->
+                                cacheFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                            finalUriString = "file://${cacheFile.absolutePath}"
+                        }
+                    }
                 } catch (e: Exception) {
-                    android.util.Log.e("openAttachment", "FileProvider resolution failed: ${e.message}")
+                    android.util.Log.e("openAttachment", "Download failed", e)
+                }
+            }
+        }
+        
+        withContext(kotlinx.coroutines.Dispatchers.Main) {
+            try {
+                val rawUri = android.net.Uri.parse(finalUriString)
+                val uri = if (rawUri.scheme == "file") {
+                    val path = rawUri.path
+                    if (path != null) {
+                        try {
+                            androidx.core.content.FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                java.io.File(path)
+                            )
+                        } catch (e: Exception) {
+                            android.util.Log.e("openAttachment", "FileProvider resolution failed: ${e.message}")
+                            rawUri
+                        }
+                    } else {
+                        rawUri
+                    }
+                } else {
                     rawUri
                 }
-            } else {
-                rawUri
-            }
-        } else {
-            rawUri
-        }
 
-        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mimeType)
-            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        android.util.Log.e("openAttachment", "Failed opening via MIME type, trying generic", e)
-        try {
-            val rawUri = android.net.Uri.parse(uriString)
-            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, rawUri).apply {
-                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, mimeType)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                android.util.Log.e("openAttachment", "Failed opening via MIME type, trying generic", e)
+                try {
+                    val rawUri = android.net.Uri.parse(finalUriString)
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, rawUri).apply {
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                } catch (ex: Exception) {
+                    android.util.Log.e("openAttachment", "Failed generic file open", ex)
+                    android.widget.Toast.makeText(context, "Cannot open this file type directly", android.widget.Toast.LENGTH_SHORT).show()
+                }
             }
-            context.startActivity(intent)
-        } catch (ex: Exception) {
-            android.util.Log.e("openAttachment", "Failed generic file open", ex)
-            android.widget.Toast.makeText(context, "Cannot open this file type directly", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 }
