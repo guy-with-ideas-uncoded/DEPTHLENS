@@ -3666,6 +3666,7 @@ fun BottomInputPanel(
     isLoading: Boolean,
     onAddAttachment: () -> Unit,
     onRemoveAttachment: () -> Unit,
+    onRemoveAttachmentUri: (String) -> Unit = {},
     onSubmit: (String) -> Unit,
     onModeChanged: (String) -> Unit = {},
     onInputFocusChanged: (Boolean) -> Unit = {},
@@ -3777,12 +3778,21 @@ fun BottomInputPanel(
             }
         }
 
-        attachedImageUri?.let { uri ->
-            AttachmentPreviewItem(
-                uri = uri,
-                onRemove = onRemoveAttachment,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
+        attachedImageUri?.let { uriString ->
+            val uris = uriString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            uris.forEach { singleUri ->
+                AttachmentPreviewItem(
+                    uri = singleUri,
+                    onRemove = {
+                        if (uris.size <= 1) {
+                            onRemoveAttachment()
+                        } else {
+                            onRemoveAttachmentUri(singleUri)
+                        }
+                    },
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
         }
 
         Row(

@@ -343,22 +343,34 @@ class IntelligenceRepository(private val context: Context) {
         val apiKey = BuildConfig.GEMINI_API_KEY
         if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") return@withContext
 
-        val currentDateTimeStr = java.text.SimpleDateFormat("EEEE, MMMM dd, yyyy, hh:mm:ss a (z)", java.util.Locale.US).apply {
-            timeZone = java.util.TimeZone.getDefault()
-        }.format(java.util.Date())
+        val messages = messageDao.getMessagesForSession(sessionId)
+            .filter { it.role == "user" || it.role == "model" }
+            .sortedBy { it.timestamp }
 
-        // Generate a 3-8 word high-quality title using Gemini
+        val conversationText = if (messages.isNotEmpty()) {
+            messages.takeLast(10).joinToString("\n") { msg ->
+                val speaker = if (msg.role == "user") "User" else "Assistant"
+                val text = if (msg.text.length > 500) msg.text.take(500) + "..." else msg.text
+                "$speaker: $text"
+            }
+        } else {
+            "User: $queryText"
+        }
+
+        // Generate a 3-7 word high-quality title using Gemini
         val prompt = """
-            Current date and time: $currentDateTimeStr.
-            
-            Create an exceptionally elegant, professional, 3-8 word human-friendly title summarizing this user message.
-            Format Rules:
-            - Capture the main topic, user intent, or core question.
-            - Output ONLY the title string. 
-            - Do not include quotes, markdown, colons, timestamps, emojis, prefix labels, or any introductory text.
-            - Keep it human-readable, like a Claude/ChatGPT/Notion AI title.
+            Create an exceptionally elegant, professional, 3-7 word human-friendly title that precisely describes the main topic or active discussion of the following conversation.
 
-            Message: $queryText
+            Requirements:
+            - Capture the primary topic, user intent, or core question.
+            - If the discussion changes/evolves into a completely different primary topic, the title should reflect the *current active topic* instead of the initial one.
+            - Avoid poor, generic, or robotic titles like "New Chat", "Conversation", "Chat 1", "Untitled", "Hello", "Hi", etc.
+            - Avoid technical/leaked tags, quotes, markdown formatting, colons, timestamps, emojis, or introductory text.
+            - Keep it highly specific, searchable, and concise (3 to 7 words).
+            - Output ONLY the raw title string, nothing else.
+
+            Conversation:
+            $conversationText
         """.trimIndent()
 
         val request = GenerateContentRequest(
@@ -413,8 +425,134 @@ class IntelligenceRepository(private val context: Context) {
             }
 
             val sessionItem = sessionDao.getAllSessionsFlow().firstOrNull()?.find { it.id == sessionId }
-            if (sessionItem != null) {
+            if (sessionItem != null && sessionItem.title != proposedTitle) {
                 sessionDao.insertSession(sessionItem.copy(title = proposedTitle, lastUpdatedAt = System.currentTimeMillis()))
+            }
+        }
+    }
+
+    fun isGenericTitle(title: String): Boolean {
+        val t = title.trim()
+        val tLower = t.lowercase()
+        if (t.isEmpty()) return true
+        
+        val genericKeywords = listOf(
+            "untitled", "new session", "new chat", "conversation", "chat ", "hello", "hi", "draft", "brief", "analysis", "study", "inquiry"
+        )
+        if (genericKeywords.any { tLower.contains(it) || tLower.startsWith(it) }) return true
+        
+        val stalePrefixes = listOf(
+            "origin pattern", "causal chain", "source mapping", "root factor", "deep cause", 
+            "foundation analysis", "trigger sequence", "core driver", "underlying force",
+            "cognitive pattern", "behavioral motive", "mental model", "psychological driver",
+            "belief system", "emotional trigger", "bias detection", "subconscious pattern",
+            "identity lens", "feedback loop", "system dynamics", "incentive structure",
+            "network effect", "systemic leverage", "loop analysis", "equilibrium pattern",
+            "emergent behavior", "system blind spot", "reality intel"
+        )
+        if (stalePrefixes.any { tLower.startsWith(it) }) return true
+        
+        return false
+    }
+
+    fun runOneTimeTitleMigration() {
+        backgroundScope.launch(Dispatchers.IO) {
+            val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+            if (prefs.getBoolean("title_migration_completed_v2", false)) return@launch
+
+            android.util.Log.d("MIGRATION", "Starting one-time session title migration...")
+            val sessions = sessionDao.getAllSessions()
+            for (session in sessions) {
+                if (isGenericTitle(session.title)) {
+                    val messages = messageDao.getMessagesForSession(session.id)
+                    val firstUserQuery = messages.firstOrNull { it.role == "user" }?.text ?: ""
+                    if (firstUserQuery.isNotEmpty()) {
+                        try {
+                            android.util.Log.d("MIGRATION", "Regenerating title for session ${session.id} current title='${session.title}'")
+                            generateTitleForSession(session.id, firstUserQuery)
+                            kotlinx.coroutines.delay(1000L)
+                        } catch (e: Exception) {
+                            android.util.Log.e("MIGRATION", "Error regenerating title for session ${session.id}", e)
+                        }
+                    }
+                }
+            }
+            prefs.edit().putBoolean("title_migration_completed_v2", true).apply()
+            android.util.Log.d("MIGRATION", "One-time session title migration finished.")
+            
+            // Trigger attachment cloud migration
+            runOneTimeAttachmentMigration()
+        }
+    }
+
+    fun runOneTimeAttachmentMigration() {
+        backgroundScope.launch(Dispatchers.IO) {
+            val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+            val isLoggedIn = prefs.getBoolean("is_logged_in", false)
+            val userId = prefs.getString("user_id", "") ?: ""
+            if (!isLoggedIn || userId.isEmpty()) return@launch
+
+            if (prefs.getBoolean("attachment_migration_completed_v1", false)) return@launch
+
+            android.util.Log.d("MIGRATION", "Starting one-time attachment cloud migration...")
+            try {
+                val allAttachments = attachmentDao.getAllAttachments()
+                for (attachment in allAttachments) {
+                    if (attachment.remoteUrl.isNullOrBlank()) {
+                        val message = messageDao.getMessageById(attachment.messageId) ?: continue
+                        android.util.Log.d("MIGRATION", "Migrating attachment ${attachment.attachmentId} to cloud...")
+                        try {
+                            val uri = android.net.Uri.parse(attachment.localUri)
+                            val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
+                            val storageRef = storage.reference.child("$userId/${message.sessionId}/${message.id}/${attachment.fileName}")
+                            
+                            val uploadTask = if (uri.scheme == "content") {
+                                val inputStream = context.contentResolver.openInputStream(uri)
+                                if (inputStream != null) {
+                                    storageRef.putStream(inputStream)
+                                } else null
+                            } else {
+                                val path = uri.path ?: attachment.localUri
+                                val file = java.io.File(path)
+                                if (file.exists()) {
+                                    storageRef.putFile(android.net.Uri.fromFile(file))
+                                } else null
+                            }
+                            
+                            if (uploadTask != null) {
+                                com.google.android.gms.tasks.Tasks.await(uploadTask)
+                                val downloadUrl = com.google.android.gms.tasks.Tasks.await(storageRef.downloadUrl).toString()
+                                
+                                val updatedAttachment = attachment.copy(remoteUrl = downloadUrl)
+                                attachmentDao.insertAttachment(updatedAttachment)
+                                
+                                val finalAttachments = attachmentDao.getAttachmentsForMessage(message.id)
+                                val finalImageUris = finalAttachments.map { it.remoteUrl ?: it.localUri }.joinToString(",")
+                                messageDao.insertMessage(message.copy(imageUri = finalImageUris))
+                                
+                                val size = try {
+                                    val u = android.net.Uri.parse(updatedAttachment.localUri)
+                                    if (u.scheme == "content") {
+                                        context.contentResolver.openFileDescriptor(u, "r")?.use { it.statSize } ?: 0L
+                                    } else {
+                                        val path = u.path ?: updatedAttachment.localUri
+                                        val f = java.io.File(path)
+                                        if (f.exists()) f.length() else 0L
+                                    }
+                                } catch (e: Exception) { 0L }
+                                
+                                CloudSyncService.uploadAttachment(userId, message.sessionId, message.id, updatedAttachment, size)
+                                CloudSyncService.uploadMessage(userId, message.id, message.sessionId, message.role, message.text, finalImageUris, message.timestamp, message.replyToMessageId, message.selectedText)
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("MIGRATION", "Failed to migrate attachment ${attachment.attachmentId}", e)
+                        }
+                    }
+                }
+                prefs.edit().putBoolean("attachment_migration_completed_v1", true).apply()
+                android.util.Log.d("MIGRATION", "One-time attachment cloud migration finished.")
+            } catch (e: Exception) {
+                android.util.Log.e("MIGRATION", "Error in attachment migration", e)
             }
         }
     }
@@ -662,6 +800,62 @@ class IntelligenceRepository(private val context: Context) {
         }
 
         sessionDao.updateLastUsed(sessionId, System.currentTimeMillis())
+    }
+
+    suspend fun retryAttachmentUpload(attachmentId: String) = withContext(Dispatchers.IO) {
+        val attachment = attachmentDao.getAttachmentById(attachmentId) ?: return@withContext
+        val message = messageDao.getMessageById(attachment.messageId) ?: return@withContext
+        
+        triggerUpload { uid ->
+            val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
+            if (attachment.remoteUrl == null) {
+                try {
+                    val uri = android.net.Uri.parse(attachment.localUri)
+                    val storageRef = storage.reference.child("$uid/${message.sessionId}/${message.id}/${attachment.fileName}")
+                    
+                    val uploadTask = if (uri.scheme == "content") {
+                        val inputStream = context.contentResolver.openInputStream(uri)
+                        if (inputStream != null) {
+                            storageRef.putStream(inputStream)
+                        } else null
+                    } else {
+                        val path = uri.path ?: attachment.localUri
+                        val file = java.io.File(path)
+                        if (file.exists()) {
+                            storageRef.putFile(android.net.Uri.fromFile(file))
+                        } else null
+                    }
+                    
+                    if (uploadTask != null) {
+                        com.google.android.gms.tasks.Tasks.await(uploadTask)
+                        val downloadUrl = com.google.android.gms.tasks.Tasks.await(storageRef.downloadUrl).toString()
+                        
+                        val updatedAttachment = attachment.copy(remoteUrl = downloadUrl)
+                        attachmentDao.insertAttachment(updatedAttachment)
+                        
+                        val finalAttachments = attachmentDao.getAttachmentsForMessage(message.id)
+                        val finalImageUris = finalAttachments.map { it.remoteUrl ?: it.localUri }.joinToString(",")
+                        messageDao.insertMessage(message.copy(imageUri = finalImageUris))
+                        
+                        val size = try {
+                            val u = android.net.Uri.parse(updatedAttachment.localUri)
+                            if (u.scheme == "content") {
+                                context.contentResolver.openFileDescriptor(u, "r")?.use { it.statSize } ?: 0L
+                            } else {
+                                val path = u.path ?: updatedAttachment.localUri
+                                val f = java.io.File(path)
+                                if (f.exists()) f.length() else 0L
+                            }
+                        } catch (e: Exception) { 0L }
+                        
+                        CloudSyncService.uploadAttachment(uid, message.sessionId, message.id, updatedAttachment, size)
+                        CloudSyncService.uploadMessage(uid, message.id, message.sessionId, message.role, message.text, finalImageUris, message.timestamp, message.replyToMessageId, message.selectedText)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
     }
 
     suspend fun runConversationContinuityFlow(sessionId: String, cleanQuery: String) = withContext(Dispatchers.IO) {
@@ -2845,8 +3039,8 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             )
 
             // Dynamic Title & Message depending on analysis vs normal conversation response
-            var title = "Analysis Complete"
-            var content = "Your DepthLens analysis is ready."
+            var title = "DepthLens"
+            var content = "DepthLens has finished responding."
 
             try {
                 val messages = db.messageDao().getMessagesForSession(sessionId)
@@ -2856,29 +3050,6 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                 if (isError) {
                     title = "Analysis Failed"
                     content = "DepthLens encountered an error during analysis. Tap to view."
-                } else {
-                    val lastUserMsg = messages.lastOrNull { it.role == "user" }
-                    val textLower = lastUserMsg?.text?.lowercase() ?: ""
-                    val hasAttachment = lastUserMsg?.imageUri != null || 
-                                        textLower.contains("🔍") ||
-                                        textLower.contains("deep-lens") ||
-                                        textLower.contains("scanning") ||
-                                        textLower.contains("analysis") ||
-                                        textLower.contains("analyze") ||
-                                        textLower.contains("scan") ||
-                                        textLower.contains("digging") ||
-                                        textLower.contains("document") ||
-                                        textLower.contains("pdf") ||
-                                        textLower.contains("video") ||
-                                        textLower.contains("image")
-                    
-                    if (hasAttachment) {
-                        title = "Analysis Complete"
-                        content = "Your DepthLens analysis is ready."
-                    } else {
-                        title = "New AI Response"
-                        content = "Tap to continue your conversation."
-                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()

@@ -28,6 +28,7 @@ class MainActivity : FragmentActivity() {
     var mediaProjectionIntentData: Intent? = null
     var activeMediaProjection: android.media.projection.MediaProjection? = null
     @Volatile var isAppInForeground: Boolean = false
+    @Volatile var currentContext: android.content.Context? = null
   }
 
   private val screenShareLauncher = registerForActivityResult(
@@ -125,6 +126,12 @@ class MainActivity : FragmentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    currentContext = applicationContext
+    try {
+        androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(AppLifecycleTracker)
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
     enableEdgeToEdge()
 
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -324,4 +331,36 @@ class MainActivity : FragmentActivity() {
       startVoiceModeTrigger = true
     }
   }
+}
+
+object AppLifecycleTracker : androidx.lifecycle.DefaultLifecycleObserver {
+    override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
+        MainActivity.isAppInForeground = true
+    }
+
+    override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
+        MainActivity.isAppInForeground = false
+    }
+
+    override fun onResume(owner: androidx.lifecycle.LifecycleOwner) {
+        MainActivity.isAppInForeground = true
+        cancelCompletedNotification()
+    }
+
+    override fun onPause(owner: androidx.lifecycle.LifecycleOwner) {
+        // App is pausing
+    }
+
+    private fun cancelCompletedNotification() {
+        try {
+            val ctx = MainActivity.currentContext
+            if (ctx != null) {
+                val notificationManager = ctx.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                notificationManager.cancel(1002)
+                android.util.Log.d("AppLifecycleTracker", "Cancelled completed notification (ID 1002) as user returned to app.")
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 }

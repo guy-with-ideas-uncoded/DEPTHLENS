@@ -65,6 +65,8 @@ import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.ManageSearch
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.CallSplit
+import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -1717,11 +1719,12 @@ fun HomeScreen(
                                             ) {
                                                 Column {
                                                     if (message.replyToMessageId != null && message.selectedText != null) {
-                                                        ReplyHeaderBlock(
-                                                            replyToMessageId = message.replyToMessageId,
-                                                            selectedText = message.selectedText,
-                                                            allMessages = activeMessages,
-                                                            isUserMessage = true,
+                                                        androidx.compose.foundation.text.selection.DisableSelection {
+                                                            ReplyHeaderBlock(
+                                                                replyToMessageId = message.replyToMessageId,
+                                                                selectedText = message.selectedText,
+                                                                allMessages = activeMessages,
+                                                                isUserMessage = true,
                                                             onRepliedBoxClick = { targetId ->
                                                                 val idx = activeMessages.indexOfFirst { it.id == targetId }
                                                                 if (idx >= 0) {
@@ -1732,6 +1735,7 @@ fun HomeScreen(
                                                                 }
                                                             }
                                                         )
+                                                        }
                                                         Spacer(modifier = Modifier.height(6.dp))
                                                     }
                                                     val highlightedUserText = remember(message.text, searchQuery, isSearchActive, safeMatchIndex, searchMatches, selectedMessageId, selectedText) {
@@ -1812,6 +1816,7 @@ fun HomeScreen(
                                     }
                                     
                                     // Subtle micro action buttons row
+                                    androidx.compose.foundation.text.selection.DisableSelection {
                                     Row(
                                         modifier = Modifier.padding(top = 4.dp, bottom = 4.dp, end = 2.dp),
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1857,6 +1862,7 @@ fun HomeScreen(
                                                 modifier = Modifier.size(10.dp)
                                             )
                                         }
+                                    }
                                     }
                                 }
                         } else {
@@ -1985,6 +1991,7 @@ fun HomeScreen(
                                         ) {
                                             Column {
                                                 if (message.replyToMessageId != null && message.selectedText != null) {
+                                                    androidx.compose.foundation.text.selection.DisableSelection {
                                                     ReplyHeaderBlock(
                                                         replyToMessageId = message.replyToMessageId,
                                                         selectedText = message.selectedText,
@@ -2000,6 +2007,7 @@ fun HomeScreen(
                                                             }
                                                         }
                                                     )
+                                                    }
                                                     Spacer(modifier = Modifier.height(6.dp))
                                                 }
                                                 // TAG label
@@ -2060,6 +2068,7 @@ fun HomeScreen(
                                                 }
 
                                                 // Action icons row
+                                                androidx.compose.foundation.text.selection.DisableSelection {
                                                 ResponseActionRow(
                                                     message = message,
                                                     displayText = plainCleanedResponse,
@@ -2079,7 +2088,7 @@ fun HomeScreen(
                                                      Box(
                                                          modifier = Modifier
                                                              .premiumGlassBg(cornerRadius = 999.dp, borderWidth = 1.dp)
-                                                             .clickable { onSubmitQuery("Go Deeper") }
+                                                             .clickable { currentOnSubmitQuery("Go Deeper") }
                                                              .padding(horizontal = 10.dp, vertical = 5.dp)
                                                      ) {
                                                          Text("Go Deeper", color = TextPrimaryColor, fontSize = 10.sp, fontFamily = InstrumentSansFontFamily, fontWeight = FontWeight.Medium)
@@ -2089,11 +2098,12 @@ fun HomeScreen(
                                                      Box(
                                                          modifier = Modifier
                                                              .premiumGlassBg(cornerRadius = 999.dp, borderWidth = 1.dp)
-                                                             .clickable { onSubmitQuery("Challenge it") }
+                                                             .clickable { currentOnSubmitQuery("Challenge it") }
                                                              .padding(horizontal = 10.dp, vertical = 5.dp)
                                                      ) {
                                                          Text("Challenge it", color = TextPrimaryColor, fontSize = 10.sp, fontFamily = InstrumentSansFontFamily, fontWeight = FontWeight.Medium)
                                                      }
+                                                 }
                                                  }
                                              }
                                          }
@@ -2200,12 +2210,21 @@ fun HomeScreen(
                 }
 
                 // Attachment Preview before sending
-                attachedImageUri?.let { uri ->
-                    AttachmentPreviewItem(
-                        uri = uri,
-                        onRemove = onRemoveAttachment,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                attachedImageUri?.let { uriString ->
+                    val uris = uriString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    uris.forEach { singleUri ->
+                        AttachmentPreviewItem(
+                            uri = singleUri,
+                            onRemove = {
+                                if (uris.size <= 1) {
+                                    onRemoveAttachment()
+                                } else {
+                                    onRemoveAttachmentUri(singleUri)
+                                }
+                            },
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
                 }
 
                 // ── Premium Glass Pill Input Bar (DepthLens Redesign) ───────────────────
@@ -2796,29 +2815,28 @@ fun HomeScreen(
 
     // ── Attachment file picker launcher ──────────────────────────────────────
     val attachPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            try {
-                // Persist read access so the attachment can still be opened later
-                // (even after the app is reopened). With the old GetContent picker the
-                // content:// permission was temporary, so tapping the file later failed
-                // to open it. OpenDocument + takePersistableUriPermission fixes that.
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            uris.take(10).forEach { uri ->
                 try {
-                    context.contentResolver.takePersistableUriPermission(
-                        uri,
-                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
+                    // Persist read access so the attachment can still be opened later
+                    try {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.w("AttachmentSystem", "Could not persist URI permission: ${e.message}")
+                    }
+                    android.util.Log.d("AttachmentSystem", "Successfully selected attachment URI: $uri")
+                    onAddAttachment(uri.toString())
                 } catch (e: Exception) {
-                    android.util.Log.w("AttachmentSystem", "Could not persist URI permission: ${e.message}")
+                    android.util.Log.e("AttachmentSystem", "Failed to add attachment: ${e.message}", e)
                 }
-                android.util.Log.d("AttachmentSystem", "Successfully selected attachment URI: $uri")
-                onAddAttachment(uri.toString())
-            } catch (e: Exception) {
-                android.util.Log.e("AttachmentSystem", "Failed to add attachment: ${e.message}", e)
             }
         } else {
-            android.util.Log.w("AttachmentSystem", "File selection cancelled or returned null URI")
+            android.util.Log.w("AttachmentSystem", "File selection cancelled or returned null URIs")
         }
     }
 
@@ -4259,25 +4277,81 @@ fun ResponseActionRow(
                     modifier = Modifier.size(15.dp)
                 )
 
+                val isLiquid = ThemeManager.glassStyle == "Liquid Crystal"
+                val popupBg = SurfaceCardColor.copy(alpha = if (isLiquid) 0.93f else 0.98f)
                 DropdownMenu(
                     expanded = isMoreMenuExpanded,
                     onDismissRequest = { isMoreMenuExpanded = false },
-                    modifier = Modifier.background(SurfaceCardColor.copy(alpha = 0.95f))
+                    shape = RoundedCornerShape(14.dp),
+                    containerColor = popupBg,
+                    modifier = Modifier
+                        .width(185.dp)
+                        .border(1.dp, GlassBorder, RoundedCornerShape(14.dp))
+                        .padding(5.dp)
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("🌿 Branch in New Chat", color = TextPrimaryColor, fontFamily = InstrumentSansFontFamily) },
-                        onClick = {
-                            isMoreMenuExpanded = false
-                            onAction(MessageActionType.BRANCH, message.id)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("🌐 Search the Web", color = TextPrimaryColor, fontFamily = InstrumentSansFontFamily) },
-                        onClick = {
-                            isMoreMenuExpanded = false
-                            onAction(MessageActionType.SEARCH, message.id)
-                        }
-                    )
+                    val itemInteractionSource1 = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    val itemPressed1 by itemInteractionSource1.collectIsPressedAsState()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (itemPressed1) Color.White.copy(alpha = 0.12f) else Color.Transparent)
+                            .clickable(interactionSource = itemInteractionSource1, indication = null) {
+                                isMoreMenuExpanded = false
+                                onAction(MessageActionType.BRANCH, message.id)
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.CallSplit,
+                            contentDescription = null,
+                            tint = TextMutedColor,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Branch in New Chat",
+                            fontFamily = InstrumentSansFontFamily,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = TextPrimaryColor,
+                            lineHeight = 16.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    val itemInteractionSource2 = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                    val itemPressed2 by itemInteractionSource2.collectIsPressedAsState()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (itemPressed2) Color.White.copy(alpha = 0.12f) else Color.Transparent)
+                            .clickable(interactionSource = itemInteractionSource2, indication = null) {
+                                isMoreMenuExpanded = false
+                                onAction(MessageActionType.SEARCH, message.id)
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Language,
+                            contentDescription = null,
+                            tint = TextMutedColor,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Search the Web",
+                            fontFamily = InstrumentSansFontFamily,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = TextPrimaryColor,
+                            lineHeight = 16.sp
+                        )
+                    }
                 }
             }
         }
@@ -6744,5 +6818,3 @@ private fun CustomSelectionMenu(
         }
     }
 }
-
-

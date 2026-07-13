@@ -122,6 +122,9 @@ interface AttachmentDao {
     @Query("SELECT * FROM attachments WHERE messageId = :messageId")
     fun getAttachmentsForMessageFlow(messageId: String): Flow<List<AttachmentEntity>>
 
+    @Query("SELECT * FROM attachments WHERE attachmentId = :attachmentId")
+    suspend fun getAttachmentById(attachmentId: String): AttachmentEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAttachment(attachment: AttachmentEntity)
 

@@ -245,6 +245,11 @@ fun AttachmentThumb(attachment: AttachmentEntity, onClick: () -> Unit) {
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { appeared = true }
 
+    val isUploading = remember(attachment.remoteUrl, attachment.localUri) {
+        attachment.remoteUrl.isNullOrBlank() && 
+        (attachment.localUri.startsWith("file://") || attachment.localUri.startsWith("/"))
+    }
+
     val cardShape = RoundedCornerShape(16.dp)
     Box(
         modifier = Modifier
@@ -357,6 +362,31 @@ fun AttachmentThumb(attachment: AttachmentEntity, onClick: () -> Unit) {
                     color = accent,
                     strokeWidth = 2.dp
                 )
+            }
+        }
+
+        // Uploading Overlay
+        if (isUploading) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = accent,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Uploading…",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
     }

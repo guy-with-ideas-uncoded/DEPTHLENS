@@ -601,6 +601,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         
         viewModelScope.launch {
             restoreActiveSession()
+            repository.runOneTimeTitleMigration()
             kotlinx.coroutines.delay(5000)
             isFirstLaunchSessionSetup = false
         }
@@ -794,6 +795,12 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         _attachedImageUri.value = null
     }
 
+    fun retryAttachmentUpload(attachmentId: String) {
+        viewModelScope.launch {
+            repository.retryAttachmentUpload(attachmentId)
+        }
+    }
+
     fun deleteMessage(messageId: String) {
         viewModelScope.launch {
             repository.deleteMessageById(messageId)
@@ -946,16 +953,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 repository.startBackgroundAnalysis(sessionId, _selectedMode.value, _selectedDepth.value) {
                     if (cleanQuery.isNotEmpty()) {
                         viewModelScope.launch {
-                            if (isFirstQuery) {
-                                if (isVagueOrShort(cleanQuery)) {
-                                    val tempTitle = getTemporaryTitleForMode(_selectedMode.value)
-                                    repository.updateSessionTitle(sessionId, tempTitle)
-                                } else {
-                                    repository.generateTitleForSession(sessionId, cleanQuery)
-                                }
-                            } else if (isSecondQuery && isCurrentTitleVague && !isVagueOrShort(cleanQuery)) {
-                                repository.generateTitleForSession(sessionId, cleanQuery)
-                            }
+                            repository.generateTitleForSession(sessionId, cleanQuery)
                         }
                     }
                 }
@@ -1352,11 +1350,12 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 return@launch
             }
             try {
-                if (uid != previousUserId) {
-                    android.util.Log.i("AUTH_STATE", "onAuthSuccess: User switch detected ($previousUserId -> $uid). Clearing local cache tables.")
+                val lastSyncedUser = prefs.getString("last_synced_user_id", "")
+                if (uid != lastSyncedUser && lastSyncedUser?.isNotEmpty() == true) {
+                    android.util.Log.i("AUTH_STATE", "onAuthSuccess: User switch detected (lastSynced=$lastSyncedUser -> uid=$uid). Clearing local cache tables.")
                     repository.clearLocalData()
-                    prefs.edit().putString("last_synced_user_id", uid).apply()
                 }
+                prefs.edit().putString("last_synced_user_id", uid).apply()
 
                 android.util.Log.d("USER_FETCH", "onAuthSuccess: Assuring remote Firestore profile exists for uid=$uid")
                 com.example.data.network.CloudSyncService.createProfileIfNotExist(uid, email, name)

@@ -848,7 +848,11 @@ object CloudSyncService {
                     Log.d("CHAT_LOAD", "Writing session descriptor to Room: $sessionId - $title")
                     sessionDao.insertSession(sEntity)
                     
-                    // A. Load inline messages list/history if stored as a list inside the session document itself (Legacy fallback)
+                    val localSessionObj = initialLocalSessions.find { it.id == sessionId }
+                    val isRemoteNewer = localSessionObj == null || lastUpdatedAt > localSessionObj.lastUpdatedAt
+                    
+                    if (isRemoteNewer) {
+                        // A. Load inline messages list/history if stored as a list inside the session document itself (Legacy fallback)
                     try {
                         val inlineMessages = doc.get("messages") ?: doc.get("history") ?: doc.get("chats")
                         if (inlineMessages is List<*>) {
@@ -1105,6 +1109,9 @@ object CloudSyncService {
                         } catch (se: Exception) {
                             Log.e("SYNC", "Failed fetching nested message subcollection '$subColName' for session $sessionId: ${se.message}")
                         }
+                    }
+                    } else {
+                        Log.d("SYNC", "Skipping message synchronization for session $sessionId because local session is up-to-date (Local: ${localSessionObj?.lastUpdatedAt}, Remote: $lastUpdatedAt)")
                     }
                     
                     Log.d("CHAT_LOAD", "Finished restoring session $sessionId locally")
