@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -227,7 +228,11 @@ private suspend fun resolveAttachmentLocalUri(
  * Compact glass thumbnail card for one attachment. Tapping calls [onClick].
  */
 @Composable
-fun AttachmentThumb(attachment: AttachmentEntity, onClick: () -> Unit) {
+fun AttachmentThumb(
+    attachment: AttachmentEntity,
+    onRetry: (() -> Unit)? = null,
+    onClick: () -> Unit
+) {
     val context = LocalContext.current
     var resolvedUri by remember(attachment.attachmentId, attachment.localUri, attachment.remoteUrl) {
         mutableStateOf(attachment.localUri)
@@ -245,9 +250,13 @@ fun AttachmentThumb(attachment: AttachmentEntity, onClick: () -> Unit) {
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { appeared = true }
 
-    val isUploading = remember(attachment.remoteUrl, attachment.localUri) {
+    val isUploading = remember(attachment.uploadStatus, attachment.remoteUrl) {
         attachment.remoteUrl.isNullOrBlank() && 
-        (attachment.localUri.startsWith("file://") || attachment.localUri.startsWith("/"))
+        (attachment.uploadStatus == "UPLOADING" || attachment.uploadStatus == "PENDING")
+    }
+
+    val isFailed = remember(attachment.uploadStatus) {
+        attachment.uploadStatus == "FAILED"
     }
 
     val cardShape = RoundedCornerShape(16.dp)
@@ -386,6 +395,53 @@ fun AttachmentThumb(attachment: AttachmentEntity, onClick: () -> Unit) {
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Medium
                     )
+                }
+            }
+        }
+
+        // Failed Overlay
+        if (isFailed) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = 0.65f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Upload failed",
+                        tint = Color(0xFFE57373),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "Failed",
+                        color = Color(0xFFE57373),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (onRetry != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(accent.copy(alpha = 0.8f))
+                                .clickable { onRetry() }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Retry",
+                                color = Color.White,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }

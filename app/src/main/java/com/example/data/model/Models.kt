@@ -37,7 +37,8 @@ data class AttachmentEntity(
     val localUri: String,
     val remoteUrl: String? = null,
     val thumbnailUrl: String? = null,
-    val fileName: String
+    val fileName: String,
+    val uploadStatus: String = "PENDING"
 )
 
 @Immutable

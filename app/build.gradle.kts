@@ -173,13 +173,17 @@ if (!rootEnvFileSetting.exists()) {
     val firebaseKey = System.getenv("FIREBASE_API_KEY") ?: ""
     val firebaseProjectId = System.getenv("FIREBASE_PROJECT_ID") ?: ""
     val firebaseAppId = System.getenv("FIREBASE_APP_ID") ?: ""
+    val supabaseUrl = System.getenv("SUPABASE_URL") ?: ""
+    val supabaseAnonKey = System.getenv("SUPABASE_ANON_KEY") ?: ""
     
-    if (geminiKey.isNotEmpty() || firebaseKey.isNotEmpty() || firebaseProjectId.isNotEmpty()) {
+    if (geminiKey.isNotEmpty() || firebaseKey.isNotEmpty() || firebaseProjectId.isNotEmpty() || supabaseUrl.isNotEmpty()) {
         val content = """
             GEMINI_API_KEY=${if (geminiKey.isNotEmpty()) geminiKey else "MY_GEMINI_API_KEY"}
             FIREBASE_API_KEY=${if (firebaseKey.isNotEmpty()) firebaseKey else "PLACEHOLDER_FIREBASE_API_KEY"}
             FIREBASE_PROJECT_ID=${if (firebaseProjectId.isNotEmpty()) firebaseProjectId else "PLACEHOLDER_FIREBASE_PROJECT_ID"}
             FIREBASE_APP_ID=${if (firebaseAppId.isNotEmpty()) firebaseAppId else "PLACEHOLDER_FIREBASE_APP_ID"}
+            SUPABASE_URL=${if (supabaseUrl.isNotEmpty()) supabaseUrl else "PLACEHOLDER_SUPABASE_URL"}
+            SUPABASE_ANON_KEY=${if (supabaseAnonKey.isNotEmpty()) supabaseAnonKey else "PLACEHOLDER_SUPABASE_ANON_KEY"}
         """.trimIndent()
         rootEnvFileSetting.writeText(content)
         println("Generated root .env file from System environment variables successfully.")
@@ -386,7 +390,7 @@ dependencies {
   implementation(platform("com.google.firebase:firebase-bom:34.12.0"))
   implementation("com.google.firebase:firebase-firestore")
   implementation("com.google.firebase:firebase-auth")
-  implementation("com.google.firebase:firebase-storage")
+  // implementation("com.google.firebase:firebase-storage")
 
   // Coroutines
   implementation(libs.kotlinx.coroutines.core)

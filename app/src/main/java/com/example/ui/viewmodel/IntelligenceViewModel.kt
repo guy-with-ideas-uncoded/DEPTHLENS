@@ -2188,15 +2188,20 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 var photoUrl = ""
                 var isLocalFallback = false
                 
-                // 2. Attempt remote upload via Firebase Storage
+                // 2. Attempt remote upload via Supabase Storage
                 try {
-                    val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
-                    val photoRef = storage.reference.child("profile_photos/$uid")
-                    // Upload photo bytes
-                    val uploadTask = photoRef.putBytes(bytes)
-                    uploadTask.awaitTask()
-                    // Get URL
-                    photoUrl = photoRef.downloadUrl.awaitTask().toString()
+                    val path = "profile_photos/$uid"
+                    val downloadUrl = com.example.data.network.SupabaseStorageClient.uploadBytes(
+                        bucket = "attachments",
+                        path = path,
+                        bytes = bytes,
+                        mimeType = "image/jpeg"
+                    )
+                    if (downloadUrl != null) {
+                        photoUrl = downloadUrl
+                    } else {
+                        throw Exception("Failed to upload to Supabase")
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                     photoUrl = localPhotoUrl
@@ -2256,11 +2261,9 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                     return@launch
                 }
 
-                // Delete from Firebase Storage
+                // Delete from Supabase Storage
                 try {
-                    val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
-                    val photoRef = storage.reference.child("profile_photos/$uid")
-                    photoRef.delete().awaitTask()
+                    com.example.data.network.SupabaseStorageClient.deleteFile("attachments", "profile_photos/$uid")
                 } catch (e: Exception) {
                     // Item might not exist, proceed
                 }
@@ -2315,16 +2318,14 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 val credential = com.google.firebase.auth.EmailAuthProvider.getCredential(user.email!!, password)
                 com.google.android.gms.tasks.Tasks.await(user.reauthenticate(credential))
 
-                // 2. Delete from Firebase Storage
-                val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
-                val paths = listOf("profile_photos/$uid", "uploads/$uid", "attachments/$uid")
-                for (path in paths) {
-                    try {
-                        val ref = storage.reference.child(path)
-                        com.google.android.gms.tasks.Tasks.await(ref.delete())
-                    } catch (e: Exception) {
-                        // ignore if missing
-                    }
+                // 2. Delete from Supabase Storage
+                try {
+                    com.example.data.network.SupabaseStorageClient.deleteFiles(
+                        bucket = "attachments",
+                        paths = listOf("profile_photos/$uid", "uploads/$uid", "attachments/$uid")
+                    )
+                } catch (e: Exception) {
+                    // ignore if missing
                 }
 
                 // 3. Delete subcollections and documents in Firestore

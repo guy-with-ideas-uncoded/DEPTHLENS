@@ -2155,6 +2155,7 @@ Text(
                                 onDeleteMessage = { id -> viewModel.deleteMessage(id) },
                                 isPrivacyModeEnabled = isPrivacyModeEnabled,
                                 onGetAttachmentsFlow = { msgId, uriField -> viewModel.getAttachmentsForMessageFlow(msgId, uriField) },
+                                onRetryAttachmentUpload = { id -> viewModel.retryAttachmentUpload(id) },
                                 speechManager = viewModel.speechManager,
                                 onNavigateToVoiceMode = { currentTab = "voice_conversation" },
                                 onDigDeeper = { originalPrompt, responseText -> viewModel.digDeeper(originalPrompt, responseText) },
@@ -2592,6 +2593,7 @@ fun UserMessageBubble(
     message: MessageEntity,
     onGetAttachmentsFlow: (String, String) -> kotlinx.coroutines.flow.Flow<List<com.example.data.model.AttachmentEntity>>,
     onAttachmentClick: (com.example.data.model.AttachmentEntity) -> Unit = {},
+    onRetryAttachmentUpload: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -2612,7 +2614,12 @@ fun UserMessageBubble(
                 if (attachments.isNotEmpty()) {
                     attachments.forEach { attachment ->
                         Box(modifier = Modifier.padding(bottom = 6.dp)) {
-                            AttachmentThumb(attachment) { onAttachmentClick(attachment) }
+                            AttachmentThumb(
+                                attachment = attachment,
+                                onRetry = { onRetryAttachmentUpload(attachment.attachmentId) }
+                            ) {
+                                onAttachmentClick(attachment)
+                            }
                         }
                     }
                 }

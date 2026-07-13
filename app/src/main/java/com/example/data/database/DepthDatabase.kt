@@ -138,7 +138,7 @@ interface AttachmentDao {
     suspend fun getAllAttachments(): List<AttachmentEntity>
 }
 
-@Database(entities = [SessionEntity::class, MessageEntity::class, AttachmentEntity::class, MemoryInsight::class, com.example.data.model.ArchivedInsightEntity::class], version = 5, exportSchema = false)
+@Database(entities = [SessionEntity::class, MessageEntity::class, AttachmentEntity::class, MemoryInsight::class, com.example.data.model.ArchivedInsightEntity::class], version = 6, exportSchema = false)
 abstract class DepthDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
     abstract fun messageDao(): MessageDao
@@ -147,6 +147,12 @@ abstract class DepthDatabase : RoomDatabase() {
     abstract fun archivedInsightDao(): ArchivedInsightDao
 
     companion object {
+        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE attachments ADD COLUMN uploadStatus TEXT NOT NULL DEFAULT 'PENDING'")
+            }
+        }
+
         @Volatile
         private var INSTANCE: DepthDatabase? = null
 
@@ -211,6 +217,7 @@ abstract class DepthDatabase : RoomDatabase() {
                             }
                         }
                     })
+                    .addMigrations(MIGRATION_5_6)
                     .fallbackToDestructiveMigration()
                     .build()
                     
@@ -254,6 +261,7 @@ abstract class DepthDatabase : RoomDatabase() {
                                 DepthDatabase::class.java,
                                 "depthlens_database"
                             )
+                            .addMigrations(MIGRATION_5_6)
                             .fallbackToDestructiveMigration()
                             .build()
                             instance.openHelper.writableDatabase
@@ -268,6 +276,7 @@ abstract class DepthDatabase : RoomDatabase() {
                     DepthDatabase::class.java,
                     "depthlens_database"
                 )
+                .addMigrations(MIGRATION_5_6)
                 .fallbackToDestructiveMigration()
                 .build()
                 

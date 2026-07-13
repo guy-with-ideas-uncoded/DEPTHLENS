@@ -604,6 +604,7 @@ fun HomeScreen(
     onDeleteMessage: (String) -> Unit = {},
     isPrivacyModeEnabled: Boolean = false,
     onGetAttachmentsFlow: (String, String) -> Flow<List<com.example.data.model.AttachmentEntity>> = { _, _ -> kotlinx.coroutines.flow.flowOf(emptyList()) },
+    onRetryAttachmentUpload: (String) -> Unit = {},
     speechManager: com.example.ui.viewmodel.SpeechManager? = null,
     onDigDeeper: (String, String) -> Unit = { _, _ -> },
     onNavigateToVoiceMode: () -> Unit = {},
@@ -1372,7 +1373,7 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp, bottom = 24.dp)
+                        .padding(top = 16.dp, bottom = 0.dp)
                         .offset(y = slideOffset)
                         .alpha(opacity),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -1636,7 +1637,12 @@ fun HomeScreen(
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
                                                 for (attachment in attachments) {
-                                                    AttachmentThumb(attachment) { viewerAttachment = attachment }
+                                                    AttachmentThumb(
+                                                        attachment = attachment,
+                                                        onRetry = { onRetryAttachmentUpload(attachment.attachmentId) }
+                                                    ) {
+                                                        viewerAttachment = attachment
+                                                    }
                                                 }
                                             }
                                         }
@@ -2114,7 +2120,9 @@ fun HomeScreen(
                      }
                  }
 
-                 Spacer(modifier = Modifier.height(16.dp))
+                 if (activeMessages.isNotEmpty()) {
+                     Spacer(modifier = Modifier.height(16.dp))
+                 }
                  
                  if (isLoading && activeMessages.isNotEmpty()) {
                         Row(
@@ -2128,9 +2136,11 @@ fun HomeScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                if (activeMessages.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
-        }
+            } // Close the main scrollable Column (which starts on line 1217)
 
         // ── ChatGPT-style unified input bar + floating popups wrapper ──────
         Column(

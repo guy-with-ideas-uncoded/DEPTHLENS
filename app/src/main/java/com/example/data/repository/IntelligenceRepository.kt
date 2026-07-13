@@ -26,6 +26,8 @@ import java.io.ByteArrayOutputStream
 import java.util.UUID
 import com.example.data.network.CloudSyncService
 import com.example.AnalysisService
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 const val SYSTEM_ERROR_PREFIX = "[DEPTHLENS_SYSTEM_ERROR]"
 
@@ -503,27 +505,34 @@ class IntelligenceRepository(private val context: Context) {
                         android.util.Log.d("MIGRATION", "Migrating attachment ${attachment.attachmentId} to cloud...")
                         try {
                             val uri = android.net.Uri.parse(attachment.localUri)
-                            val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
-                            val storageRef = storage.reference.child("$userId/${message.sessionId}/${message.id}/${attachment.fileName}")
-                            
-                            val uploadTask = if (uri.scheme == "content") {
-                                val inputStream = context.contentResolver.openInputStream(uri)
-                                if (inputStream != null) {
-                                    storageRef.putStream(inputStream)
-                                } else null
+                            val storagePath = "$userId/${message.sessionId}/${message.id}/${attachment.fileName}"
+                            val downloadUrl = if (uri.scheme == "content") {
+                                com.example.data.network.SupabaseStorageClient.uploadInputStream(
+                                    context = context,
+                                    bucket = "attachments",
+                                    path = storagePath,
+                                    uri = uri,
+                                    mimeType = attachment.mimeType
+                                )
                             } else {
                                 val path = uri.path ?: attachment.localUri
                                 val file = java.io.File(path)
                                 if (file.exists()) {
-                                    storageRef.putFile(android.net.Uri.fromFile(file))
+                                    com.example.data.network.SupabaseStorageClient.uploadFile(
+                                        bucket = "attachments",
+                                        path = storagePath,
+                                        file = file,
+                                        mimeType = attachment.mimeType
+                                    )
                                 } else null
                             }
                             
-                            if (uploadTask != null) {
-                                com.google.android.gms.tasks.Tasks.await(uploadTask)
-                                val downloadUrl = com.google.android.gms.tasks.Tasks.await(storageRef.downloadUrl).toString()
+                            if (downloadUrl != null) {
                                 
-                                val updatedAttachment = attachment.copy(remoteUrl = downloadUrl)
+                                val updatedAttachment = attachment.copy(
+                                    remoteUrl = downloadUrl,
+                                    uploadStatus = "SUCCESS"
+                                )
                                 attachmentDao.insertAttachment(updatedAttachment)
                                 
                                 val finalAttachments = attachmentDao.getAttachmentsForMessage(message.id)
@@ -709,6 +718,15 @@ class IntelligenceRepository(private val context: Context) {
                         Pair(uriStr, name)
                     }
 
+                    val initialStatus = if (uriStr.startsWith("http")) {
+                        "SUCCESS"
+                    } else {
+                        val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+                        val isLoggedIn = prefs.getBoolean("is_logged_in", false)
+                        val userId = prefs.getString("user_id", "") ?: ""
+                        if (isLoggedIn && userId.isNotEmpty()) "PENDING" else "LOCAL"
+                    }
+
                     val attachment = AttachmentEntity(
                         attachmentId = UUID.randomUUID().toString(),
                         messageId = userMsg.id,
@@ -716,7 +734,8 @@ class IntelligenceRepository(private val context: Context) {
                         localUri = permanentLocalUri,
                         remoteUrl = if (uriStr.startsWith("http")) uriStr else null,
                         thumbnailUrl = null,
-                        fileName = finalFileName
+                        fileName = finalFileName,
+                        uploadStatus = initialStatus
                     )
                     attachmentDao.insertAttachment(attachment)
                     attachment
@@ -727,37 +746,54 @@ class IntelligenceRepository(private val context: Context) {
             }
 
             triggerUpload { uid ->
-                val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
-                
                 // Sequentially upload all attachments
                 attachments.forEach { attachment ->
                     if (attachment.remoteUrl == null) {
                         try {
+                            val uploadingAttachment = attachment.copy(uploadStatus = "UPLOADING")
+                            attachmentDao.insertAttachment(uploadingAttachment)
+
                             val uri = android.net.Uri.parse(attachment.localUri)
-                            val storageRef = storage.reference.child("$uid/${userMsg.sessionId}/${userMsg.id}/${attachment.fileName}")
+                            val storagePath = "$uid/${userMsg.sessionId}/${userMsg.id}/${attachment.fileName}"
                             
-                            val uploadTask = if (uri.scheme == "content") {
-                                val inputStream = context.contentResolver.openInputStream(uri)
-                                if (inputStream != null) {
-                                    storageRef.putStream(inputStream)
-                                } else null
+                            val downloadUrl = if (uri.scheme == "content") {
+                                com.example.data.network.SupabaseStorageClient.uploadInputStream(
+                                    context = context,
+                                    bucket = "attachments",
+                                    path = storagePath,
+                                    uri = uri,
+                                    mimeType = attachment.mimeType
+                                )
                             } else {
                                 val path = uri.path ?: attachment.localUri
                                 val file = java.io.File(path)
                                 if (file.exists()) {
-                                    storageRef.putFile(android.net.Uri.fromFile(file))
+                                    com.example.data.network.SupabaseStorageClient.uploadFile(
+                                        bucket = "attachments",
+                                        path = storagePath,
+                                        file = file,
+                                        mimeType = attachment.mimeType
+                                    )
                                 } else null
                             }
                             
-                            if (uploadTask != null) {
-                                com.google.android.gms.tasks.Tasks.await(uploadTask)
-                                val downloadUrl = com.google.android.gms.tasks.Tasks.await(storageRef.downloadUrl).toString()
+                            if (downloadUrl != null) {
                                 
-                                val updatedAttachment = attachment.copy(remoteUrl = downloadUrl)
+                                val updatedAttachment = attachment.copy(
+                                    remoteUrl = downloadUrl,
+                                    uploadStatus = "SUCCESS"
+                                )
                                 attachmentDao.insertAttachment(updatedAttachment)
+                            } else {
+                                val failedAttachment = attachment.copy(uploadStatus = "FAILED")
+                                attachmentDao.insertAttachment(failedAttachment)
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
+                            try {
+                                val failedAttachment = attachment.copy(uploadStatus = "FAILED")
+                                attachmentDao.insertAttachment(failedAttachment)
+                            } catch (ignored: Exception) {}
                         }
                     }
                 }
@@ -807,30 +843,41 @@ class IntelligenceRepository(private val context: Context) {
         val message = messageDao.getMessageById(attachment.messageId) ?: return@withContext
         
         triggerUpload { uid ->
-            val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
             if (attachment.remoteUrl == null) {
                 try {
+                    val uploadingAttachment = attachment.copy(uploadStatus = "UPLOADING")
+                    attachmentDao.insertAttachment(uploadingAttachment)
+
                     val uri = android.net.Uri.parse(attachment.localUri)
-                    val storageRef = storage.reference.child("$uid/${message.sessionId}/${message.id}/${attachment.fileName}")
+                    val storagePath = "$uid/${message.sessionId}/${message.id}/${attachment.fileName}"
                     
-                    val uploadTask = if (uri.scheme == "content") {
-                        val inputStream = context.contentResolver.openInputStream(uri)
-                        if (inputStream != null) {
-                            storageRef.putStream(inputStream)
-                        } else null
+                    val downloadUrl = if (uri.scheme == "content") {
+                        com.example.data.network.SupabaseStorageClient.uploadInputStream(
+                            context = context,
+                            bucket = "attachments",
+                            path = storagePath,
+                            uri = uri,
+                            mimeType = attachment.mimeType
+                        )
                     } else {
                         val path = uri.path ?: attachment.localUri
                         val file = java.io.File(path)
                         if (file.exists()) {
-                            storageRef.putFile(android.net.Uri.fromFile(file))
+                            com.example.data.network.SupabaseStorageClient.uploadFile(
+                                bucket = "attachments",
+                                path = storagePath,
+                                file = file,
+                                mimeType = attachment.mimeType
+                            )
                         } else null
                     }
                     
-                    if (uploadTask != null) {
-                        com.google.android.gms.tasks.Tasks.await(uploadTask)
-                        val downloadUrl = com.google.android.gms.tasks.Tasks.await(storageRef.downloadUrl).toString()
+                    if (downloadUrl != null) {
                         
-                        val updatedAttachment = attachment.copy(remoteUrl = downloadUrl)
+                        val updatedAttachment = attachment.copy(
+                            remoteUrl = downloadUrl,
+                            uploadStatus = "SUCCESS"
+                        )
                         attachmentDao.insertAttachment(updatedAttachment)
                         
                         val finalAttachments = attachmentDao.getAttachmentsForMessage(message.id)
@@ -850,9 +897,16 @@ class IntelligenceRepository(private val context: Context) {
                         
                         CloudSyncService.uploadAttachment(uid, message.sessionId, message.id, updatedAttachment, size)
                         CloudSyncService.uploadMessage(uid, message.id, message.sessionId, message.role, message.text, finalImageUris, message.timestamp, message.replyToMessageId, message.selectedText)
+                    } else {
+                        val failedAttachment = attachment.copy(uploadStatus = "FAILED")
+                        attachmentDao.insertAttachment(failedAttachment)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    try {
+                        val failedAttachment = attachment.copy(uploadStatus = "FAILED")
+                        attachmentDao.insertAttachment(failedAttachment)
+                    } catch (ignored: Exception) {}
                 }
             }
         }
@@ -3939,5 +3993,17 @@ private fun detectIntentLevel(query: String, hasPreviousAnalysis: Boolean): Inte
         IntentLevel.LEVEL_2_ANALYTICAL
     } else {
         IntentLevel.LEVEL_1_DIRECT
+    }
+}
+
+private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitTask(): T = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+    this.addOnCompleteListener { task ->
+        if (continuation.isActive) {
+            if (task.isSuccessful) {
+                continuation.resume(task.result)
+            } else {
+                continuation.resumeWithException(task.exception ?: RuntimeException("Task failed"))
+            }
+        }
     }
 }

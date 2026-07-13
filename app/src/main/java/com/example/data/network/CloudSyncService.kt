@@ -15,6 +15,8 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 object CloudSyncService {
     private const val TAG = "CloudSyncService"
@@ -147,36 +149,23 @@ object CloudSyncService {
     }
 
     /**
-     * Placeholder File Upload to Firebase Storage REST (unused in general code)
+     * Placeholder File Upload to Supabase Storage REST
      */
-    suspend fun uploadToFirebaseStorage(
+    suspend fun uploadToSupabaseStorage(
         localFile: File,
         mimeType: String
     ): String? = withContext(Dispatchers.IO) {
-        val firebaseApp = try { com.google.firebase.FirebaseApp.getInstance() } catch(e: Exception) { null }
-        val projectId = firebaseApp?.options?.projectId ?: "depthlens-prod"
-        val bucketName = firebaseApp?.options?.storageBucket?.takeIf { it.isNotBlank() } ?: "$projectId.appspot.com"
         val fileName = "uploads/${UUID.randomUUID()}_${localFile.name}"
-        
         try {
-            val url = "https://firebasestorage.googleapis.com/v0/b/$bucketName/o?name=${java.net.URLEncoder.encode(fileName, "UTF-8")}"
-            val requestBody = localFile.readBytes().toRequestBody(mimeType.toMediaType())
-            
-            val request = Request.Builder()
-                .url(url)
-                .post(requestBody)
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext null
-                val bodyStr = response.body?.string() ?: return@withContext null
-                val responseJson = JSONObject(bodyStr)
-                val downloadToken = responseJson.optString("downloadTokens", "")
-                return@withContext "https://firebasestorage.googleapis.com/v0/b/$bucketName/o/${java.net.URLEncoder.encode(fileName, "UTF-8")}?alt=media&token=$downloadToken"
-            }
+            SupabaseStorageClient.uploadFile(
+                bucket = "attachments",
+                path = fileName,
+                file = localFile,
+                mimeType = mimeType
+            )
         } catch (e: Exception) {
             e.printStackTrace()
-            return@withContext null
+            null
         }
     }
 
@@ -267,29 +256,34 @@ object CloudSyncService {
             val db = FirebaseFirestore.getInstance()
             val storagePath = "$userId/$sessionId/$messageId/${attachment.fileName}"
             
-            // Upload file to Firebase Storage if we don't have a remote URL yet
+            // Upload file to Supabase Storage if we don't have a remote URL yet
             if (finalRemoteUrl.isNullOrBlank() && attachment.localUri.isNotBlank()) {
-                val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
-                val storageRef = storage.reference.child(storagePath)
                 val uri = android.net.Uri.parse(attachment.localUri)
                 
                 try {
-                    val uploadTask = if (uri.scheme == "content" && context != null) {
-                        val inputStream = context.contentResolver.openInputStream(uri)
-                        if (inputStream != null) {
-                            storageRef.putStream(inputStream)
-                        } else null
+                    val downloadUrl = if (uri.scheme == "content" && context != null) {
+                        SupabaseStorageClient.uploadInputStream(
+                            context = context,
+                            bucket = "attachments",
+                            path = storagePath,
+                            uri = uri,
+                            mimeType = attachment.mimeType
+                        )
                     } else {
                         val path = uri.path ?: attachment.localUri
                         val file = java.io.File(path)
                         if (file.exists()) {
-                            storageRef.putFile(android.net.Uri.fromFile(file))
+                            SupabaseStorageClient.uploadFile(
+                                bucket = "attachments",
+                                path = storagePath,
+                                file = file,
+                                mimeType = attachment.mimeType
+                            )
                         } else null
                     }
                     
-                    if (uploadTask != null) {
-                        com.google.android.gms.tasks.Tasks.await(uploadTask)
-                        finalRemoteUrl = com.google.android.gms.tasks.Tasks.await(storageRef.downloadUrl).toString()
+                    if (downloadUrl != null) {
+                        finalRemoteUrl = downloadUrl
                         
                         // Update local DB if possible (we do it in repository instead if we don't have DB instance here, but let's try if context is provided)
                         if (context != null) {
@@ -298,7 +292,7 @@ object CloudSyncService {
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("SYNC", "Error uploading file to Firebase Storage: ${e.message}")
+                    Log.e("SYNC", "Error uploading file to Supabase Storage: ${e.message}")
                 }
             }
 
@@ -324,7 +318,7 @@ object CloudSyncService {
                 .collection("messages").document(messageId)
                 .collection("attachments").document(attachment.attachmentId)
                 .set(data, SetOptions.merge())
-            com.google.android.gms.tasks.Tasks.await(task)
+            task.awaitTask()
             true
         } catch (e: Exception) {
             Log.e("SYNC", "Error uploading attachment: ${e.message}", e)
@@ -1277,7 +1271,6 @@ object CloudSyncService {
             try {
                 val attsRef = docRef.collection("attachments")
                 val attsSnap = com.google.android.gms.tasks.Tasks.await(attsRef.get())
-                val storage = com.google.firebase.storage.FirebaseStorage.getInstance()
                 
                 for (doc in attsSnap.documents) {
                     val attId = doc.getString("attachmentId") ?: doc.id
@@ -1285,14 +1278,14 @@ object CloudSyncService {
                     
                     // Delete from storage
                     try {
-                        val storageRefNew = storage.reference.child("$userId/$sessionId/$messageId/$fileName")
-                        com.google.android.gms.tasks.Tasks.await(storageRefNew.delete())
+                        val storagePathNew = "$userId/$sessionId/$messageId/$fileName"
+                        SupabaseStorageClient.deleteFile("attachments", storagePathNew)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error deleting new storage path file: ${e.message}")
                     }
                     try {
-                        val storageRefOld = storage.reference.child("uploads/$userId/$sessionId/$messageId/${attId}_$fileName")
-                        com.google.android.gms.tasks.Tasks.await(storageRefOld.delete())
+                        val storagePathOld = "uploads/$userId/$sessionId/$messageId/${attId}_$fileName"
+                        SupabaseStorageClient.deleteFile("attachments", storagePathOld)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error deleting old storage file for attachment $attId: ${e.message}")
                     }
@@ -1373,6 +1366,18 @@ object CloudSyncService {
             })
         } catch (e: Exception) {
             Log.e(TAG, "Failed to prepare EmailJS transmission", e)
+        }
+    }
+}
+
+private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitTask(): T = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+    this.addOnCompleteListener { task ->
+        if (continuation.isActive) {
+            if (task.isSuccessful) {
+                continuation.resume(task.result)
+            } else {
+                continuation.resumeWithException(task.exception ?: RuntimeException("Task failed"))
+            }
         }
     }
 }
