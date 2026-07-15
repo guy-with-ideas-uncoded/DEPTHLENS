@@ -177,34 +177,75 @@ object SupabaseStorageClient {
     fun getSignedUrl(bucket: String, path: String, expiresIn: Int = 3600): String? {
         val sUrl = supabaseUrl
         val aKey = anonKey
-        val encodedPath = path.split("/").joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
-        val url = "$sUrl/storage/v1/object/sign/$bucket/$encodedPath"
+        if (sUrl.isBlank() || aKey.isBlank() || path.isBlank()) {
+            Log.e(TAG, "Cannot sign object: Supabase configuration or storage path is empty")
+            return null
+        }
 
-        val json = JSONObject().apply { put("expiresIn", expiresIn) }
-        val requestBody = json.toString().toRequestBody("application/json".toMediaTypeOrNull())
-
-        val request = Request.Builder()
-            .url(url)
-            .header("Authorization", "Bearer $aKey")
-            .header("apikey", aKey)
-            .post(requestBody)
-            .build()
+        val encodedPath = encodeStoragePath(path)
+        val endpoint = "$sUrl/storage/v1/object/sign/$bucket/$encodedPath"
+        val requestBody = JSONObject()
+            .apply { put("expiresIn", expiresIn) }
+            .toString()
+            .toRequestBody("application/json".toMediaTypeOrNull())
 
         return try {
+            val request = Request.Builder()
+                .url(endpoint)
+                .header("Authorization", "Bearer $aKey")
+                .header("apikey", aKey)
+                .post(requestBody)
+                .build()
+
             client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val bodyString = response.body?.string()
-                    JSONObject(bodyString ?: "").getString("signedUrl")
-                } else {
-                    Log.e(TAG, "Error generating signed URL: ${response.code} ${response.body?.string()}")
-                    null
+                val responseBody = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "Signed URL request failed status=${response.code} path=$path body=$responseBody")
+                    return@use null
                 }
+
+                val json = JSONObject(responseBody)
+                // Storage API versions have returned both spellings. Accept either.
+                val rawSignedUrl = json.optString("signedURL")
+                    .takeIf { it.isNotBlank() }
+                    ?: json.optString("signedUrl").takeIf { it.isNotBlank() }
+                    ?: json.optString("signed_url").takeIf { it.isNotBlank() }
+
+                if (rawSignedUrl == null) {
+                    Log.e(TAG, "Signed URL response did not contain a recognized URL field")
+                    return@use null
+                }
+
+                absoluteStorageUrl(rawSignedUrl)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception generating signed URL", e)
+            Log.e(TAG, "Exception generating signed URL for path=$path", e)
             null
         }
     }
+
+    private fun encodeStoragePath(path: String): String =
+        path.trim().trimStart('/').split("/")
+            .filter { it.isNotEmpty() }
+            .joinToString("/") {
+                java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20")
+            }
+
+    /** Converts relative Storage API responses into URLs accepted by OkHttp. */
+    private fun absoluteStorageUrl(url: String): String {
+        val value = url.trim()
+        return when {
+            value.startsWith("https://") || value.startsWith("http://") -> value
+            value.startsWith("/storage/v1/") -> "$supabaseUrl$value"
+            value.startsWith("/object/") -> "$supabaseUrl/storage/v1$value"
+            value.startsWith("storage/v1/") -> "$supabaseUrl/$value"
+            value.startsWith("object/") -> "$supabaseUrl/storage/v1/$value"
+            value.startsWith("/") -> "$supabaseUrl$value"
+            else -> "$supabaseUrl/$value"
+        }
+    }
+
+    private fun safeUrlForLog(url: String): String = url.substringBefore('?')
 
     /**
      * Generates a public URL for the given bucket and path.
@@ -212,5 +253,98 @@ object SupabaseStorageClient {
     fun getPublicUrl(bucket: String, path: String): String {
         val encodedPath = path.split("/").joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
         return "$supabaseUrl/storage/v1/object/public/$bucket/$encodedPath"
+    }
+
+    /**
+     * Result of a low-level storage download attempt. [httpStatus] is the HTTP code,
+     * or -1 if the request threw before a response was received.
+     */
+    data class DownloadOutcome(
+        val success: Boolean,
+        val httpStatus: Int,
+        val bytesWritten: Long,
+        val errorBody: String? = null,
+        val exception: String? = null
+    )
+
+    /**
+     * Extracts the storage object path (the part AFTER the bucket name) from any
+     * Supabase Storage URL, whether public (`/object/public/<bucket>/...`),
+     * signed (`/object/sign/<bucket>/...?token=...`) or authenticated
+     * (`/object/<bucket>/...`). Returns null if the URL is not a storage URL for
+     * the given bucket. The returned path is URL-decoded and query-stripped so it
+     * matches the exact key used at upload time.
+     */
+    fun storagePathFromUrl(url: String?, bucket: String = "attachments"): String? {
+        if (url.isNullOrBlank() || !url.startsWith("http")) return null
+        val markers = listOf(
+            "/object/public/$bucket/",
+            "/object/sign/$bucket/",
+            "/object/authenticated/$bucket/",
+            "/object/$bucket/"
+        )
+        for (marker in markers) {
+            val idx = url.indexOf(marker)
+            if (idx >= 0) {
+                var path = url.substring(idx + marker.length)
+                // Strip any query string (signed-URL token, cache-busters, etc.)
+                path = path.substringBefore("?").substringBefore("#")
+                if (path.isBlank()) return null
+                return try {
+                    // Decode each segment; keep slashes intact.
+                    path.split("/").joinToString("/") { java.net.URLDecoder.decode(it, "UTF-8") }
+                } catch (e: Exception) {
+                    path
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Downloads [url] into [dest], writing full diagnostics to logcat on failure.
+     * Sends the anon apikey/Authorization headers so the call works for public
+     * buckets, signed URLs, and RLS-protected buckets alike. Never throws.
+     */
+    fun downloadUrlToFile(url: String, dest: File): DownloadOutcome {
+        val normalizedUrl = absoluteStorageUrl(url)
+        return try {
+            val aKey = anonKey
+            val builder = Request.Builder().url(normalizedUrl).get()
+            if (aKey.isNotBlank()) {
+                builder.header("apikey", aKey)
+                builder.header("Authorization", "Bearer $aKey")
+            }
+
+            client.newCall(builder.build()).execute().use { response ->
+                val status = response.code
+                if (response.isSuccessful) {
+                    dest.parentFile?.mkdirs()
+                    val tempFile = File(dest.parentFile, "${dest.name}.part")
+                    if (tempFile.exists()) tempFile.delete()
+                    val written = response.body?.byteStream()?.use { input ->
+                        tempFile.outputStream().use { output -> input.copyTo(output) }
+                    } ?: 0L
+
+                    if (written > 0L && tempFile.renameTo(dest)) {
+                        Log.d(TAG, "Download succeeded status=$status bytes=$written file=${dest.name}")
+                        DownloadOutcome(true, status, written)
+                    } else {
+                        if (tempFile.exists()) tempFile.delete()
+                        if (dest.exists() && dest.length() == 0L) dest.delete()
+                        Log.e(TAG, "Download produced no committed data status=$status url=${safeUrlForLog(normalizedUrl)}")
+                        DownloadOutcome(false, status, written, errorBody = "empty or uncommitted body")
+                    }
+                } else {
+                    val body = response.body?.string()
+                    Log.e(TAG, "Download failed status=$status url=${safeUrlForLog(normalizedUrl)} body=$body")
+                    DownloadOutcome(false, status, 0L, errorBody = body)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Download exception url=${safeUrlForLog(normalizedUrl)}", e)
+            if (dest.exists() && dest.length() == 0L) dest.delete()
+            DownloadOutcome(false, -1, 0L, exception = e.toString())
+        }
     }
 }

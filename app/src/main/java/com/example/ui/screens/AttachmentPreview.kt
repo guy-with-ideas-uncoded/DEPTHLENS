@@ -154,76 +154,6 @@ private fun querySize(context: android.content.Context, uriString: String): Long
     } ?: 0L
 } catch (e: Exception) { 0L }
 
-private suspend fun resolveAttachmentLocalUri(
-    context: android.content.Context,
-    attachment: AttachmentEntity,
-    onProgress: (Boolean) -> Unit = {}
-): String = withContext(Dispatchers.IO) {
-    val currentUri = attachment.localUri
-    if (currentUri.isNotBlank()) {
-        try {
-            val uri = android.net.Uri.parse(currentUri)
-            if (uri.scheme == "content") {
-                var readable = false
-                try {
-                    context.contentResolver.openFileDescriptor(uri, "r")?.use {
-                        readable = true
-                    }
-                } catch (e: Exception) {}
-                if (readable) return@withContext currentUri
-            } else {
-                val path = uri.path ?: currentUri
-                val file = java.io.File(path)
-                if (file.exists()) return@withContext currentUri
-            }
-        } catch (e: Exception) {}
-    }
-
-    val remote = attachment.remoteUrl
-    if (remote.isNullOrBlank()) return@withContext currentUri
-
-    try {
-        onProgress(true)
-        val cacheDir = java.io.File(context.cacheDir, "attachments")
-        cacheDir.mkdirs()
-        val destFile = java.io.File(cacheDir, "${attachment.attachmentId}_${attachment.fileName}")
-        
-        if (!destFile.exists()) {
-            val client = okhttp3.OkHttpClient.Builder()
-                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-                .build()
-            val request = okhttp3.Request.Builder().url(remote).build()
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    response.body?.byteStream()?.use { input ->
-                        java.io.FileOutputStream(destFile).use { output ->
-                            input.copyTo(output)
-                        }
-                    }
-                }
-            }
-        }
-
-        if (destFile.exists()) {
-            val newLocalUri = "file://${destFile.absolutePath}"
-            val updated = attachment.copy(localUri = newLocalUri)
-            try {
-                val db = com.example.data.database.DepthDatabase.getDatabase(context)
-                db.attachmentDao().insertAttachment(updated)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            onProgress(false)
-            return@withContext newLocalUri
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-    onProgress(false)
-    return@withContext currentUri
-}
-
 /**
  * Compact glass thumbnail card for one attachment. Tapping calls [onClick].
  */
@@ -240,7 +170,10 @@ fun AttachmentThumb(
     var isDownloading by remember { mutableStateOf(false) }
 
     LaunchedEffect(attachment.attachmentId, attachment.localUri, attachment.remoteUrl) {
-        resolvedUri = resolveAttachmentLocalUri(context, attachment) { isDownloading = it }
+        val viewModel = com.example.ui.viewmodel.IntelligenceViewModel.activeInstance
+        isDownloading = true
+        resolvedUri = viewModel?.downloadAndCacheAttachment(attachment) ?: attachment.localUri
+        isDownloading = false
     }
 
     val model = resolvedUri
@@ -464,7 +397,10 @@ fun InAppAttachmentViewer(attachment: AttachmentEntity, onDismiss: () -> Unit) {
 
     LaunchedEffect(attachment.attachmentId, attachment.localUri, attachment.remoteUrl, retryCount) {
         downloadFailed = false
-        val uri = resolveAttachmentLocalUri(context, attachment) { isDownloading = it }
+        val viewModel = com.example.ui.viewmodel.IntelligenceViewModel.activeInstance
+        isDownloading = true
+        val uri = viewModel?.downloadAndCacheAttachment(attachment) ?: attachment.localUri
+        isDownloading = false
         resolvedUri = uri
         
         // Double-check if the file is readable

@@ -36,6 +36,7 @@ data class AttachmentEntity(
     val mimeType: String,
     val localUri: String,
     val remoteUrl: String? = null,
+    val storagePath: String? = null,
     val thumbnailUrl: String? = null,
     val fileName: String,
     val uploadStatus: String = "PENDING"

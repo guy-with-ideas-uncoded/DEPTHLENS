@@ -112,3 +112,11 @@ object RetrofitClient {
         retrofit.create(GeminiApiService::class.java)
     }
 }
+
+fun getRequiredGeminiApiKey(): String {
+    val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+    if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY" || apiKey == "YOUR_GEMINI_API_KEY" || apiKey == "YOUR_API_KEY" || apiKey == "PLACEHOLDER_FIREBASE_API_KEY") {
+        throw IllegalStateException("Developer Error: GEMINI_API_KEY is missing or contains a placeholder. Please configure a valid GEMINI_API_KEY in the Google AI Studio Secrets panel. Do NOT use a fallback Firebase key.")
+    }
+    return apiKey
+}

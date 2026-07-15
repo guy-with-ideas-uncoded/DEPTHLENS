@@ -288,7 +288,7 @@ object CloudSyncService {
                         // Update local DB if possible (we do it in repository instead if we don't have DB instance here, but let's try if context is provided)
                         if (context != null) {
                             val dbLocal = com.example.data.database.DepthDatabase.getDatabase(context!!)
-                            dbLocal.attachmentDao().insertAttachment(attachment.copy(remoteUrl = finalRemoteUrl))
+                            dbLocal.attachmentDao().insertAttachment(attachment.copy(remoteUrl = finalRemoteUrl, storagePath = storagePath))
                         }
                     }
                 } catch (e: Exception) {
@@ -656,14 +656,24 @@ object CloudSyncService {
                                     val attsSnap = docRef.collection(subColName).document(msgId).collection("attachments").get()
                                     val attsResult = com.google.android.gms.tasks.Tasks.await(attsSnap, 5, java.util.concurrent.TimeUnit.SECONDS)
                                     for (attDoc in attsResult.documents) {
+                                        val fileName = getStringSafely(attDoc, "fileName", "attachment")
+                                        val remoteUrl = getStringSafely(attDoc, "remoteUrl", "")
+                                            .takeIf { it.isNotBlank() }
+                                            ?: getStringSafely(attDoc, "downloadUrl", "").takeIf { it.isNotBlank() }
+                                        val storagePath = getStringSafely(attDoc, "storagePath", "")
+                                            .takeIf { it.isNotBlank() }
+                                            ?: SupabaseStorageClient.storagePathFromUrl(remoteUrl, "attachments")
+                                            ?: "$userId/$sessionId/$msgId/$fileName"
                                         val attachment = com.example.data.model.AttachmentEntity(
                                             attachmentId = getStringSafely(attDoc, "attachmentId", attDoc.id),
-                                            messageId = getStringSafely(attDoc, "messageId", msgId),
+                                            messageId = msgId,
                                             mimeType = getStringSafely(attDoc, "mimeType", "application/octet-stream"),
-                                            localUri = getStringSafely(attDoc, "localUri", ""),
-                                            remoteUrl = getStringSafely(attDoc, "remoteUrl", "").takeIf { it.isNotBlank() } ?: getStringSafely(attDoc, "downloadUrl", "").takeIf { it.isNotBlank() },
+                                            localUri = remoteUrl.orEmpty(),
+                                            remoteUrl = remoteUrl,
+                                            storagePath = storagePath,
                                             thumbnailUrl = getStringSafely(attDoc, "thumbnailUrl", "").takeIf { it.isNotBlank() },
-                                            fileName = getStringSafely(attDoc, "fileName", "attachment")
+                                            fileName = fileName,
+                                            uploadStatus = "SUCCESS"
                                         )
                                         attachmentDao.insertAttachment(attachment)
                                     }
@@ -1057,14 +1067,24 @@ object CloudSyncService {
                                             .collection("attachments").get()
                                         val attsResult = com.google.android.gms.tasks.Tasks.await(attsSnap)
                                         for (attDoc in attsResult.documents) {
+                                            val fileName = getStringSafely(attDoc, "fileName", "attachment")
+                                            val remoteUrl = getStringSafely(attDoc, "remoteUrl", "").takeIf { it.isNotBlank() }
+                                                ?: getStringSafely(attDoc, "downloadUrl", "").takeIf { it.isNotBlank() }
+                                            // storagePath is the ONLY reliable key after local storage loss.
+                                            // Never persist it empty: recover from the URL, else rebuild deterministically.
+                                            val storagePath = getStringSafely(attDoc, "storagePath", "").takeIf { it.isNotBlank() }
+                                                ?: SupabaseStorageClient.storagePathFromUrl(remoteUrl, "attachments")
+                                                ?: "$userId/$sessionId/$msgId/$fileName"
                                             val attachment = com.example.data.model.AttachmentEntity(
                                                 attachmentId = getStringSafely(attDoc, "attachmentId", attDoc.id),
                                                 messageId = getStringSafely(attDoc, "messageId", msgId),
                                                 mimeType = getStringSafely(attDoc, "mimeType", "application/octet-stream"),
-                                                localUri = getStringSafely(attDoc, "localUri", ""),
-                                                remoteUrl = getStringSafely(attDoc, "remoteUrl", "").takeIf { it.isNotBlank() } ?: getStringSafely(attDoc, "downloadUrl", "").takeIf { it.isNotBlank() },
+                                                localUri = remoteUrl.orEmpty(),
+                                                remoteUrl = remoteUrl,
+                                                storagePath = storagePath,
                                                 thumbnailUrl = getStringSafely(attDoc, "thumbnailUrl", "").takeIf { it.isNotBlank() },
-                                                fileName = getStringSafely(attDoc, "fileName", "attachment")
+                                                fileName = fileName,
+                                                uploadStatus = "SUCCESS"
                                             )
                                             attachmentDao.insertAttachment(attachment)
                                         }

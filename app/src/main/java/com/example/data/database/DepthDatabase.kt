@@ -125,6 +125,12 @@ interface AttachmentDao {
     @Query("SELECT * FROM attachments WHERE attachmentId = :attachmentId")
     suspend fun getAttachmentById(attachmentId: String): AttachmentEntity?
 
+    @Query("SELECT * FROM attachments WHERE localUri = :localUri LIMIT 1")
+    suspend fun getAttachmentByLocalUri(localUri: String): AttachmentEntity?
+
+    @Query("SELECT * FROM attachments WHERE remoteUrl = :remoteUrl LIMIT 1")
+    suspend fun getAttachmentByRemoteUrl(remoteUrl: String): AttachmentEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAttachment(attachment: AttachmentEntity)
 

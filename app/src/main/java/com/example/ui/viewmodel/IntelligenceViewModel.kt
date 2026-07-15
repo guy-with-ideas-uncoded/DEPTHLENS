@@ -97,6 +97,15 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         _replyMessageId.value = null
         _replySelectedText.value = null
     }
+
+    suspend fun downloadAndCacheAttachment(attachment: AttachmentEntity): String? {
+        return repository.downloadAndCacheAttachment(getApplication(), attachment)
+    }
+
+    suspend fun getAttachmentByUri(uri: String): AttachmentEntity? {
+        return repository.getAttachmentByUri(uri)
+    }
+
     private val _activeSessionId = MutableStateFlow<String?>(null)
     val activeSessionId: StateFlow<String?> = _activeSessionId.asStateFlow()
     private val _sessionLoadState = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -1130,9 +1139,10 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
 
         viewModelScope.launch {
             try {
-                val apiKey = BuildConfig.GEMINI_API_KEY
-                if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-                    val errMsg = "Error: Missing Gemini API Key in the Secrets panel."
+                val apiKey = try {
+                    com.example.data.network.getRequiredGeminiApiKey()
+                } catch (e: Exception) {
+                    val errMsg = "Error: ${e.message}"
                     _deepDiveInsights.value = _deepDiveInsights.value + (sessionId to errMsg)
                     return@launch
                 }
@@ -1834,7 +1844,11 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             
             // 1. Check API Key configuration
             val rawKey = BuildConfig.GEMINI_API_KEY
-            val isConfigured = !rawKey.isNullOrEmpty() && rawKey != "YOUR_GEMINI_API_KEY" && rawKey != "YOUR_API_KEY"
+            val isConfigured = !rawKey.isNullOrEmpty() && 
+                rawKey != "YOUR_GEMINI_API_KEY" && 
+                rawKey != "YOUR_API_KEY" && 
+                rawKey != "MY_GEMINI_API_KEY" && 
+                rawKey != "PLACEHOLDER_FIREBASE_API_KEY"
             val apiKeyStr = if (isConfigured) {
                 val prefix = if (rawKey.length > 4) rawKey.take(4) else "AIza"
                 val suffix = if (rawKey.length > 4) rawKey.takeLast(4) else "..."

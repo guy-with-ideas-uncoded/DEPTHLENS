@@ -10,7 +10,6 @@ import org.robolectric.annotation.Config
 import java.io.File
 import java.io.ByteArrayInputStream
 import com.google.firebase.FirebaseApp
-import com.google.firebase.storage.FirebaseStorage
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], manifest = Config.NONE)
@@ -114,7 +113,7 @@ class ExampleUnitTest {
             val stackTrace = writer.toString()
             fail("OkHttp test threw exception:\nType: ${e::class.java.name}\nMessage: ${e.message}\nStackTrace:\n$stackTrace")
         } else {
-            fail("OkHttp Request completed successfully!\nResponse:\n$responseInfo")
+            println("OkHttp Request completed successfully!\nResponse:\n$responseInfo")
         }
     }
 }

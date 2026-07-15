@@ -5885,34 +5885,27 @@ fun findActivity(context: android.content.Context): android.app.Activity? {
 }
 
 fun openAttachment(context: android.content.Context, uriString: String, mimeType: String) {
+    android.util.Log.d("AttachmentTrace", "openAttachment called: uri=$uriString, mime=$mimeType")
     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
         var finalUriString = uriString
         
-        // 1. Check if it's a Supabase URL and we need to download it
-        val supabaseUrl = com.example.data.network.SupabaseStorageClient.supabaseUrl
-        if (uriString.startsWith("$supabaseUrl/storage/v1/object/public/attachments/")) {
-            val path = uriString.removePrefix("$supabaseUrl/storage/v1/object/public/attachments/")
-            val signedUrl = com.example.data.network.SupabaseStorageClient.getSignedUrl("attachments", path)
-            if (signedUrl != null) {
-                // Download file
-                try {
-                    val cacheFile = java.io.File(context.cacheDir, "temp_${System.currentTimeMillis()}_${java.io.File(path).name}")
-                    val client = okhttp3.OkHttpClient()
-                    val request = okhttp3.Request.Builder().url(signedUrl).build()
-                    client.newCall(request).execute().use { response ->
-                        if (response.isSuccessful) {
-                            response.body?.byteStream()?.use { input ->
-                                cacheFile.outputStream().use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-                            finalUriString = "file://${cacheFile.absolutePath}"
-                        }
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("openAttachment", "Download failed", e)
+        val viewModel = com.example.ui.viewmodel.IntelligenceViewModel.activeInstance
+        if (viewModel != null) {
+            val attachment = viewModel.getAttachmentByUri(uriString)
+            if (attachment != null) {
+                android.util.Log.d("AttachmentTrace", "Found attachment in DB: ${attachment.attachmentId}")
+                val cachedUri = viewModel.downloadAndCacheAttachment(attachment)
+                if (cachedUri != null) {
+                    android.util.Log.d("AttachmentTrace", "Successfully cached attachment: $cachedUri")
+                    finalUriString = cachedUri
+                } else {
+                    android.util.Log.e("AttachmentTrace", "Failed to cache attachment")
                 }
+            } else {
+                android.util.Log.d("AttachmentTrace", "No attachment found in DB for URI: $uriString")
             }
+        } else {
+            android.util.Log.e("AttachmentTrace", "IntelligenceViewModel.activeInstance is null")
         }
         
         withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -5928,7 +5921,7 @@ fun openAttachment(context: android.content.Context, uriString: String, mimeType
                                 java.io.File(path)
                             )
                         } catch (e: Exception) {
-                            android.util.Log.e("openAttachment", "FileProvider resolution failed: ${e.message}")
+                            android.util.Log.e("AttachmentTrace", "FileProvider resolution failed: ${e.message}")
                             rawUri
                         }
                     } else {
@@ -5938,25 +5931,17 @@ fun openAttachment(context: android.content.Context, uriString: String, mimeType
                     rawUri
                 }
 
+                android.util.Log.d("AttachmentTrace", "Attempting to open Intent with URI: $uri")
                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                     setDataAndType(uri, mimeType)
                     addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 context.startActivity(intent)
+                android.util.Log.d("AttachmentTrace", "Successfully started Intent")
             } catch (e: Exception) {
-                android.util.Log.e("openAttachment", "Failed opening via MIME type, trying generic", e)
-                try {
-                    val rawUri = android.net.Uri.parse(finalUriString)
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, rawUri).apply {
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    context.startActivity(intent)
-                } catch (ex: Exception) {
-                    android.util.Log.e("openAttachment", "Failed generic file open", ex)
-                    android.widget.Toast.makeText(context, "Cannot open this file type directly", android.widget.Toast.LENGTH_SHORT).show()
-                }
+                android.util.Log.e("AttachmentTrace", "Failed opening via MIME type", e)
+                android.widget.Toast.makeText(context, "Failed to open attachment: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -168,27 +168,26 @@ android {
 // Build-time helper: automatically generate .env file from host environment variables
 // prior to secrets-gradle-plugin evaluation so that injected secrets are correctly compiled.
 val rootEnvFileSetting = rootProject.file(".env")
-if (!rootEnvFileSetting.exists()) {
-    val geminiKey = System.getenv("GEMINI_API_KEY") ?: ""
-    val firebaseKey = System.getenv("FIREBASE_API_KEY") ?: ""
-    val firebaseProjectId = System.getenv("FIREBASE_PROJECT_ID") ?: ""
-    val firebaseAppId = System.getenv("FIREBASE_APP_ID") ?: ""
-    val supabaseUrl = System.getenv("SUPABASE_URL") ?: ""
-    val supabaseAnonKey = System.getenv("SUPABASE_ANON_KEY") ?: ""
-    
-    if (geminiKey.isNotEmpty() || firebaseKey.isNotEmpty() || firebaseProjectId.isNotEmpty() || supabaseUrl.isNotEmpty()) {
-        val content = """
-            GEMINI_API_KEY=${if (geminiKey.isNotEmpty()) geminiKey else "MY_GEMINI_API_KEY"}
-            FIREBASE_API_KEY=${if (firebaseKey.isNotEmpty()) firebaseKey else "PLACEHOLDER_FIREBASE_API_KEY"}
-            FIREBASE_PROJECT_ID=${if (firebaseProjectId.isNotEmpty()) firebaseProjectId else "PLACEHOLDER_FIREBASE_PROJECT_ID"}
-            FIREBASE_APP_ID=${if (firebaseAppId.isNotEmpty()) firebaseAppId else "PLACEHOLDER_FIREBASE_APP_ID"}
-            SUPABASE_URL=${if (supabaseUrl.isNotEmpty()) supabaseUrl else "PLACEHOLDER_SUPABASE_URL"}
-            SUPABASE_ANON_KEY=${if (supabaseAnonKey.isNotEmpty()) supabaseAnonKey else "PLACEHOLDER_SUPABASE_ANON_KEY"}
-        """.trimIndent()
-        rootEnvFileSetting.writeText(content)
-        println("Generated root .env file from System environment variables successfully.")
-    }
-}
+val geminiKey = System.getenv("GEMINI_API_KEY") ?: ""
+val firebaseKey = System.getenv("FIREBASE_API_KEY") ?: ""
+val firebaseProjectId = System.getenv("FIREBASE_PROJECT_ID") ?: ""
+val firebaseAppId = System.getenv("FIREBASE_APP_ID") ?: ""
+val supabaseUrl = System.getenv("SUPABASE_URL") ?: ""
+val supabaseAnonKey = System.getenv("SUPABASE_ANON_KEY") ?: ""
+val googleServicesJsonKey = System.getenv("GOOGLE_SERVICES_JSON") ?: ""
+
+val resolvedGeminiKey = if (geminiKey.isNotEmpty() && geminiKey != "MY_GEMINI_API_KEY") geminiKey else ""
+
+val content = """
+    GEMINI_API_KEY=$resolvedGeminiKey
+    FIREBASE_API_KEY=${if (firebaseKey.isNotEmpty()) firebaseKey else "PLACEHOLDER_FIREBASE_API_KEY"}
+    FIREBASE_PROJECT_ID=${if (firebaseProjectId.isNotEmpty()) firebaseProjectId else "PLACEHOLDER_FIREBASE_PROJECT_ID"}
+    FIREBASE_APP_ID=${if (firebaseAppId.isNotEmpty()) firebaseAppId else "PLACEHOLDER_FIREBASE_APP_ID"}
+    SUPABASE_URL=${if (supabaseUrl.isNotEmpty()) supabaseUrl else "PLACEHOLDER_SUPABASE_URL"}
+    SUPABASE_ANON_KEY=${if (supabaseAnonKey.isNotEmpty()) supabaseAnonKey else "PLACEHOLDER_SUPABASE_ANON_KEY"}
+""".trimIndent()
+rootEnvFileSetting.writeText(content)
+println("Generated/Updated root .env file from System environment variables successfully (Gemini key resolved length: ${resolvedGeminiKey.length}).")
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
 // to match the convention used in Web projects.

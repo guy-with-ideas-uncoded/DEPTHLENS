@@ -5,7 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
+import android.util.Log
 import com.example.data.database.DepthDatabase
+import java.io.File
 import com.example.data.model.*
 import com.example.data.network.*
 import com.example.BuildConfig
@@ -172,15 +174,28 @@ class IntelligenceRepository(private val context: Context) {
             val list = if (dbList.isNotEmpty()) {
                 dbList
             } else if (!imageUriField.isNullOrBlank()) {
-                imageUriField.split(",").map { uriString ->
+                imageUriField.split(",").filter { it.isNotBlank() }.map { uriString ->
                     val uri = uriString.trim()
+                    val isHttp = uri.startsWith("http")
+                    // Recover the exact storage key from the URL when possible so that
+                    // cloud restore works even when the Room attachments table is empty
+                    // (fresh install / cleared data). Falls back to deterministic reconstruction.
+                    val parsedPath = com.example.data.network.SupabaseStorageClient.storagePathFromUrl(uri, "attachments")
+                    val fileName = when {
+                        parsedPath != null -> parsedPath.substringAfterLast("/")
+                        isHttp -> uri.substringBefore("?").substringAfterLast("/")
+                        else -> Uri.parse(uri).path?.let { java.io.File(it).name } ?: "attachment"
+                    }
+                    val storagePath = parsedPath ?: reconstructStoragePath(messageId, fileName)
                     AttachmentEntity(
-                        attachmentId = UUID.randomUUID().toString(),
+                        attachmentId = "synthetic_${messageId}_${fileName.hashCode()}",
                         messageId = messageId,
                         mimeType = getUriMimeType(context, uri),
                         localUri = uri,
-                        remoteUrl = if (uri.startsWith("http")) uri else null,
-                        fileName = if (uri.startsWith("http")) uri.substringAfterLast("/") else (Uri.parse(uri).path?.let { java.io.File(it).name } ?: "attachment")
+                        remoteUrl = if (isHttp) uri else null,
+                        storagePath = storagePath,
+                        fileName = fileName,
+                        uploadStatus = if (isHttp || storagePath != null) "SUCCESS" else "LOCAL"
                     )
                 }
             } else {
@@ -190,57 +205,137 @@ class IntelligenceRepository(private val context: Context) {
         }
     }
 
-    suspend fun ensureLocalAttachment(attachment: AttachmentEntity): AttachmentEntity = withContext(Dispatchers.IO) {
-        val hasLocal = try {
-            if (attachment.localUri.startsWith("content://")) {
-                context.contentResolver.openFileDescriptor(Uri.parse(attachment.localUri), "r")?.close()
-                true
-            } else if (attachment.localUri.startsWith("file://")) {
-                java.io.File(Uri.parse(attachment.localUri).path ?: "").exists()
-            } else if (attachment.localUri.startsWith("/")) {
-                java.io.File(attachment.localUri).exists()
-            } else {
-                false
+    /**
+     * Returns true if [uriString] currently points at a readable on-device file/stream.
+     */
+    private fun isLocallyReadable(uriString: String?): Boolean {
+        if (uriString.isNullOrBlank()) return false
+        return try {
+            when {
+                uriString.startsWith("content://") -> {
+                    context.contentResolver.openFileDescriptor(Uri.parse(uriString), "r")?.close()
+                    true
+                }
+                uriString.startsWith("file://") -> java.io.File(Uri.parse(uriString).path ?: "").exists()
+                uriString.startsWith("/") -> java.io.File(uriString).exists()
+                else -> false
             }
         } catch (e: Exception) {
             false
         }
+    }
 
-        if (hasLocal) return@withContext attachment
+    /**
+     * Deterministically rebuilds the Supabase storage key for an attachment when the
+     * stored metadata is missing/empty. Key format is the single source of truth used
+     * everywhere else: `<userId>/<sessionId>/<messageId>/<fileName>`.
+     */
+    private suspend fun reconstructStoragePath(messageId: String, fileName: String): String? {
+        val authenticatedUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        val prefsUid = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString("user_id", null)
+        val userId = authenticatedUid?.takeIf { it.isNotBlank() }
+            ?: prefsUid?.takeIf { it.isNotBlank() }
+            ?: return null
+        if (fileName.isBlank()) return null
 
-        if (attachment.remoteUrl.isNullOrBlank()) return@withContext attachment
+        val sessionId = messageDao.getMessageById(messageId)?.sessionId
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        return "$userId/$sessionId/$messageId/$fileName"
+    }
 
+    /**
+     * Resolves the best usable storage key for an attachment, preferring stored
+     * metadata, then a key recovered from any known URL, then reconstruction.
+     */
+    private suspend fun effectiveStoragePath(attachment: AttachmentEntity): String? {
+        attachment.storagePath?.takeIf { it.isNotBlank() }?.let { return it }
+        com.example.data.network.SupabaseStorageClient.storagePathFromUrl(attachment.remoteUrl, "attachments")?.let { return it }
+        com.example.data.network.SupabaseStorageClient.storagePathFromUrl(attachment.localUri, "attachments")?.let { return it }
+        return reconstructStoragePath(attachment.messageId, attachment.fileName)
+    }
+
+    /**
+     * SINGLE source of truth for turning any attachment into a readable local file URI.
+     * Order:
+     *   1. existing readable local file/stream
+     *   2. cached copy already downloaded for this key
+     *   3. download from candidate cloud URLs (public → remoteUrl → signed), rebuilding
+     *      the storage key from metadata when needed.
+     * Returns a `file://` URI on success, or null if nothing could be resolved.
+     * Fully logged — never fails silently.
+     */
+    suspend fun resolveToLocalUri(attachment: AttachmentEntity): String? = withContext(Dispatchers.IO) {
+        // 1. Already usable on-device.
+        if (isLocallyReadable(attachment.localUri)) return@withContext attachment.localUri
+
+        val storagePath = effectiveStoragePath(attachment)
+
+        // 2. Deterministic cache file keyed by the storage path (survives across
+        //    AttachmentEntity id changes, e.g. synthetic entities).
+        val cacheKey = (storagePath ?: "${attachment.messageId}/${attachment.fileName}")
+            .replace("[^A-Za-z0-9._-]".toRegex(), "_")
+        val cacheDir = java.io.File(context.cacheDir, "attachments")
+        if (!cacheDir.exists()) cacheDir.mkdirs()
+        val cacheFile = java.io.File(cacheDir, cacheKey)
+        if (cacheFile.exists() && cacheFile.length() > 0L) {
+            return@withContext "file://${cacheFile.absolutePath}"
+        }
+
+        // 3. Build ordered, de-duplicated candidate URL list.
+        val candidates = LinkedHashSet<String>()
+        if (storagePath != null) {
+            candidates.add(com.example.data.network.SupabaseStorageClient.getPublicUrl("attachments", storagePath))
+        }
+        attachment.remoteUrl?.takeIf { it.startsWith("http") }?.let { candidates.add(it) }
+        attachment.localUri.takeIf { it.startsWith("http") }?.let { candidates.add(it) }
+
+        for (url in candidates) {
+            val outcome = com.example.data.network.SupabaseStorageClient.downloadUrlToFile(url, cacheFile)
+            if (outcome.success) {
+                val newUri = "file://${cacheFile.absolutePath}"
+                try {
+                    // Persist the fix so future flows skip the network. Only touch real DB rows.
+                    if (!attachment.attachmentId.startsWith("synthetic_")) {
+                        attachmentDao.insertAttachment(
+                            attachment.copy(localUri = newUri, storagePath = storagePath, uploadStatus = "SUCCESS")
+                        )
+                    }
+                } catch (e: Exception) {
+                    Log.e("IntelligenceRepository", "Failed to persist resolved attachment", e)
+                }
+                return@withContext newUri
+            }
+        }
+
+        // 4. Last resort: a freshly minted signed URL (handles private buckets / RLS).
+        if (storagePath != null) {
+            val signed = com.example.data.network.SupabaseStorageClient.getSignedUrl("attachments", storagePath)
+            if (signed != null) {
+                val outcome = com.example.data.network.SupabaseStorageClient.downloadUrlToFile(signed, cacheFile)
+                if (outcome.success) return@withContext "file://${cacheFile.absolutePath}"
+            }
+        }
+
+        Log.e(
+            "IntelligenceRepository",
+            "resolveToLocalUri EXHAUSTED for attachmentId=${attachment.attachmentId} " +
+                "file=${attachment.fileName} storagePath=$storagePath remoteUrl=${attachment.remoteUrl} " +
+                "candidates=$candidates"
+        )
+        null
+    }
+
+    suspend fun ensureLocalAttachment(attachment: AttachmentEntity): AttachmentEntity = withContext(Dispatchers.IO) {
+        if (isLocallyReadable(attachment.localUri)) return@withContext attachment
         val deferred = activeDownloads.getOrPut(attachment.attachmentId) {
             backgroundScope.async(Dispatchers.IO) {
                 try {
-                    val cacheDir = java.io.File(context.cacheDir, "attachments")
-                    if (!cacheDir.exists()) {
-                        cacheDir.mkdirs()
-                    }
-                    val file = java.io.File(cacheDir, "${attachment.attachmentId}_${attachment.fileName}")
-                    
-                    if (!file.exists()) {
-                        val request = okhttp3.Request.Builder().url(attachment.remoteUrl).build()
-                        val response = urlOkHttpClient.newCall(request).execute()
-                        if (response.isSuccessful) {
-                            response.body?.byteStream()?.use { input ->
-                                java.io.FileOutputStream(file).use { output ->
-                                    input.copyTo(output)
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (file.exists()) {
-                        val newLocalUri = "file://${file.absolutePath}"
-                        val updated = attachment.copy(localUri = newLocalUri)
-                        attachmentDao.insertAttachment(updated) // Update DB so future flows get the fixed URI
-                        updated
-                    } else {
-                        attachment
-                    }
+                    val resolved = resolveToLocalUri(attachment)
+                    if (resolved != null) attachment.copy(localUri = resolved) else attachment
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e("IntelligenceRepository", "ensureLocalAttachment failed", e)
                     attachment
                 } finally {
                     activeDownloads.remove(attachment.attachmentId)
@@ -342,8 +437,11 @@ class IntelligenceRepository(private val context: Context) {
     // ── END ADDITIONS ──────────────────────────────────────────────────────────
 
     suspend fun generateTitleForSession(sessionId: String, queryText: String) = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") return@withContext
+        val apiKey = try {
+            com.example.data.network.getRequiredGeminiApiKey()
+        } catch (e: Exception) {
+            return@withContext
+        }
 
         val messages = messageDao.getMessagesForSession(sessionId)
             .filter { it.role == "user" || it.role == "model" }
@@ -603,6 +701,19 @@ class IntelligenceRepository(private val context: Context) {
     }
 
 
+    suspend fun getAttachmentByUri(uri: String): com.example.data.model.AttachmentEntity? = withContext(Dispatchers.IO) {
+        attachmentDao.getAttachmentByLocalUri(uri) ?: attachmentDao.getAttachmentByRemoteUrl(uri)
+    }
+
+    /**
+     * Public entry point used by the UI (thumbnail + full-screen viewer). Delegates to
+     * the unified [resolveToLocalUri] so every surface downloads identically and always
+     * reconstructs the storage key from metadata instead of trusting a stale cached path.
+     */
+    suspend fun downloadAndCacheAttachment(context: Context, attachment: com.example.data.model.AttachmentEntity): String? {
+        return resolveToLocalUri(attachment)
+    }
+
     suspend fun deleteSession(sessionId: String) = withContext(Dispatchers.IO) {
         attachmentDao.deleteAttachmentsForSession(sessionId)
         messageDao.deleteMessagesForSession(sessionId)
@@ -650,6 +761,9 @@ class IntelligenceRepository(private val context: Context) {
     }
 
     suspend fun insertUserMessage(sessionId: String, text: String, imageUri: String? = null, replyToMessageId: String? = null, selectedText: String? = null) = withContext(Dispatchers.IO) {
+        val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+        val userId = prefs.getString("user_id", "") ?: ""
+        
         val userMsg = MessageEntity(
             id = UUID.randomUUID().toString(),
             sessionId = sessionId,
@@ -734,6 +848,7 @@ class IntelligenceRepository(private val context: Context) {
                         mimeType = mime,
                         localUri = permanentLocalUri,
                         remoteUrl = if (uriStr.startsWith("http")) uriStr else null,
+                        storagePath = "$userId/${userMsg.sessionId}/${userMsg.id}/$finalFileName",
                         thumbnailUrl = null,
                         fileName = finalFileName,
                         uploadStatus = initialStatus
@@ -1027,9 +1142,10 @@ class IntelligenceRepository(private val context: Context) {
                 else -> Triple(rawCategory, rawDepth, false)
             }
             val isDeepThought = prefs.getBoolean("is_deep_thought_enabled", false) || isDeepThoughtFromMode
-            val apiKey = BuildConfig.GEMINI_API_KEY
-            if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-                val errorMsg = SYSTEM_ERROR_PREFIX + "Error: Missing Gemini API Key. Please add your key to the Secrets panel in Google AI Studio to unlock DepthLens's operations."
+            val apiKey = try {
+                com.example.data.network.getRequiredGeminiApiKey()
+            } catch (e: Exception) {
+                val errorMsg = SYSTEM_ERROR_PREFIX + "Error: Missing or invalid Gemini API Key. Please add your key to the Secrets panel in Google AI Studio to unlock DepthLens's operations. Details: ${e.message}"
                 try {
                     val assistantMsg = MessageEntity(
                         id = UUID.randomUUID().toString(),
@@ -2888,9 +3004,10 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
     }
 
     suspend fun generateContinuityBrief(sessionId: String): String = withContext(Dispatchers.IO) {
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isEmpty() || apiKey == "MY_GEMINI_API_KEY") {
-            return@withContext "API key not found. Please configure Gemini API key in Secrets panel."
+        val apiKey = try {
+            com.example.data.network.getRequiredGeminiApiKey()
+        } catch (e: Exception) {
+            return@withContext "API key not found or invalid: ${e.message}. Please configure Gemini API key in the Secrets panel."
         }
         
         val history = messageDao.getMessagesForSession(sessionId)
