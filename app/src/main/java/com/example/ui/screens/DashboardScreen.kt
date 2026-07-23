@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
+import android.content.ContentUris
 import android.net.Uri
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -13,8 +15,16 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -152,11 +162,11 @@ fun DashboardScreen(
         }
     }
 
-    // Pick media launcher
+    // Pick media launcher (multi-select enabled)
     val pickMediaLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri != null) {
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20)
+    ) { uris: List<Uri> ->
+        uris.forEach { uri ->
             viewModel.setAttachment(uri.toString())
         }
     }
@@ -318,9 +328,9 @@ fun DashboardScreen(
 
 
     val pickDocumentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        uris.forEach { uri ->
             viewModel.setAttachment(uri.toString())
         }
     }
@@ -2133,7 +2143,7 @@ Text(
                                 isDeepThoughtEnabled = isDeepThoughtEnabled,
                                 onDeepThoughtToggle = { viewModel.setDeepThoughtEnabled(it) },
                                 onSessionSelected = { sessionId -> viewModel.selectSession(sessionId) },
-                                onSubmitQuery = { text -> viewModel.sendQuery(text) },
+                                onSubmitQuery = { text, isBranch -> viewModel.sendQuery(text, isBranch) },
                                 onNavigateToChat = { /* no-op: results shown on home */ },
                                 onNavigateToAnalysis = { /* no-op: removed */ },
                                 onAddAttachment = { uri -> viewModel.setAttachment(uri) },
@@ -2374,23 +2384,13 @@ fun LandingScreen(
                 .padding(bottom = 24.dp)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                // If there's active attached previews in center
-                attachedImageUri?.let { uriString ->
-                    val uris = uriString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                    uris.forEach { singleUri ->
-                        AttachmentPreviewItem(
-                            uri = singleUri,
-                            onRemove = {
-                                if (uris.size <= 1) {
-                                    onRemoveAttachment()
-                                } else {
-                                    onRemoveAttachmentUri(singleUri)
-                                }
-                            },
-                            modifier = Modifier.padding(bottom = 10.dp)
-                        )
-                    }
-                }
+                // Horizontal Attachment Strip
+                HorizontalAttachmentStrip(
+                    attachedImageUri = attachedImageUri,
+                    onRemoveAttachment = onRemoveAttachment,
+                    onRemoveAttachmentUri = onRemoveAttachmentUri,
+                    modifier = Modifier.padding(bottom = 10.dp)
+                )
 
                 // Spacious multiline text input area
                 TextField(
@@ -3785,22 +3785,12 @@ fun BottomInputPanel(
             }
         }
 
-        attachedImageUri?.let { uriString ->
-            val uris = uriString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-            uris.forEach { singleUri ->
-                AttachmentPreviewItem(
-                    uri = singleUri,
-                    onRemove = {
-                        if (uris.size <= 1) {
-                            onRemoveAttachment()
-                        } else {
-                            onRemoveAttachmentUri(singleUri)
-                        }
-                    },
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-            }
-        }
+        HorizontalAttachmentStrip(
+            attachedImageUri = attachedImageUri,
+            onRemoveAttachment = onRemoveAttachment,
+            onRemoveAttachmentUri = onRemoveAttachmentUri,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -4082,87 +4072,595 @@ fun FileDocumentBubble(uriString: String, mimeType: String) {
     }
 }
 
+fun getUriDisplayName(context: android.content.Context, uriString: String): String {
+    try {
+        val uri = Uri.parse(uriString)
+        if (uri.scheme == "content") {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1 && cursor.moveToFirst()) {
+                    val name = cursor.getString(nameIndex)
+                    if (!name.isNullOrBlank()) return name
+                }
+            }
+        } else if (uri.scheme == "file") {
+            val path = uri.path
+            if (!path.isNullOrEmpty()) {
+                val file = java.io.File(path)
+                if (file.exists()) return file.name
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return uriString.substringAfterLast("/").substringAfterLast("\\").takeIf { it.isNotBlank() } ?: "Attachment"
+}
+
 @Composable
-fun AttachmentPreviewItem(
+fun HorizontalAttachmentStrip(
+    attachedImageUri: String?,
+    onRemoveAttachment: () -> Unit,
+    onRemoveAttachmentUri: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (attachedImageUri.isNullOrEmpty()) return
+
+    val uris = remember(attachedImageUri) {
+        attachedImageUri.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+    if (uris.isEmpty()) return
+
+    var previewUri by remember { mutableStateOf<String?>(null) }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp)
+        ) {
+            items(uris, key = { it }) { uri ->
+                CompactAttachmentChipItem(
+                    uri = uri,
+                    onRemove = {
+                        if (uris.size <= 1) {
+                            onRemoveAttachment()
+                        } else {
+                            onRemoveAttachmentUri(uri)
+                        }
+                    },
+                    onClick = { previewUri = uri }
+                )
+            }
+        }
+    }
+
+    previewUri?.let { uriToPreview ->
+        AttachmentPreviewDialog(
+            uri = uriToPreview,
+            onDismiss = { previewUri = null }
+        )
+    }
+}
+
+@Composable
+fun CompactAttachmentChipItem(
     uri: String,
     onRemove: () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val mimeType = remember(uri) { getUriMimeType(context, uri) }
-    
-    val (typeName, colorAccent) = remember(mimeType) {
+    val fileName = remember(uri) { getUriDisplayName(context, uri) }
+    val isImage = mimeType.startsWith("image/")
+
+    val (accentColor, iconVector, badgeText) = remember(mimeType) {
         when {
-            mimeType.startsWith("image/") -> "Image Asset" to PremiumCyan
-            mimeType.startsWith("audio/") -> "Audio Recording" to SuccessColor
-            mimeType.startsWith("video/") -> "Video Source" to ElectricViolet
-            mimeType == "application/pdf" -> "PDF Document" to ErrorColor
-            else -> "Document Resource" to WarningColor
+            mimeType.startsWith("image/") -> Triple(PremiumCyan, Icons.Default.Image, "IMG")
+            mimeType.startsWith("video/") -> Triple(ElectricViolet, Icons.Default.PlayArrow, "VIDEO")
+            mimeType.startsWith("audio/") -> Triple(SuccessColor, Icons.Default.Audiotrack, "AUDIO")
+            mimeType == "application/pdf" -> Triple(ErrorColor, Icons.Default.PictureAsPdf, "PDF")
+            else -> Triple(WarningColor, Icons.Default.Description, "DOC")
         }
     }
 
-    Row(
+    Box(
         modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .padding(top = 4.dp, end = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(RichNavy)
-            .border(1.dp, SurfaceCardColor, RoundedCornerShape(10.dp))
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .border(1.dp, accentColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
     ) {
-        Box(
-            modifier = Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(colorAccent.copy(alpha = 0.15f))
-                .border(1.dp, colorAccent.copy(alpha = 0.4f), RoundedCornerShape(6.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (mimeType.startsWith("image/")) {
+        if (isImage) {
+            Box(
+                modifier = Modifier
+                    .size(68.dp)
+                    .clip(RoundedCornerShape(12.dp))
+            ) {
                 AsyncImage(
                     model = uri,
-                    contentDescription = "Preview Image",
+                    contentDescription = fileName,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
-            } else {
-                Icon(
-                    imageVector = when {
-                        mimeType.startsWith("audio/") -> Icons.Default.Place
-                        mimeType.startsWith("video/") -> Icons.Default.PlayArrow
-                        mimeType == "application/pdf" -> Icons.Default.List
-                        else -> Icons.Default.Edit
-                    },
-                    contentDescription = typeName,
-                    tint = colorAccent,
-                    modifier = Modifier.size(20.dp)
-                )
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .height(68.dp)
+                    .widthIn(min = 120.dp, max = 160.dp)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(accentColor.copy(alpha = 0.18f))
+                        .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = iconVector,
+                        contentDescription = badgeText,
+                        tint = accentColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = fileName,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimaryColor,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = badgeText,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = accentColor
+                    )
+                }
             }
         }
-        
-        Spacer(modifier = Modifier.width(12.dp))
-        
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = typeName,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimaryColor
-            )
-            Text(
-                text = "First-class source: Ready for contextual reasoning",
-                fontSize = 9.sp,
-                color = TextSecondaryColor
-            )
-        }
-        
-        IconButton(onClick = onRemove, modifier = Modifier.size(28.dp)) {
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 2.dp, y = (-2).dp)
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.75f))
+                .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                .clickable(onClick = onRemove),
+            contentAlignment = Alignment.Center
+        ) {
             Icon(
                 imageVector = Icons.Default.Close,
-                contentDescription = "Deattach",
-                tint = ErrorColor.copy(alpha = 0.8f),
-                modifier = Modifier.size(14.dp)
+                contentDescription = "Remove attachment",
+                tint = Color.White,
+                modifier = Modifier.size(11.dp)
             )
+        }
+    }
+}
+
+@Composable
+fun AttachmentPreviewDialog(
+    uri: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val mimeType = remember(uri) { getUriMimeType(context, uri) }
+    val fileName = remember(uri) { getUriDisplayName(context, uri) }
+    val isImage = mimeType.startsWith("image/")
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .wrapContentHeight()
+                .clip(RoundedCornerShape(20.dp))
+                .background(DeepMidnight)
+                .border(1.dp, SurfaceCardColor, RoundedCornerShape(20.dp))
+                .padding(16.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = fileName,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimaryColor,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = TextMutedColor)
+                    }
+                }
+
+                if (isImage) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 380.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.Black)
+                    ) {
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = fileName,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(ElectricViolet.copy(alpha = 0.15f))
+                                    .border(1.dp, ElectricViolet.copy(alpha = 0.4f), RoundedCornerShape(16.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = when {
+                                        mimeType.startsWith("video/") -> Icons.Default.PlayArrow
+                                        mimeType.startsWith("audio/") -> Icons.Default.Audiotrack
+                                        mimeType == "application/pdf" -> Icons.Default.PictureAsPdf
+                                        else -> Icons.Default.Description
+                                    },
+                                    contentDescription = null,
+                                    tint = ElectricViolet,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "MIME: $mimeType",
+                                fontSize = 12.sp,
+                                color = TextSecondaryColor
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Local URI ready for message context",
+                                fontSize = 11.sp,
+                                color = TextMutedColor
+                            )
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Close Preview", fontFamily = InstrumentSansFontFamily)
+                }
+            }
+        }
+    }
+}
+
+data class LocalMediaItem(
+    val uri: Uri,
+    val name: String,
+    val mimeType: String,
+    val size: Long,
+    val dateModified: Long
+)
+
+suspend fun loadDeviceMedia(
+    context: android.content.Context,
+    mediaTypeFilter: String
+): List<LocalMediaItem> = withContext(Dispatchers.IO) {
+    val items = mutableListOf<LocalMediaItem>()
+    val contentResolver = context.contentResolver
+
+    val collectionUri = when {
+        mediaTypeFilter.startsWith("image/") -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        mediaTypeFilter.startsWith("video/") -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        else -> MediaStore.Files.getContentUri("external")
+    }
+
+    val projection = arrayOf(
+        MediaStore.MediaColumns._ID,
+        MediaStore.MediaColumns.DISPLAY_NAME,
+        MediaStore.MediaColumns.MIME_TYPE,
+        MediaStore.MediaColumns.SIZE,
+        MediaStore.MediaColumns.DATE_MODIFIED
+    )
+
+    val selection = when {
+        mediaTypeFilter.startsWith("image/") -> "${MediaStore.MediaColumns.MIME_TYPE} LIKE 'image/%'"
+        mediaTypeFilter.startsWith("video/") -> "${MediaStore.MediaColumns.MIME_TYPE} LIKE 'video/%'"
+        else -> null
+    }
+
+    val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC LIMIT 100"
+
+    try {
+        contentResolver.query(collectionUri, projection, selection, null, sortOrder)?.use { cursor ->
+            val idCol = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
+            val nameCol = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+            val mimeCol = cursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+            val sizeCol = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+            val dateCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+
+            while (cursor.moveToNext()) {
+                val id = if (idCol != -1) cursor.getLong(idCol) else continue
+                val name = if (nameCol != -1) cursor.getString(nameCol) ?: "File" else "File"
+                val mime = if (mimeCol != -1) cursor.getString(mimeCol) ?: "application/octet-stream" else "application/octet-stream"
+                val size = if (sizeCol != -1) cursor.getLong(sizeCol) else 0L
+                val date = if (dateCol != -1) cursor.getLong(dateCol) else 0L
+                val contentUri = ContentUris.withAppendedId(collectionUri, id)
+
+                items.add(LocalMediaItem(contentUri, name, mime, size, date))
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    items
+}
+
+@Composable
+fun CustomMultiFilePickerModal(
+    mimeTypeFilter: String,
+    onAttach: (List<String>) -> Unit,
+    onDismiss: () -> Unit,
+    onLaunchSystemPicker: () -> Unit
+) {
+    val context = LocalContext.current
+    var mediaItems by remember { mutableStateOf<List<LocalMediaItem>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var selectedUris by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    LaunchedEffect(mimeTypeFilter) {
+        isLoading = true
+        mediaItems = loadDeviceMedia(context, mimeTypeFilter)
+        isLoading = false
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.82f)
+                .clip(RoundedCornerShape(24.dp))
+                .background(DeepMidnight)
+                .border(1.dp, SurfaceCardColor, RoundedCornerShape(24.dp))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = when {
+                                mimeTypeFilter.startsWith("image/") -> "Select Photos"
+                                mimeTypeFilter.startsWith("video/") -> "Select Videos"
+                                else -> "Select Files"
+                            },
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimaryColor,
+                            fontFamily = InstrumentSansFontFamily
+                        )
+                        Text(
+                            text = if (selectedUris.isEmpty()) "Tap files to select multiple" else "${selectedUris.size} selected",
+                            fontSize = 12.sp,
+                            color = TextSecondaryColor,
+                            fontFamily = InstrumentSansFontFamily
+                        )
+                    }
+
+                    TextButton(onClick = onLaunchSystemPicker) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(16.dp))
+                            Text("System Files", fontSize = 12.sp, color = ElectricViolet, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Content Grid
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center),
+                            color = ElectricViolet
+                        )
+                    } else if (mediaItems.isEmpty()) {
+                        Column(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = TextMutedColor, modifier = Modifier.size(48.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("No recent media items found", color = TextMutedColor, fontSize = 14.sp)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = onLaunchSystemPicker,
+                                colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Browse System Files")
+                            }
+                        }
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(if (mimeTypeFilter.startsWith("image/")) 3 else 2),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(mediaItems, key = { it.uri.toString() }) { item ->
+                                val uriStr = item.uri.toString()
+                                val isSelected = selectedUris.contains(uriStr)
+
+                                Box(
+                                    modifier = Modifier
+                                        .aspectRatio(1f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(SurfaceCardColor)
+                                        .border(
+                                            width = if (isSelected) 2.5.dp else 1.dp,
+                                            color = if (isSelected) ElectricViolet else Color.Transparent,
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                        .clickable {
+                                            selectedUris = if (isSelected) {
+                                                selectedUris - uriStr
+                                            } else {
+                                                selectedUris + uriStr
+                                            }
+                                        }
+                                ) {
+                                    if (item.mimeType.startsWith("image/")) {
+                                        AsyncImage(
+                                            model = item.uri,
+                                            contentDescription = item.name,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(8.dp),
+                                            verticalArrangement = Arrangement.Center,
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Icon(
+                                                imageVector = when {
+                                                    item.mimeType.startsWith("video/") -> Icons.Default.PlayArrow
+                                                    item.mimeType.startsWith("audio/") -> Icons.Default.Audiotrack
+                                                    item.mimeType == "application/pdf" -> Icons.Default.PictureAsPdf
+                                                    else -> Icons.Default.Description
+                                                },
+                                                contentDescription = null,
+                                                tint = ElectricViolet,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = item.name,
+                                                fontSize = 11.sp,
+                                                color = TextPrimaryColor,
+                                                maxLines = 2,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                            )
+                                        }
+                                    }
+
+                                    // Checkmark badge when selected
+                                    if (isSelected) {
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(6.dp)
+                                                .size(24.dp)
+                                                .align(Alignment.TopEnd)
+                                                .background(ElectricViolet, CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Bottom Action Bar: Cancel and Attach
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        border = BorderStroke(1.dp, SurfaceCardColor),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondaryColor),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Cancel", fontFamily = InstrumentSansFontFamily)
+                    }
+
+                    Button(
+                        onClick = {
+                            if (selectedUris.isNotEmpty()) {
+                                onAttach(selectedUris.toList())
+                            }
+                            onDismiss()
+                        },
+                        enabled = selectedUris.isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = ElectricViolet,
+                            disabledContainerColor = SurfaceCardColor
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = if (selectedUris.isEmpty()) "Attach" else "Attach (${selectedUris.size})",
+                            fontFamily = InstrumentSansFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            color = if (selectedUris.isNotEmpty()) Color.White else TextMutedColor
+                        )
+                    }
+                }
+            }
         }
     }
 }

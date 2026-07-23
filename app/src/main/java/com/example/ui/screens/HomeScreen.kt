@@ -584,7 +584,7 @@ fun HomeScreen(
     isDeepThoughtEnabled: Boolean = false,
     onDeepThoughtToggle: (Boolean) -> Unit = {},
     onSessionSelected: (String) -> Unit,
-    onSubmitQuery: (String) -> Unit,
+    onSubmitQuery: (String, Boolean) -> Unit = { _, _ -> },
     onNavigateToChat: () -> Unit,
     onNavigateToAnalysis: () -> Unit,
     onAddAttachment: (String) -> Unit = {},
@@ -768,6 +768,7 @@ fun HomeScreen(
     var editingMessageId by remember { mutableStateOf<String?>(null) }
 
     var replyQuoteText by remember { mutableStateOf<String?>(null) }
+    var isBranchPending by remember { mutableStateOf(false) }
     var showReplyDialog by remember { mutableStateOf(false) }
     var replyDialogMessageText by remember { mutableStateOf("") }
 
@@ -820,13 +821,11 @@ fun HomeScreen(
                         currentOnRegenerateLastAnalysis(msg.id)
                     }
                     MessageActionType.BRANCH -> {
-                        // Find user query associated with this message
-                        val indexOfMsg = msgs.indexOfFirst { it.id == msg.id }
-                        val associatedUserQuery = if (indexOfMsg >= 0) {
-                            msgs.subList(0, indexOfMsg).findLast { it.role == "user" }?.text ?: ""
-                        } else ""
-                        currentOnCreateNewSession()
-                        if (associatedUserQuery.isNotBlank()) currentOnSubmitQuery(associatedUserQuery)
+                        val quoteText = msg.text.trim().take(500)
+                        replyQuoteText = quoteText
+                        isBranchPending = true
+                        onSetReplyState(msg.id, quoteText)
+                        focusRequester.requestFocus()
                     }
                     MessageActionType.SEARCH -> {
                         val indexOfMsg = msgs.indexOfFirst { it.id == msg.id }
@@ -834,7 +833,7 @@ fun HomeScreen(
                             msgs.subList(0, indexOfMsg).findLast { it.role == "user" }?.text ?: ""
                         } else ""
                         val q = associatedUserQuery.ifBlank { msg.text }
-                        currentOnSubmitQuery("[web] $q")
+                        currentOnSubmitQuery("[web] $q", false)
                     }
                 }
             }
@@ -1471,7 +1470,7 @@ fun HomeScreen(
                                         indication = null
                                     ) {
                                         rawText = TextFieldValue("")
-                                        onSubmitQuery(chipText)
+                                        onSubmitQuery(chipText, false)
                                     }
                                     .padding(horizontal = 13.dp, vertical = 7.dp),
                                 contentAlignment = Alignment.Center
@@ -2096,7 +2095,7 @@ fun HomeScreen(
                                                      Box(
                                                          modifier = Modifier
                                                              .premiumGlassBg(cornerRadius = 999.dp, borderWidth = 1.dp)
-                                                             .clickable { currentOnSubmitQuery("Go Deeper") }
+                                                             .clickable { currentOnSubmitQuery("Go Deeper", false) }
                                                              .padding(horizontal = 10.dp, vertical = 5.dp)
                                                      ) {
                                                          Text("Go Deeper", color = TextPrimaryColor, fontSize = 10.sp, fontFamily = InstrumentSansFontFamily, fontWeight = FontWeight.Medium)
@@ -2106,7 +2105,7 @@ fun HomeScreen(
                                                      Box(
                                                          modifier = Modifier
                                                              .premiumGlassBg(cornerRadius = 999.dp, borderWidth = 1.dp)
-                                                             .clickable { currentOnSubmitQuery("Challenge it") }
+                                                             .clickable { currentOnSubmitQuery("Challenge it", false) }
                                                              .padding(horizontal = 10.dp, vertical = 5.dp)
                                                      ) {
                                                          Text("Challenge it", color = TextPrimaryColor, fontSize = 10.sp, fontFamily = InstrumentSansFontFamily, fontWeight = FontWeight.Medium)
@@ -2221,23 +2220,13 @@ fun HomeScreen(
                     }
                 }
 
-                // Attachment Preview before sending
-                attachedImageUri?.let { uriString ->
-                    val uris = uriString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                    uris.forEach { singleUri ->
-                        AttachmentPreviewItem(
-                            uri = singleUri,
-                            onRemove = {
-                                if (uris.size <= 1) {
-                                    onRemoveAttachment()
-                                } else {
-                                    onRemoveAttachmentUri(singleUri)
-                                }
-                            },
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    }
-                }
+                // Horizontal Attachment Strip
+                HorizontalAttachmentStrip(
+                    attachedImageUri = attachedImageUri,
+                    onRemoveAttachment = onRemoveAttachment,
+                    onRemoveAttachmentUri = onRemoveAttachmentUri,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
 
                 // ── Premium Glass Pill Input Bar (DepthLens Redesign) ───────────────────
                 if (isSearchActive) {
@@ -2434,6 +2423,7 @@ fun HomeScreen(
                                     .background(Surface2)
                                     .clickable { 
                                         replyQuoteText = null 
+                                        isBranchPending = false
                                         onClearReplyState()
                                     },
                                 contentAlignment = Alignment.Center
@@ -2730,13 +2720,11 @@ fun HomeScreen(
                                         } else {
                                             if (rawText.text.isNotBlank() || !attachedImageUri.isNullOrEmpty()) {
                                                 val userText = rawText.text
-                                                val textToSend = if (replyQuoteText != null) {
-                                                    "Regarding this part of your previous response:\n\"\"\"\n" + replyQuoteText + "\n\"\"\"\n\nMy question: " + userText
-                                                } else {
-                                                    userText
-                                                }
+                                                val textToSend = userText
+                                                val isBranchingThisSend = isBranchPending
                                                 rawText = TextFieldValue("")
                                                 replyQuoteText = null
+                                                isBranchPending = false
                                                 if (editingMessageId != null) {
                                                     val editedId = editingMessageId!!
                                                     val currentEdited = activeMessages.find { m -> m.id == editedId }
@@ -2746,7 +2734,7 @@ fun HomeScreen(
                                                     }
                                                     editingMessageId = null
                                                 }
-                                                onSubmitQuery(textToSend)
+                                                onSubmitQuery(textToSend, isBranchingThisSend)
                                             }
                                         }
                                     },
@@ -2825,12 +2813,37 @@ fun HomeScreen(
         }
     }
 
-    // ── Attachment file picker launcher ──────────────────────────────────────
-    val attachPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments()
+    // ── Attachment file picker launchers (multi-select enabled) ─────────────
+    val pickMultipleMediaLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20)
     ) { uris ->
         if (!uris.isNullOrEmpty()) {
-            uris.take(10).forEach { uri ->
+            uris.forEach { uri ->
+                try {
+                    try {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.w("AttachmentSystem", "Could not persist URI permission: ${e.message}")
+                    }
+                    android.util.Log.d("AttachmentSystem", "Successfully selected media attachment URI: $uri")
+                    onAddAttachment(uri.toString())
+                } catch (e: Exception) {
+                    android.util.Log.e("AttachmentSystem", "Failed to add media attachment: ${e.message}", e)
+                }
+            }
+        } else {
+            android.util.Log.w("AttachmentSystem", "Media selection cancelled or returned null URIs")
+        }
+    }
+
+    val attachPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            uris.take(20).forEach { uri ->
                 try {
                     // Persist read access so the attachment can still be opened later
                     try {
@@ -2852,6 +2865,7 @@ fun HomeScreen(
         }
     }
 
+    var customPickerMimeType by remember { mutableStateOf<String?>(null) }
     var tempCameraImageUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val cameraCaptureLauncher = rememberLauncherForActivityResult(
@@ -3019,7 +3033,7 @@ fun HomeScreen(
                                         cameraPermissionLauncherForCapture.launch(android.Manifest.permission.CAMERA)
                                     }
                                 } else {
-                                    attachPickerLauncher.launch(arrayOf(type))
+                                    customPickerMimeType = type
                                 }
                             }
                             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -3060,6 +3074,34 @@ fun HomeScreen(
                 }
             }
         }
+
+    customPickerMimeType?.let { mimeType ->
+        CustomMultiFilePickerModal(
+            mimeTypeFilter = mimeType,
+            onAttach = { selectedUris ->
+                selectedUris.forEach { uriStr ->
+                    onAddAttachment(uriStr)
+                }
+                customPickerMimeType = null
+            },
+            onDismiss = { customPickerMimeType = null },
+            onLaunchSystemPicker = {
+                val currentMime = mimeType
+                customPickerMimeType = null
+                if (currentMime.startsWith("image/")) {
+                    pickMultipleMediaLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                } else if (currentMime.startsWith("video/")) {
+                    pickMultipleMediaLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                    )
+                } else {
+                    attachPickerLauncher.launch(currentMime)
+                }
+            }
+        )
+    }
 
     // ── Scan Setup permission dialog (compact redesign) ───────────────────────
     if (showPermissionOnboardingDialog) {

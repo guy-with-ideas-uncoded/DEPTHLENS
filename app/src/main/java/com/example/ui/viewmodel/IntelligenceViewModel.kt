@@ -849,7 +849,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun sendQuery(text: String) {
+    fun sendQuery(text: String, isBranch: Boolean = false) {
         // "Search the Web" action prefixes the query with [web]; strip it and remember
         // that this turn must use live web grounding.
         val forceWeb = text.trimStart().startsWith("[web]")
@@ -878,9 +878,9 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
 
         viewModelScope.launch {
             try {
-                // Determine or create session if none active (e.g. from Home screen prompt)
+                // Determine or create session if none active or if branching into a new conversation
                 val currentId = _activeSessionId.value
-                val sessionId = if (currentId == null || currentId == "draft_session_id") {
+                val sessionId = if (isBranch || currentId == null || currentId == "draft_session_id") {
                     val newSession = repository.createNewSession(generateUniqueSessionName(_selectedMode.value))
                     _activeSessionId.value = newSession.id
                     prefs.edit().putString("last_active_session_id", newSession.id).apply()
