@@ -316,18 +316,20 @@ androidComponents {
                     if (!buildOutputDirResolved.exists()) buildOutputDirResolved.mkdirs()
                     if (!dotBuildOutputDirResolved.exists()) dotBuildOutputDirResolved.mkdirs()
                     
-                    val versionedApkNames = if (vName == "release") listOf("DepthLens_v6.0.1.apk", "app-release.apk") else listOf("DepthLens_v6.0.1-debug.apk", "app-debug.apk")
+                    // Clean out any old/multiple APKs so only single requested APK exists
+                    buildOutputDirResolved.listFiles { f -> f.extension == "apk" }?.forEach { it.delete() }
+                    dotBuildOutputDirResolved.listFiles { f -> f.extension == "apk" }?.forEach { it.delete() }
+
+                    val singleApkName = if (vName == "release") "DepthLens_v6.0.1.apk" else "DepthLens_v6.0.1-debug.apk"
                     
-                    versionedApkNames.forEach { apkName ->
-                        // Copy to build-outputs
-                        originalApkResolved.copyTo(File(buildOutputDirResolved, apkName), overwrite = true)
-                        
-                        // Copy to .build-outputs
-                        originalApkResolved.copyTo(File(dotBuildOutputDirResolved, apkName), overwrite = true)
-                    }
+                    // Copy single APK to build-outputs
+                    originalApkResolved.copyTo(File(buildOutputDirResolved, singleApkName), overwrite = true)
+                    
+                    // Copy single APK to .build-outputs
+                    originalApkResolved.copyTo(File(dotBuildOutputDirResolved, singleApkName), overwrite = true)
                     
                     val sizeMB = originalApkResolved.length() / (1024.0 * 1024.0)
-                    println("Successfully copied $vName APK to /build-outputs and /.build-outputs as DepthLens_v6.0.1.apk (${String.format("%.2f", sizeMB)} MB)")
+                    println("Successfully produced single $vName APK in build-outputs as $singleApkName (${String.format("%.2f", sizeMB)} MB)")
                 }
             }
         }

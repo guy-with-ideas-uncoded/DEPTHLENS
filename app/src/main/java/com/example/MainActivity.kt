@@ -122,7 +122,7 @@ class MainActivity : FragmentActivity() {
 
     try {
         GithubUpdateManager.init(applicationContext)
-        GithubUpdateManager.checkForUpdates(applicationContext, force = false)
+        GithubUpdateManager.checkForUpdates(applicationContext, force = true)
     } catch (e: Exception) {
         e.printStackTrace()
     }

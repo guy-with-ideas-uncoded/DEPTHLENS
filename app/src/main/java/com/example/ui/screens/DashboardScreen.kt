@@ -758,7 +758,7 @@ fun DashboardScreen(
             onDismissRequest = { showUpdatesDialog = false },
             onManualCheck = {
                 GithubUpdateManager.checkForUpdates(context, force = true) { isNew, rel ->
-                    if (isNew && rel != null) {
+                    if (rel != null) {
                         showUpdateAvailableDialog = true
                     } else {
                         Toast.makeText(context, "DepthLens is completely up to date!", Toast.LENGTH_SHORT).show()
