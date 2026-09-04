@@ -42,8 +42,8 @@ class ExampleRobolectricTest {
           activeThemeName = "Deep Sea",
           onThemeSelected = {},
           onWipeAllUserData = {},
-          userName = "Abhay Shah",
-          userEmail = "abhay@depthlens.ai"
+          userName = "Alex Rivers",
+          userEmail = "alex@depthlens.ai"
         )
       }
     } catch (e: Throwable) {

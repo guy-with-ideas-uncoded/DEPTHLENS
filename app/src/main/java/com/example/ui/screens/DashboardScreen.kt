@@ -753,7 +753,7 @@ fun DashboardScreen(
 
     if (showUpdatesDialog) {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        val curVerStr = packageInfo.versionName ?: "4.0.0"
+        val curVerStr = packageInfo.versionName ?: "6.0.1"
         SoftwareUpdatesDialog(
             onDismissRequest = { showUpdatesDialog = false },
             onManualCheck = {
@@ -1308,7 +1308,7 @@ fun DashboardScreen(
         } catch (e: java.lang.Exception) {
             null
         }
-        val appVersion = packageInfo?.versionName ?: "4.0.0"
+        val appVersion = packageInfo?.versionName ?: "6.0.1"
         
         AlertDialog(
             onDismissRequest = { showAboutDialog = false },
@@ -1813,7 +1813,7 @@ Text(
         } catch (e: Exception) {
             null
         }
-        val appVerStr = packageInfoReport?.versionName ?: "4.0.0"
+        val appVerStr = packageInfoReport?.versionName ?: "6.0.1"
         val deviceModel = android.os.Build.MODEL ?: "Unknown Device"
         val androidVer = android.os.Build.VERSION.RELEASE ?: "Unknown Android"
         val reportTimestamp = remember { java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()) }
@@ -2176,7 +2176,8 @@ Text(
                                 onEnterSelectionMode = { msgId, txt -> viewModel.enterSelectionMode(msgId, txt) },
                                 onClearSelectionMode = { viewModel.clearSelectionMode() },
                                 onSetReplyState = { msgId, txt -> viewModel.setReplyState(msgId, txt) },
-                                onClearReplyState = { viewModel.clearReplyState() }
+                                onClearReplyState = { viewModel.clearReplyState() },
+                                userName = userName
                             )
                         }
                         "sessions" -> {
@@ -2197,6 +2198,7 @@ Text(
                                 },
                                 onTogglePinSession = { sessionId -> viewModel.togglePinSession(sessionId) },
                                 onRenameSession = { sessionId, newTitle -> viewModel.renameSession(sessionId, newTitle) },
+                                onScreenVisible = { viewModel.ensureSessionTitlesMigrated() },
                                 listState = sessionsListState
                             )
                         }
@@ -2721,11 +2723,8 @@ fun DepthLensDiagnosticCard(
                     intro = filtered.joinToString("\n\n").trim()
                 }
             }
-            val leakedMetadataRegex = Regex(
-                "^(?:(\\s*[-*+•]\\s*|\\s*\\d+\\.\\s*))?\\*?\\*?(?:(?:importance|emphasis|priority|confidence|severity|level|reasoning)\\s*:\\s*)?(?:high|medium|low|critical)\\*?\\*?\\s*\\.?\\s*",
-                setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
-            )
-            intro.replace(leakedMetadataRegex, "$1").replace(Regex("^(?:high|medium|low|critical)\\\\.\\s*", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)), "").trim()
+            intro = sanitizeCleanResponseText(intro)
+            intro
         }
 
         // Conversation overview context

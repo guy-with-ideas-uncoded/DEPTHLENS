@@ -119,6 +119,66 @@ data class ForecastSummary(
     val predictionConfidence: String = "High"
 )
 
+fun sanitizeRawModelText(raw: String): String {
+    if (raw.isBlank()) return ""
+    var text = raw
+    text = text.replace(Regex("""(?is)<confidence>.*?</confidence>"""), "")
+    text = text.replace(Regex("""(?is)</?confidence>"""), "")
+    val metaLinePatterns = listOf(
+        Regex("""(?i)^\s*[-*•+]?\s*(?:\*\*|\[)?\s*confidence\s*(?:level|score|rating)?\s*[:=\-].*"""),
+        Regex("""(?i)^\s*[-*•+]?\s*(?:\*\*|\[)?\s*prediction\s*confidence(?:\s*rating)?\s*[:=\-].*"""),
+        Regex("""(?i)^\s*(?:\*\*|\[)?\s*(?:high|medium|low|critical|moderate)\s*confidence(?:\*\*|\])?\.?\s*$"""),
+        Regex("""(?i)^\s*(?:\*\*|\[)?\s*confidence\s*level\s*[:=\-]?\s*(?:high|medium|low|critical|moderate)?(?:\*\*|\])?\.?\s*$""")
+    )
+    text = text.lines().filterNot { line ->
+        val trimmed = line.trim()
+        metaLinePatterns.any { pattern -> trimmed.matches(pattern) }
+    }.joinToString("\n")
+    text = text.replace(Regex("""(?i)\b(?:confidence\s*level|confidence\s*score|prediction\s*confidence)\s*[:=\-]\s*(?:high|medium|low|critical|moderate)[^.\n\r]*\.?"""), "")
+    return text.trim()
+}
+
+fun sanitizeCleanResponseText(text: String): String {
+    if (text.isBlank()) return ""
+    var cleaned = text
+
+    // 1. Strip XML tags including metadata tags and their contents
+    cleaned = cleaned.replace(Regex("""(?is)<confidence>.*?</confidence>"""), "")
+    cleaned = cleaned.replace(Regex("""(?is)<probability_metrics>.*?</probability_metrics>"""), "")
+    cleaned = cleaned.replace(Regex("""(?is)<probability_assessment>.*?</probability_assessment>"""), "")
+    cleaned = cleaned.replace(Regex("""(?is)<forecast_summary>.*?</forecast_summary>"""), "")
+    cleaned = cleaned.replace(Regex("""<[^>]+>"""), "")
+
+    // 2. Filter out standalone lines that contain confidence levels, scores, or metadata junk
+    val metaLinePatterns = listOf(
+        Regex("""(?i)^\s*[-*•+]?\s*(?:\*\*|\[)?\s*confidence\s*(?:level|score|rating)?\s*[:=\-].*"""),
+        Regex("""(?i)^\s*[-*•+]?\s*(?:\*\*|\[)?\s*prediction\s*confidence(?:\s*rating)?\s*[:=\-].*"""),
+        Regex("""(?i)^\s*[-*•+]?\s*(?:\*\*|\[)?\s*(?:likelihood|probability(?:\s*metrics)?|importance|priority|severity|certainty)\s*[:=\-]\s*(?:high|medium|low|critical|moderate|\d+%).*"""),
+        Regex("""(?i)^\s*(?:\*\*|\[)?\s*(?:high|medium|low|critical|moderate)\s*confidence(?:\*\*|\])?\.?\s*$"""),
+        Regex("""(?i)^\s*(?:\*\*|\[)?\s*confidence\s*level\s*[:=\-]?\s*(?:high|medium|low|critical|moderate)?(?:\*\*|\])?\.?\s*$""")
+    )
+
+    cleaned = cleaned.lines().filterNot { line ->
+        val trimmed = line.trim()
+        metaLinePatterns.any { pattern -> trimmed.matches(pattern) }
+    }.joinToString("\n")
+
+    // 3. Remove inline remnants of "Confidence Level : High" or similar phrases
+    cleaned = cleaned.replace(Regex("""(?i)\b(?:confidence\s*level|confidence\s*score|prediction\s*confidence)\s*[:=\-]\s*(?:high|medium|low|critical|moderate)[^.\n\r]*\.?"""), "")
+    cleaned = cleaned.replace(Regex("""(?i)\bconfidence\s*[:=\-]\s*(?:high|medium|low|critical|moderate)\b\.?"""), "")
+
+    // 4. Clean leaked markdown metadata tags at the beginning of bullet points or sentences
+    val leakedMetadataRegex = Regex(
+        "^(?:(\\s*[-*+•]\\s*|\\s*\\d+\\.\\s*))?\\*?\\*?(?:(?:importance|emphasis|priority|confidence\\s*level|confidence|severity|level|reasoning)\\s*[:=\\-]\\s*)?(?:high|medium|low|critical)\\*?\\*?\\s*\\.?\\s*",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
+    )
+    cleaned = cleaned.replace(leakedMetadataRegex, "$1")
+        .replace(Regex("^(?:high|medium|low|critical)\\.\\s*", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)), "")
+
+    // 5. Clean excessive newlines and whitespace
+    return cleaned.replace(Regex("""\n{3,}"""), "\n\n").trim()
+}
+
 @Immutable
 data class ParsedResponse(
     val introduction: String = "",
@@ -161,23 +221,8 @@ data class ParsedResponse(
             }
         }
         
-        // 2. Strip leaked markdown metadata just like the UI
-        val leakedMetadataRegex = Regex(
-            "^(?:(\\s*[-*+•]\\s*|\\s*\\d+\\.\\s*))?\\*?\\*?(?:(?:importance|emphasis|priority|confidence|severity|level|reasoning)\\s*:\\s*)?(?:high|medium|low|critical)\\*?\\*?\\s*\\.?\\s*",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)
-        )
-        intro = intro.replace(leakedMetadataRegex, "$1").replace(Regex("^(?:high|medium|low|critical)\\\\.\\s*", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE)), "").trim()
-        
-        // 3. AGGRESSIVELY strip ANY remaining XML tags to guarantee they never leak into the PDF
-        // This is critical to prevent the raw backend payload from appearing in the exported PDF.
-        val xmlTagRegex = Regex("<[^>]+>")
-        intro = intro.replace(xmlTagRegex, "").trim()
-        
-        val isComplex = executiveSummary != null || rootCauseReport != null || depthLayers.isNotEmpty() || humanDrivers != null || futureScenarios.isNotEmpty()
-        
-        if (isComplex) {
-            builder.append("=== DEPTHLENS ANALYSIS REPORT ===\n\n")
-        }
+        // Sanitize introduction using unified cleaner
+        intro = sanitizeCleanResponseText(intro)
         
         val cleanIntro = intro
         if (cleanIntro.isNotBlank()) {
@@ -186,20 +231,26 @@ data class ParsedResponse(
         
         val summary = executiveSummary?.trim()
         if (!summary.isNullOrBlank()) {
-            builder.append("EXECUTIVE SUMMARY\n")
-            builder.append(summary).append("\n\n")
+            val cleanSummary = sanitizeCleanResponseText(summary)
+            if (cleanSummary.isNotBlank()) {
+                builder.append("EXECUTIVE SUMMARY\n")
+                builder.append(cleanSummary).append("\n\n")
+            }
         }
         
         val synthesis = deepSynthesis?.trim()
         if (!synthesis.isNullOrBlank()) {
-            builder.append("DEEP SYNTHESIS\n")
-            builder.append(synthesis).append("\n\n")
+            val cleanSynth = sanitizeCleanResponseText(synthesis)
+            if (cleanSynth.isNotBlank()) {
+                builder.append("DEEP SYNTHESIS\n")
+                builder.append(cleanSynth).append("\n\n")
+            }
         }
 
         if (depthLayers.isNotEmpty()) {
             builder.append("DEPTH LAYERS OF REALITY\n")
             depthLayers.forEach { layer ->
-                builder.append("Layer ").append(layer.layerNumber).append(" - ").append(layer.layerName).append(": ").append(layer.description.trim()).append("\n")
+                builder.append("Layer ").append(layer.layerNumber).append(" - ").append(layer.layerName).append(": ").append(sanitizeCleanResponseText(layer.description)).append("\n")
             }
             builder.append("\n")
         }
@@ -249,7 +300,6 @@ data class ParsedResponse(
         
         if (probabilityMetrics != null) {
             builder.append("PROBABILITY METRICS\n")
-            builder.append("Confidence: ").append(probabilityMetrics!!.confidence).append("%\n")
             builder.append("Likelihood: ").append(probabilityMetrics!!.likelihood).append("%\n")
             builder.append("Risk: ").append(probabilityMetrics!!.risk).append("%\n")
             builder.append("Opportunity: ").append(probabilityMetrics!!.opportunity).append("%\n\n")
@@ -258,7 +308,6 @@ data class ParsedResponse(
         if (probabilityAssessment != null) {
             builder.append("PROBABILITY ASSESSMENT\n")
             builder.append("Likelihood: ").append(probabilityAssessment!!.likelihood).append("%\n")
-            builder.append("Confidence: ").append(probabilityAssessment!!.confidence).append("\n")
             if (probabilityAssessment!!.reasoningFactors.isNotEmpty()) {
                 builder.append("Reasoning Factors:\n")
                 probabilityAssessment!!.reasoningFactors.forEach { factor ->
@@ -303,8 +352,7 @@ data class ParsedResponse(
             builder.append("FORECAST SUMMARY\n")
             builder.append("Most Likely Outcome: ").append(forecastSummary!!.mostLikelyOutcome).append("%\n")
             builder.append("Key Risk: ").append(forecastSummary!!.keyRisk).append("%\n")
-            builder.append("Opportunity Window: ").append(forecastSummary!!.opportunityWindow).append("%\n")
-            builder.append("Prediction Confidence: ").append(forecastSummary!!.predictionConfidence).append("\n\n")
+            builder.append("Opportunity Window: ").append(forecastSummary!!.opportunityWindow).append("%\n\n")
         }
 
         if (suggestedQuestions.isNotEmpty()) {
@@ -323,16 +371,8 @@ data class ParsedResponse(
             builder.append("\n")
         }
 
-        val conf = confidence
-        if (!conf.isNullOrBlank() && isComplex) {
-            builder.append("Confidence Level: ").append(conf.trim()).append("\n")
-        }
-        
-        if (isComplex) {
-            builder.append("=================================================")
-        }
-        
-        return builder.toString().trim()
+        // Clean any lingering boilerplate/meta phrases and return
+        return sanitizeCleanResponseText(builder.toString())
     }
 }
 

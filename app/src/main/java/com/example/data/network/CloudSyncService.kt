@@ -842,17 +842,25 @@ object CloudSyncService {
                         .takeIf { it > 0 }
                         ?: createdAt
                     
+                    val localSessionObj = initialLocalSessions.find { it.id == sessionId }
+                    val finalTitle = if (localSessionObj != null && 
+                        !com.example.data.repository.IntelligenceRepository.isGenericTitle(localSessionObj.title) && 
+                        com.example.data.repository.IntelligenceRepository.isGenericTitle(title)) {
+                        localSessionObj.title
+                    } else {
+                        title
+                    }
+
                     val sEntity = com.example.data.model.SessionEntity(
                         id = sessionId,
-                        title = title,
+                        title = finalTitle,
                         isPinned = isPinned,
                         createdAt = createdAt,
                         lastUpdatedAt = lastUpdatedAt
                     )
-                    Log.d("CHAT_LOAD", "Writing session descriptor to Room: $sessionId - $title")
+                    Log.d("CHAT_LOAD", "Writing session descriptor to Room: $sessionId - $finalTitle")
                     sessionDao.insertSession(sEntity)
                     
-                    val localSessionObj = initialLocalSessions.find { it.id == sessionId }
                     val isRemoteNewer = localSessionObj == null || lastUpdatedAt > localSessionObj.lastUpdatedAt
                     
                     if (isRemoteNewer) {

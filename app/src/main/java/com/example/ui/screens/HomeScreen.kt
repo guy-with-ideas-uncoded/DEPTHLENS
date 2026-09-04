@@ -618,6 +618,7 @@ fun HomeScreen(
     onClearSelectionMode: () -> Unit = {},
     onSetReplyState: (String, String) -> Unit = { _, _ -> },
     onClearReplyState: () -> Unit = {},
+    userName: String = "",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1361,14 +1362,20 @@ fun HomeScreen(
                     label = "orb_scale"
                 )
 
-                val timeGreeting = remember(currentHour) {
+                val timeGreeting = remember(currentHour, userName) {
                     val base = when (currentHour) {
                         in 5..11 -> "Good morning"
                         in 12..16 -> "Good afternoon"
                         in 17..20 -> "Good evening"
                         else -> "Good night"
                     }
-                    "$base, Abhay 👋"
+                    val cleanName = userName.trim()
+                    val displayName = if (cleanName.isNotBlank() && !cleanName.equals("Guest Explorer", ignoreCase = true)) {
+                        cleanName.split(" ").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: cleanName
+                    } else {
+                        "Explorer"
+                    }
+                    "$base, $displayName 👋"
                 }
 
                 Column(
@@ -1900,7 +1907,8 @@ fun HomeScreen(
                                         try {
                                             val parsed = ResponseParser.parse(message.text)
                                             val exported = parsed.exportText()
-                                            if (exported.isBlank()) "Analysis rendered visually." else exported
+                                            val cleaned = sanitizeCleanResponseText(exported)
+                                            if (cleaned.isBlank()) "Analysis rendered visually." else cleaned
                                         } catch (e: Exception) {
                                             "Error rendering analysis."
                                         }

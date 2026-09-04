@@ -1,6 +1,17 @@
 # Changelog
 
-## Latest Update
+## [6.0.1] - 2026-09-04
+
+### ✨ Clean Chat & Response Polish
+* Removed all redundant confidence level labels, confidence ratings, and status meta-tags from conversational chat outputs.
+* Integrated real-time streaming sanitizer to prevent raw model tags or meta-scores from leaking into messages.
+* Cleaned export and clipboard sharing logic for seamless natural text.
+
+### 🚀 Performance & Sync Engine
+* Optimized response parsing and database persistence pipelines for faster UI rendering.
+* Synchronized in-app GitHub update system with v6.0.1 releases.
+
+## [6.0.0] - 2026-09-03
 
 ### ✨ New Features
 

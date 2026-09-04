@@ -17,6 +17,20 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     companion object {
         @Volatile
         var activeInstance: IntelligenceViewModel? = null
+
+        val RANDOM_EXPLORER_NAMES = listOf(
+            "Mindful Explorer",
+            "Insight Seeker",
+            "Reality Thinker",
+            "Curious Navigator",
+            "Deep Thinker",
+            "Truth Seeker",
+            "Vision Explorer",
+            "Cosmic Thinker",
+            "Clarity Seeker"
+        )
+
+        fun getRandomExplorerName(): String = RANDOM_EXPLORER_NAMES.random()
     }
 
     init {
@@ -32,7 +46,10 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     val isLoggedIn = MutableStateFlow(prefs.getBoolean("is_logged_in", false))
     val isGuest = MutableStateFlow(prefs.getBoolean("is_guest", false))
     val userId = MutableStateFlow(prefs.getString("user_id", "guest_local") ?: "guest_local")
-    val userName = MutableStateFlow(prefs.getString("user_name", "Guest Explorer") ?: "Guest Explorer")
+    val userName = MutableStateFlow(
+        prefs.getString("user_name", null)?.takeIf { !it.contains("Abhay", ignoreCase = true) && it.isNotBlank() }
+            ?: "Guest Explorer"
+    )
     val userEmail = MutableStateFlow(prefs.getString("user_email", "") ?: "")
     val userPhotoUrl = MutableStateFlow(prefs.getString("user_photo_url", "") ?: "")
     val githubToken = MutableStateFlow(prefs.getString("github_token", "") ?: "")
@@ -552,12 +569,27 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         runEngineDiagnostics()
         runAutomatedInsightExtraction()
 
+        // Purge any legacy Abhay name from preferences and replace with random explorer handle
+        val rawStoredName = prefs.getString("user_name", "").orEmpty()
+        if (rawStoredName.contains("Abhay", ignoreCase = true)) {
+            val freshRandom = getRandomExplorerName()
+            prefs.edit().putString("user_name", freshRandom).apply()
+            val pPrefs = application.getSharedPreferences("depthlens_profile", android.content.Context.MODE_PRIVATE)
+            pPrefs.edit().putString("profile_name", freshRandom).apply()
+            userName.value = freshRandom
+        }
+
         // Restore local logged-in memory state immediately to prevent visual flickers/logouts on launch
         val wasLoggedIn = prefs.getBoolean("is_logged_in", false)
         if (wasLoggedIn) {
             val uid = prefs.getString("user_id", "guest_local").orEmpty()
             val email = prefs.getString("user_email", "").orEmpty()
-            val name = prefs.getString("user_name", "Guest Explorer").orEmpty()
+            val rawName = prefs.getString("user_name", "Guest Explorer").orEmpty()
+            val name = if (rawName.contains("Abhay", ignoreCase = true) || rawName.isBlank()) {
+                getRandomExplorerName().also { prefs.edit().putString("user_name", it).apply() }
+            } else {
+                rawName
+            }
             isLoggedIn.value = true
             userId.value = uid
             userName.value = name
@@ -881,7 +913,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 // Determine or create session if none active or if branching into a new conversation
                 val currentId = _activeSessionId.value
                 val sessionId = if (isBranch || currentId == null || currentId == "draft_session_id") {
-                    val newSession = repository.createNewSession(generateUniqueSessionName(_selectedMode.value))
+                    val newSession = repository.createNewSession("New Chat")
                     _activeSessionId.value = newSession.id
                     prefs.edit().putString("last_active_session_id", newSession.id).apply()
                     newSession.id
@@ -911,58 +943,34 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                     return@launch
                 }
 
-                // Determine if this is the first user query in this conversation
-                val existingHistory = repository.getMessagesFlow(sessionId).firstOrNull() ?: emptyList()
-                val userMessages = existingHistory.filter { it.role == "user" }
-                val isFirstQuery = userMessages.isEmpty()
-                val isSecondQuery = userMessages.size == 1
-
-                val activeSession = repository.allSessionsFlow.firstOrNull()?.find { it.id == sessionId }
-                val currentTitle = activeSession?.title ?: ""
-                val isCurrentTitleVague = currentTitle.isEmpty() || 
-                        currentTitle.endsWith("Brief") || 
-                        currentTitle.endsWith("Analysis") || 
-                        currentTitle.endsWith("Study") || 
-                        currentTitle.endsWith("Inquiry") || 
-                        currentTitle.startsWith("Origin Pattern") || 
-                        currentTitle.startsWith("Causal Chain") || 
-                        currentTitle.startsWith("Source Mapping") || 
-                        currentTitle.startsWith("Root Factor") || 
-                        currentTitle.startsWith("Deep Cause") || 
-                        currentTitle.startsWith("Foundation Analysis") || 
-                        currentTitle.startsWith("Trigger Sequence") || 
-                        currentTitle.startsWith("Core Driver") || 
-                        currentTitle.startsWith("Underlying Force") ||
-                        currentTitle.startsWith("Cognitive Pattern") ||
-                        currentTitle.startsWith("Behavioral Motive") ||
-                        currentTitle.startsWith("Mental Model") ||
-                        currentTitle.startsWith("Psychological Driver") ||
-                        currentTitle.startsWith("Belief System") ||
-                        currentTitle.startsWith("Emotional Trigger") ||
-                        currentTitle.startsWith("Bias Detection") ||
-                        currentTitle.startsWith("Subconscious Pattern") ||
-                        currentTitle.startsWith("Identity Lens") ||
-                        currentTitle.startsWith("Feedback Loop") ||
-                        currentTitle.startsWith("System Dynamics") ||
-                        currentTitle.startsWith("Incentive Structure") ||
-                        currentTitle.startsWith("Network Effect") ||
-                        currentTitle.startsWith("Systemic Leverage") ||
-                        currentTitle.startsWith("Loop Analysis") ||
-                        currentTitle.startsWith("Equilibrium Pattern") ||
-                        currentTitle.startsWith("Emergent Behavior") ||
-                        currentTitle.startsWith("System Blind Spot") ||
-                        currentTitle.contains("Reality Intel") ||
-                        currentTitle.startsWith("New Session") ||
-                        currentTitle.startsWith("Untitled")
-
                 // 1. Insert user message to initiate continuity UI rendering
                 repository.insertUserMessage(sessionId, cleanQuery, attachedUri, replyId, replyText)
+
+                // Check if session title is generic/empty, and immediately derive a topic title
+                val activeSession = repository.allSessionsFlow.firstOrNull()?.find { it.id == sessionId }
+                val currentTitle = activeSession?.title ?: ""
+                val needsTitleGeneration = repository.isGenericTitle(currentTitle)
+
+                if (needsTitleGeneration && cleanQuery.isNotBlank()) {
+                    // Instantly set a local smart topic title so History updates with 0 delay (like ChatGPT/Claude)
+                    val localTopicTitle = repository.generateLocalTopicTitle(cleanQuery)
+                    if (localTopicTitle.isNotBlank() && localTopicTitle != "New Chat") {
+                        repository.updateSessionTitle(sessionId, localTopicTitle)
+                    }
+                    // Launch background AI refinement
+                    viewModelScope.launch {
+                        repository.generateTitleForSession(sessionId, cleanQuery)
+                    }
+                }
                 
                 // 2. Perform intelligence analysis call to external models in background (non-blocking)
                 repository.startBackgroundAnalysis(sessionId, _selectedMode.value, _selectedDepth.value) {
                     if (cleanQuery.isNotEmpty()) {
                         viewModelScope.launch {
-                            repository.generateTitleForSession(sessionId, cleanQuery)
+                            val refreshedSession = repository.allSessionsFlow.firstOrNull()?.find { it.id == sessionId }
+                            if (repository.isGenericTitle(refreshedSession?.title ?: "")) {
+                                repository.generateTitleForSession(sessionId, cleanQuery)
+                            }
                         }
                     }
                 }
@@ -1019,7 +1027,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             repository.clearAllData()
             _activeSessionId.value = null
-            createSession("New Reality Intel")
+            createSession("New Chat")
         }
     }
 
@@ -1198,14 +1206,19 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun onLocalAuthSuccess(uid: String, email: String, name: String, isNew: Boolean) {
         val previousUserId = userId.value
         val savedName = prefs.getString("user_name", "").orEmpty()
+            .takeIf { !it.contains("Abhay", ignoreCase = true) }
+            .orEmpty()
             .ifBlank {
                 val profilePrefs = getApplication<Application>().getSharedPreferences("depthlens_profile", android.content.Context.MODE_PRIVATE)
-                profilePrefs.getString("profile_name", "").orEmpty()
+                profilePrefs.getString("profile_name", "").orEmpty().takeIf { !it.contains("Abhay", ignoreCase = true) }.orEmpty()
             }
         
-        val finalName = name.ifBlank {
+        val finalName = if (name.isNotBlank() && !name.contains("Abhay", ignoreCase = true)) {
+            name.trim()
+        } else {
             savedName.takeIf { it.isNotBlank() && it != "Guest Explorer" }
-                ?: email.substringBefore("@")
+                ?: email.substringBefore("@").takeIf { it.isNotBlank() }
+                ?: getRandomExplorerName()
         }
 
         userId.value = uid
@@ -1237,8 +1250,8 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 repository.clearLocalData()
                 prefs.edit().putString("last_synced_user_id", uid).apply()
                 
-                // Immediately seed a Multi-Layer session for a clean landing in the local profile
-                val newSession = repository.createNewSession(generateUniqueSessionName("Multi-Layer"))
+                // Immediately seed a clean session for a landing in the local profile
+                val newSession = repository.createNewSession("New Chat")
                 _activeSessionId.value = newSession.id
                 prefs.edit().putString("last_active_session_id", newSession.id).apply()
             }
@@ -1542,7 +1555,11 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun loginAsGuest(fullName: String) {
-        val destName = fullName.ifBlank { "Guest Explorer" }
+        val destName = if (fullName.isNotBlank() && !fullName.contains("Abhay", ignoreCase = true)) {
+            fullName.trim()
+        } else {
+            getRandomExplorerName()
+        }
         isLoggedIn.value = false
         isGuest.value = true
         userId.value = "guest_local"
@@ -1675,7 +1692,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun submitFeedback(category: String, message: String, email: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
             val pInfo = try { getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0) } catch (e: Exception) { null }
-            val appVer = pInfo?.versionName ?: "3.0.2"
+            val appVer = pInfo?.versionName ?: "6.0.1"
             
             // Send to Firestore
             val success = com.example.data.network.CloudSyncService.submitFeedback(
@@ -1711,7 +1728,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun submitBugReport(message: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
             val pInfo = try { getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0) } catch (e: Exception) { null }
-            val appVer = pInfo?.versionName ?: "3.0.2"
+            val appVer = pInfo?.versionName ?: "6.0.1"
             val deviceModel = android.os.Build.MODEL ?: "Unknown Device"
             val androidVer = android.os.Build.VERSION.RELEASE ?: "Unknown Android"
             val deviceInfo = "$deviceModel (Android $androidVer)"
@@ -1748,56 +1765,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     }
 
     private fun generateUniqueSessionName(mode: String): String {
-        val topicsByMode = mapOf(
-            "Root Cause" to listOf(
-                "Origin Pattern Study", "Causal Chain Analysis", "Source Mapping Trace",
-                "Root Factor Probe", "Deep Cause Inquiry", "Foundation Analysis",
-                "Trigger Sequence Study", "Core Driver Audit", "Underlying Force Map"
-            ),
-            "Psychology" to listOf(
-                "Cognitive Pattern Scan", "Behavioral Motive Audit", "Mental Model Probe",
-                "Psychological Driver Study", "Belief System Map", "Emotional Trigger Trace",
-                "Bias Detection Study", "Subconscious Pattern Audit", "Identity Lens Analysis"
-            ),
-            "Systems" to listOf(
-                "Feedback Loop Scan", "System Dynamics Map", "Incentive Structure Audit",
-                "Network Effect Probe", "Systemic Leverage Study", "Loop Analysis Trace",
-                "Equilibrium Pattern Map", "Emergent Behavior Study", "System Blind Spot Audit"
-            ),
-            "Probability" to listOf(
-                "Outcome Probability Map", "Timeline Likelihood Study", "Risk Scenario Probe",
-                "Bayesian Path Analysis", "Probability Tree Audit", "Expected Value Trace",
-                "Uncertainty Field Scan", "Decision Probability Study", "Scenario Weight Map"
-            ),
-            "Business" to listOf(
-                "Strategic Position Audit", "Market Dynamic Study", "Growth Lever Map",
-                "Competitive Moat Analysis", "Revenue Model Probe", "Value Chain Scan",
-                "Business Model Trace", "Organizational Driver Study", "Opportunity Gap Map"
-            ),
-            "Relationships" to listOf(
-                "Interpersonal Dynamic Audit", "Attachment Pattern Study", "Bond Structure Map",
-                "Relationship Driver Probe", "Communication Pattern Scan", "Trust Fabric Analysis",
-                "Social Dynamic Trace", "Conflict Pattern Study", "Connection Depth Map"
-            ),
-            "Spiritual" to listOf(
-                "Purpose Alignment Probe", "Values Clarity Audit", "Inner Growth Map",
-                "Meaning Pattern Study", "Higher Principle Trace", "Spiritual Lens Analysis",
-                "Core Values Scan", "Life Purpose Map", "Growth Pathway Study"
-            ),
-            "Decision Making" to listOf(
-                "Decision Framework Audit", "Risk-Benefit Map", "Choice Architecture Study",
-                "Heuristic Bias Probe", "Trade-off Analysis Trace", "Strategic Choice Scan",
-                "Decision Quality Map", "Option Evaluation Study", "Choice Driver Audit"
-            ),
-            "Multi-Layer" to listOf(
-                "Reality Architecture Scan", "Multi-Dimensional Audit", "Full-Spectrum Analysis",
-                "Deep-Layer Probe", "Reality Tunnel Trace", "Ontological Pattern Map",
-                "Consciousness Layer Study", "Meta-Pattern Audit", "Invisible Architecture Scan"
-            )
-        )
-        val topics = topicsByMode[mode] ?: topicsByMode["Root Cause"]!!
-        val index = (System.currentTimeMillis() % topics.size).toInt()
-        return topics[index]
+        return "New Chat"
     }
 
     fun isVagueOrShort(query: String): Boolean {
@@ -1812,16 +1780,11 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun getTemporaryTitleForMode(mode: String): String {
-        return when (mode) {
-            "Root Cause" -> "Root Cause Analysis Brief"
-            "Psychology" -> "Psychological Analysis Brief"
-            "Systems" -> "Systems Dynamics Analysis"
-            "Probability" -> "Probability Analysis Study"
-            "Business" -> "Business Strategy Study"
-            "Relationships" -> "Interpersonal Dynamic Inquiry"
-            "Spiritual" -> "Alignment Analysis Study"
-            else -> "Strategic Reality Analysis"
-        }
+        return "New Chat"
+    }
+
+    fun ensureSessionTitlesMigrated() {
+        repository.runOneTimeTitleMigration()
     }
 
     fun refreshDiagnostics() {

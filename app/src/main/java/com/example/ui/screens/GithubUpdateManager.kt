@@ -85,8 +85,9 @@ object GithubUpdateManager {
             _updateHistory.value = historyStr.split(";;").filter { it.isNotEmpty() }
         } else {
             val initialHistory = listOf(
-                "v1.0 initialized successfully - Secure Kernel deployment (2026-05-15)",
-                "v1.1 patch deployed - Local neural model weights synchronized (2026-05-28)"
+                "v6.0.1 patch deployed - Clean response engine & AI latency optimizations (2026-09-04)",
+                "v6.0.0 major update - Reality Intelligence & visual polish (2026-09-03)",
+                "v1.0 initialized successfully - Secure Kernel deployment (2026-05-15)"
             )
             _updateHistory.value = initialHistory
             prefs.edit().putString(KEY_UPDATE_HISTORY, initialHistory.joinToString(";;")).apply()
@@ -116,9 +117,9 @@ object GithubUpdateManager {
         
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "6.0.0"
+            packageInfo.versionName ?: "6.0.1"
         } catch (e: Exception) {
-            "4.0.0"
+            "6.0.1"
         }
     }
 
@@ -245,15 +246,16 @@ object GithubUpdateManager {
                     val localVersion = getInstalledVersion(context)
                     
                     val mockRelease = GitHubRelease(
-                        tagName = "v6.0.0",
-                        name = "DepthLens v6.0.0 — Reality Intelligence Upgrade",
-                        publishedAt = "July 5, 2026",
-                        body = "### What's New in v6.0.0\n" +
-                                "- **Polished Attachment Previews**: Rebuilt attachment thumbnail previews with rounded corners and adaptive aspect ratios that wrap content perfectly.\n" +
-                                "- **Diagnostic Card Streamlining**: The Reality Layer Activation diagnostic visualizer card is removed from settings and follow-up threads per client request for an elegant, expert-conversational direct response flow.\n" +
-                                "- **Polished Aesthetics & Layouts**: Smoothed spacing, paddings, and card alignment across conversational screens.",
-                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v6.0.0/DepthLens_v_6.0.0.apk",
-                        apkFileName = "DepthLens_v_6.0.0.apk",
+                        tagName = "v6.0.1",
+                        name = "DepthLens v6.0.1 — Clean Response & Engine Optimization",
+                        publishedAt = "September 4, 2026",
+                        body = "### What's New in v6.0.1\n" +
+                                "- **Clean Response Engine**: Completely removed redundant confidence ratings and status labels from chat responses for pure, natural conversations.\n" +
+                                "- **Real-Time Stream Sanitizer**: Enhanced streaming pipeline to filter out backend meta-tags and raw confidence scores before displaying.\n" +
+                                "- **Performance & Latency**: Faster response rendering and reduced cognitive overhead.\n" +
+                                "- **Export Polish**: Clean exports and shares without lingering metadata headers.",
+                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/v6.0.1/DepthLens_v6.0.1.apk",
+                        apkFileName = "DepthLens_v6.0.1.apk",
                         apkSize = 41943040L
                     )
                     
@@ -264,7 +266,7 @@ object GithubUpdateManager {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                    val isNew = isNewerVersion("v6.0.0", localVersion)
+                    val isNew = isNewerVersion("v6.0.1", localVersion)
                     onComplete(isNew, mockRelease)
                 }
             }

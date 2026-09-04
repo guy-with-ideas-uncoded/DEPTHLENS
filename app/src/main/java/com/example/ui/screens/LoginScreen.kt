@@ -15,6 +15,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -63,6 +66,8 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
+    var showGuestDialog by remember { mutableStateOf(false) }
+    var guestNameInput by remember { mutableStateOf(IntelligenceViewModel.getRandomExplorerName()) }
 
     // Infinite animations for ambient glow
     val infiniteTransition = rememberInfiniteTransition(label = "ambient_login")
@@ -251,22 +256,85 @@ fun LoginScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 if (authMode == "signup") {
-                    // Full Name Input for signup
-                    OutlinedTextField(
-                        value = displayName,
-                        onValueChange = { displayName = it },
-                        placeholder = { Text("Display Name", color = TextMutedColor, fontSize = 13.sp) },
-                        textStyle = TextStyle(color = TextPrimaryColor, fontSize = 13.sp, fontFamily = InstrumentSansFontFamily),
-                        shape = RoundedCornerShape(14.dp),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = ElectricViolet,
-                            unfocusedBorderColor = GlassBorder,
-                            focusedContainerColor = DynamicGlassFill,
-                            unfocusedContainerColor = DynamicGlassFill
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Profile Name",
+                                color = ElectricViolet,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = InstrumentSansFontFamily
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        val suggested = IntelligenceViewModel.getRandomExplorerName()
+                                        displayName = suggested
+                                        Toast.makeText(context, "Suggested: $suggested", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Randomize Name",
+                                    tint = PremiumCyan,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = "Randomize",
+                                    color = PremiumCyan,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                            }
+                        }
+                        OutlinedTextField(
+                            value = displayName,
+                            onValueChange = { displayName = it },
+                            placeholder = { Text("Enter your full name or nickname", color = TextMutedColor, fontSize = 13.sp) },
+                            textStyle = TextStyle(color = TextPrimaryColor, fontSize = 13.sp, fontFamily = InstrumentSansFontFamily),
+                            shape = RoundedCornerShape(14.dp),
+                            singleLine = true,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "Profile Name",
+                                    tint = if (displayName.isNotBlank()) ElectricViolet else TextMutedColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            trailingIcon = {
+                                if (displayName.isNotBlank()) {
+                                    IconButton(onClick = { displayName = "" }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Clear",
+                                            tint = TextMutedColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = ElectricViolet,
+                                unfocusedBorderColor = GlassBorder,
+                                focusedContainerColor = DynamicGlassFill,
+                                unfocusedContainerColor = DynamicGlassFill
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
 
                 // Email field
@@ -337,7 +405,12 @@ fun LoginScreen(
                                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                             }
                         } else {
-                            val nameToUse = displayName.ifBlank { email.substringBefore("@") }
+                            if (displayName.trim().isBlank()) {
+                                isLoading = false
+                                Toast.makeText(context, "Please set your Profile Name or tap Randomize.", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            val nameToUse = displayName.trim()
                             viewModel.signUpWithEmailAndPassword(email.trim(), password, nameToUse) { success, message ->
                                 isLoading = false
                                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
@@ -428,9 +501,103 @@ fun LoginScreen(
                 modifier = Modifier
                     .clickable {
                         focusManager.clearFocus()
-                        viewModel.loginAsGuest("Abhay Shah")
+                        guestNameInput = IntelligenceViewModel.getRandomExplorerName()
+                        showGuestDialog = true
                     }
                     .padding(8.dp)
+            )
+        }
+
+        if (showGuestDialog) {
+            AlertDialog(
+                onDismissRequest = { showGuestDialog = false },
+                containerColor = DeepMidnight,
+                shape = RoundedCornerShape(20.dp),
+                title = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "GUEST EXPLORER",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PremiumCyan,
+                            fontFamily = DMMonoFontFamily,
+                            letterSpacing = 1.3.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Set Profile Name",
+                            fontSize = 18.sp,
+                            fontFamily = DMSerifDisplayFontFamily,
+                            color = TextPrimaryColor
+                        )
+                    }
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Choose your profile name or generate a fresh explorer handle to start:",
+                            color = TextMutedColor,
+                            fontSize = 12.sp,
+                            fontFamily = InstrumentSansFontFamily
+                        )
+                        OutlinedTextField(
+                            value = guestNameInput,
+                            onValueChange = { guestNameInput = it },
+                            placeholder = { Text("Enter guest name", color = TextMutedColor, fontSize = 13.sp) },
+                            textStyle = TextStyle(color = TextPrimaryColor, fontSize = 13.sp, fontFamily = InstrumentSansFontFamily),
+                            shape = RoundedCornerShape(14.dp),
+                            singleLine = true,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = ElectricViolet,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = {
+                                    guestNameInput = IntelligenceViewModel.getRandomExplorerName()
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Randomize",
+                                        tint = PremiumCyan,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = ElectricViolet,
+                                unfocusedBorderColor = GlassBorder,
+                                focusedContainerColor = DynamicGlassFill,
+                                unfocusedContainerColor = DynamicGlassFill
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val finalName = guestNameInput.trim().ifBlank { IntelligenceViewModel.getRandomExplorerName() }
+                            showGuestDialog = false
+                            viewModel.loginAsGuest(finalName)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Start Exploring", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InstrumentSansFontFamily, fontSize = 12.sp)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showGuestDialog = false }) {
+                        Text("Cancel", color = TextMutedColor, fontFamily = InstrumentSansFontFamily, fontSize = 12.sp)
+                    }
+                }
             )
         }
     }

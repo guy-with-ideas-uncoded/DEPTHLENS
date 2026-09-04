@@ -55,12 +55,17 @@ fun SessionsScreen(
     onNavigateToChat: () -> Unit,
     onTogglePinSession: (String) -> Unit,
     onRenameSession: (String, String) -> Unit,
+    onScreenVisible: () -> Unit = {},
     modifier: Modifier = Modifier,
     listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
 ) {
     val context = LocalContext.current
     var renamingSession by remember { mutableStateOf<SessionEntity?>(null) }
     var renamingTitleText by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        onScreenVisible()
+    }
 
     val pinnedResults = remember(searchResults) { searchResults.filter { it.session.isPinned } }
     val unpinnedResults = remember(searchResults) { searchResults.filter { !it.session.isPinned } }
