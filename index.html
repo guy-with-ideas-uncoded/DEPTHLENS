@@ -454,42 +454,186 @@ body {
 .footer .brand .brand-name{line-height:1}
 .footer-tagline{width:auto!important;max-width:none!important;justify-self:auto!important;text-align:left!important;white-space:nowrap!important;margin:0!important}
 </style>
-<style id="layer-no-overlap">
-/* desktop + tablet: widen vertical spacing so cards never merge, softer float */
-.layer:nth-child(1){--y:-252!important}
-.layer:nth-child(2){--y:-168!important}
-.layer:nth-child(3){--y:-84!important}
-.layer:nth-child(4){--y:0!important}
-.layer:nth-child(5){--y:84!important}
-.layer:nth-child(6){--y:168!important}
-.layer:nth-child(7){--y:252!important}
-@keyframes layerFloat{50%{transform:translate3d(calc(var(--x)*1px),calc(var(--y)*1px - 2px),0) scale(var(--s))}}
-@media (max-width:900px){
-  .layers{height:600px!important;min-height:600px!important}
+<style id="reality-layers-clean-fix">
+/* Completely remove the restrictive box border, box background and box shadow */
+.layers:before {
+  display: none !important;
+  content: none !important;
+  border: none !important;
+  background: none !important;
+  box-shadow: none !important;
 }
-@media (max-width:560px){
-  .layers{height:560px!important;min-height:560px!important}
-  .layer:nth-child(1){--myl:-234!important}
-  .layer:nth-child(2){--myl:-156!important}
-  .layer:nth-child(3){--myl:-78!important}
-  .layer:nth-child(4){--myl:0!important}
-  .layer:nth-child(5){--myl:78!important}
-  .layer:nth-child(6){--myl:156!important}
-  .layer:nth-child(7){--myl:234!important}
-  @keyframes mobileLayerFloat{50%{transform:translate3d(calc(var(--mxl)*1px),calc(var(--myl)*1px - 2px),0) scale(var(--ms))}}
+
+/* Atmospheric ambient radial light behind the cards instead of a hard box */
+.layers:after {
+  content: "" !important;
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  width: min(440px, 90vw) !important;
+  height: 460px !important;
+  transform: translate(-50%, -50%) !important;
+  margin: 0 !important;
+  border-radius: 50% !important;
+  background: radial-gradient(ellipse at center, rgba(0, 229, 255, 0.16) 0%, rgba(123, 92, 245, 0.12) 40%, transparent 70%) !important;
+  box-shadow: none !important;
+  filter: blur(48px) !important;
+  pointer-events: none !important;
+  z-index: 0 !important;
+  animation: layersPulseGlow 6s ease-in-out infinite !important;
 }
-</style>
-<style id="layer-lock-final">
-/* lock each card in its own row (flex reserves space) — only tiny self-contained bob, can never merge */
-.layers{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:16px!important;height:auto!important;min-height:0!important;padding:32px 0!important;perspective:none!important}
-.layers:before{inset:0!important;transform:none!important;border-radius:32px!important}
-.layer{position:relative!important;left:auto!important;right:auto!important;top:auto!important;bottom:auto!important;margin:0!important;width:min(560px,90vw)!important;animation:cardBob 4.5s ease-in-out infinite!important;animation-delay:calc(var(--n)*-.4s)!important}
-/* uneven zig-zag: horizontal offset (--x) + depth scale (--s), vertical bob only 5px. flex gap keeps rows apart → no merge */
-@keyframes cardBob{0%,100%{transform:translate3d(calc(var(--x)*1px),0,0) scale(var(--s))}50%{transform:translate3d(calc(var(--x)*1px),-5px,0) scale(var(--s))}}
-@media (max-width:560px){
-  .layer{width:min(340px,90vw)!important}
-  .layers{gap:14px!important;padding:24px 0!important}
-  @keyframes cardBob{0%,100%{transform:translate3d(calc(var(--mxl)*1px),0,0) scale(var(--ms))}50%{transform:translate3d(calc(var(--mxl)*1px),-5px,0) scale(var(--ms))}}
+@keyframes layersPulseGlow {
+  0%, 100% { opacity: 0.6; transform: translate(-50%, -50%) scale(1); }
+  50% { opacity: 0.9; transform: translate(-50%, -50%) scale(1.08); }
+}
+
+/* Open, clean, fluid column layout for .stage.layers */
+.stage.layers {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  gap: 13px !important;
+  height: auto !important;
+  min-height: auto !important;
+  padding: 16px 0 !important;
+  perspective: none !important;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  width: 100% !important;
+  max-width: 530px !important;
+  margin: 0 auto !important;
+  position: relative !important;
+}
+
+/* Balanced 2-column layout on desktop for the Reality Layers section */
+.story {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 1fr) !important;
+  gap: 5vw !important;
+  align-items: center !important;
+}
+
+/* Each reality layer as an elegant glass capsule with full visibility and zero text clipping */
+.layer {
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  margin: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 58px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.04) 50%, rgba(0, 229, 255, 0.06)) !important;
+  backdrop-filter: blur(20px) saturate(1.3) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 10px 30px rgba(0, 0, 0, 0.32) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 24px 0 68px !important;
+  color: #fff !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  z-index: 1 !important;
+  transform: none !important;
+  animation: layerCardFloat 5s ease-in-out infinite !important;
+  animation-delay: calc(var(--n, 1) * -0.32s) !important;
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease !important;
+}
+
+.layer:hover {
+  transform: translateY(-2px) scale(1.01) !important;
+  border-color: rgba(0, 229, 255, 0.45) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 14px 40px rgba(0, 229, 255, 0.18) !important;
+}
+
+@keyframes layerCardFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* Step indicator circular badge */
+.layer:before {
+  content: attr(data-step) !important;
+  position: absolute !important;
+  left: 14px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: radial-gradient(circle at 35% 30%, #ffffff, var(--cyan) 25%, var(--violet) 80%) !important;
+  box-shadow: 0 0 22px rgba(0, 229, 255, 0.5) !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  color: #05040d !important;
+  margin: 0 !important;
+  border: none !important;
+}
+
+/* Layer title */
+.layer b {
+  font-size: 15px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.01em !important;
+  white-space: nowrap !important;
+  color: #ffffff !important;
+}
+
+/* Layer description pill text */
+.layer span {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: rgba(247, 244, 255, 0.65) !important;
+  white-space: nowrap !important;
+  letter-spacing: 0.02em !important;
+  text-align: right !important;
+  margin-left: 12px !important;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 900px) {
+  .story {
+    grid-template-columns: 1fr !important;
+    gap: 36px !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .stage.layers {
+    gap: 10px !important;
+    padding: 10px 0 !important;
+    max-width: 100% !important;
+  }
+  .layer {
+    height: 52px !important;
+    padding: 0 16px 0 54px !important;
+    border-radius: 999px !important;
+  }
+  .layer:before {
+    left: 10px !important;
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 10px !important;
+  }
+  .layer b {
+    font-size: 13px !important;
+  }
+  .layer span {
+    font-size: 10px !important;
+    max-width: 120px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
 }
 </style>
 <style id="logo-and-hero-fix">
@@ -508,14 +652,14 @@ body {
 <main class="wrap" id="top">
 <section class="section hero"><div class="frame"><svg class="logo" viewBox="0 0 108 108" fill="none"><path d="M24 54C39 33 69 33 84 54C69 75 39 75 24 54Z" stroke="#8B5CF6" stroke-width="4.5"/><path d="M39 54a15 15 0 1 1 30 0a15 15 0 1 1-30 0" stroke="#00D9FF" stroke-width="4"/><path d="M43.4 64.6L64.6 43.4" stroke="#8B5CF6" stroke-width="3"/><circle cx="48.7" cy="59.3" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/><circle cx="59.3" cy="48.7" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/></svg><p class="eyebrow">Reality Intelligence Engine</p><h1>See beneath<br>the surface.</h1><p>DepthLens turns messy human situations, decisions, systems, and patterns into layered intelligence you can act on.</p><div class="cta"><a class="pill primary magnetic" href="#demo">Enter the Lens</a><a class="pill magnetic" href="#app">View App</a></div></div><div class="scrollhint">Scroll the reality stack</div></section>
 <section class="section" id="demo"><div class="frame story"><div class="copy reveal"><p class="eyebrow">Reality Lens</p><h2>The surface collapses into signal.</h2><p>What looks like one problem is often a stack of hidden incentives, emotions, systems, and timing. DepthLens refracts the situation until the structure becomes visible.</p></div><div class="stage reveal"><div class="glass"><div class="lens"></div><div class="scan"></div><div class="metric m1">Surface noise: 84%</div><div class="metric m2">Pattern lock detected</div><div class="metric m3">Root pressure: rising</div><div class="metric m4">Clarity path: open</div></div></div></div></section>
-<section class="section"><div class="frame story"><div class="stage layers"><div class="layer" data-step="01"><b>Surface Reality</b><span>visible facts</span></div><div class="layer" data-step="02"><b>Emotional Reality</b><span>unspoken charge</span></div><div class="layer" data-step="03"><b>Psychological Reality</b><span>inner pattern</span></div><div class="layer" data-step="04"><b>Strategic Reality</b><span>incentive field</span></div><div class="layer" data-step="05"><b>Systems Reality</b><span>feedback loops</span></div><div class="layer" data-step="06"><b>Temporal Reality</b><span>past and future</span></div><div class="layer" data-step="07"><b>Root Cause</b><span>source node</span></div></div><div class="copy reveal"><p class="eyebrow">Reality Layers</p><h2>Seven lenses. One coherent picture.</h2><p>Each layer explains a different truth. Together they reveal why the situation keeps repeating, what is actually driving it, and where leverage lives.</p></div></div></section>
+<section class="section"><div class="frame story"><div class="stage layers reveal"><div class="layer" data-step="01"><b>Surface Reality</b><span>visible facts</span></div><div class="layer" data-step="02"><b>Emotional Reality</b><span>unspoken charge</span></div><div class="layer" data-step="03"><b>Psychological Reality</b><span>inner pattern</span></div><div class="layer" data-step="04"><b>Strategic Reality</b><span>incentive field</span></div><div class="layer" data-step="05"><b>Systems Reality</b><span>feedback loops</span></div><div class="layer" data-step="06"><b>Temporal Reality</b><span>past and future</span></div><div class="layer" data-step="07"><b>Root Cause</b><span>source node</span></div></div><div class="copy reveal"><p class="eyebrow">Reality Layers</p><h2>Seven lenses. One coherent picture.</h2><p>Each layer explains a different truth. Together they reveal why the situation keeps repeating, what is actually driving it, and where leverage lives.</p></div></div></section>
 <section class="section" id="engine"><div class="frame story"><div class="copy reveal"><p class="eyebrow">Intelligence Engine</p><h2>An offline mind for systemic clarity.</h2><p>The engine decomposes ambiguity into causal maps, pressure points, contradiction checks, and next actions. Your thinking stays local, private, and owned by you.</p></div><div class="stage engine reveal"><div class="orbit"><i class="node"></i><i class="node"></i><i class="node"></i></div><div class="orbit"><i class="node"></i><i class="node"></i><i class="node"></i></div><div class="orbit"><i class="node"></i><i class="node"></i><i class="node"></i></div><div class="core"></div></div></div></section>
 <section class="section"><div class="frame story"><div class="stage probability reveal"><div class="glass"><div class="wave"></div><div class="futureline"></div><div class="chance">87%<small>pattern continuation</small></div></div></div><div class="copy reveal"><p class="eyebrow">Future Probability</p><h2>Forecast the shape of what happens next.</h2><p>DepthLens models likely trajectories from the current structure, then highlights the few interventions that can bend the outcome.</p></div></div></section>
 <section class="section" id="app"><div class="frame showcase"><div class="phone reveal"><div class="screen"><h3>Ask anything.</h3><div class="bubble">Why does this conflict keep returning?</div><div class="bubble ai">Root cause: unclear ownership is creating competing incentives.</div><div class="bubble">Show me the leverage point.</div></div></div><div class="copy reveal"><p class="eyebrow">App Showcase</p><h2>A calm interface for intense thinking.</h2><p>No clutter. No theater. Just a focused workspace where your situation becomes navigable layer by layer.</p></div><div class="phone reveal"><div class="screen"><h3>Reality Map</h3><div class="bubble ai">Systems loop found between urgency, avoidance, and delayed decisions.</div><div class="bubble ai">Recommended action: define decision rights before the next meeting.</div></div></div></div></section>
 <section class="section" id="features"><div class="frame"><div class="copy reveal" style="margin-bottom:44px"><p class="eyebrow">Features</p><h2>Built for depth, speed, and ownership.</h2></div><div class="featuregrid reveal"><div class="feature"><i></i><h3>Layered analysis</h3><p>Decompose complex situations across emotional, strategic, systemic, and temporal realities.</p></div><div class="feature"><i></i><h3>Root cause tracing</h3><p>Find the origin point beneath symptoms, reactions, and repeated surface events.</p></div><div class="feature"><i></i><h3>Local-first privacy</h3><p>Designed around client-side ownership so your private reasoning remains yours.</p></div><div class="feature"><i></i><h3>Action synthesis</h3><p>Convert insight into high-leverage next steps, decision paths, and framing language.</p></div></div></div></section>
 <section class="section philosophy"><div class="frame reveal"><p class="eyebrow">Philosophy</p><h2>Clarity is not more information. It is better depth perception.</h2><p>DepthLens exists for people who refuse shallow answers. It is a tool for seeing structure, naming truth precisely, and acting without surrendering your judgment.</p></div></section>
 <section class="section" id="roadmap"><div class="frame"><div class="copy reveal" style="margin-bottom:34px"><p class="eyebrow">Roadmap</p><h2>The lens keeps widening.</h2></div><div class="road reveal"><div class="step"><b>01</b><h3>Smarter AI</h3><p>Smarter conversations<br>Faster responses<br>Better memory &amp; context<br>UI refinements</p></div><div class="step"><b>02</b><h3>Reality Intelligence</h3><p>Contextual Scenario Simulation<br>Adaptive Insight Generation<br>Real-Time Situation Awareness<br>Cognitive Bias Detection</p></div><div class="step"><b>03</b><h3>Universal Intelligence</h3><p>Real-Time Data Integration<br>Knowledge Graph Expansion<br>Autonomous Research Capabilities<br>Context-Aware Recommendations</p></div><div class="step"><b>04</b><h3>Personal Intelligence</h3><p>Goal &amp; Progress Tracking<br>Personalized Insights<br>Daily Intelligence Reports<br>Long-Term Memory</p></div></div><p style="text-align:center;margin-top:32px;color:var(--soft);font-size:18px"><b style="color:var(--cyan)">Vision:</b> Build the world's most advanced Reality Intelligence System.</p></div></section>
-<section class="section download" id="download"><div class="frame reveal"><p class="eyebrow">Download</p><h2>Take the lens with you.</h2><p>DepthLens for Android gives you a private reasoning environment for decisions, conflict, strategy, and self-analysis.</p><div class="cta"><a class="pill primary magnetic" href="https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.0.0/DepthLens_v_6.0.0.apk" download="DepthLens_v_6.0.0.apk">Download DepthLens</a><a class="pill magnetic" href="https://github.com/madfordiamonds/DEPTHLENS" target="_blank" rel="noreferrer">GitHub</a></div></div></section>
+<section class="section download" id="download"><div class="frame reveal"><p class="eyebrow">Download</p><h2>Take the lens with you.</h2><p>DepthLens for Android gives you a private reasoning environment for decisions, conflict, strategy, and self-analysis.</p><div class="cta"><a class="pill primary magnetic" href="https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.0.1/DepthLens_v6.0.1.apk" target="_blank" rel="noreferrer">GitHub</a></div></div></section>
 </main><footer class="footer"><div class="frame"><div class="footer-brand-lockup"><div class="brand"><svg class="logo" viewBox="0 0 108 108" fill="none"><path d="M24 54C39 33 69 33 84 54C69 75 39 75 24 54Z" stroke="#8B5CF6" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M39 54a15 15 0 1 1 30 0a15 15 0 1 1-30 0" stroke="#00D9FF" stroke-width="4"/><path d="M43.4 64.6L64.6 43.4" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round"/><circle cx="48.7" cy="59.3" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/><circle cx="59.3" cy="48.7" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/></svg><span class="brand-textcol"><span class="brand-name">DEPTHLENS</span><span class="footer-tagline">See Beyond Surface</span></span></div></div><div class="footer-links"><a href="#features">Features</a><a href="#download">Download</a><a href="https://github.com/madfordiamonds/DEPTHLENS/releases" target="_blank" rel="noreferrer">Releases</a></div></div></footer>
 <script>
 const root=document.documentElement;let mx=innerWidth/2,my=innerHeight/2,tx=mx,ty=my;addEventListener('pointermove',e=>{tx=e.clientX;ty=e.clientY},{passive:true});function mouseLoop(){mx+=(tx-mx)*.14;my+=(ty-my)*.14;root.style.setProperty('--mx',mx+'px');root.style.setProperty('--my',my+'px');requestAnimationFrame(mouseLoop)}mouseLoop();
