@@ -56,6 +56,8 @@ fun SessionsScreen(
     onTogglePinSession: (String) -> Unit,
     onRenameSession: (String, String) -> Unit,
     onScreenVisible: () -> Unit = {},
+    isSyncing: Boolean = false,
+    isLoggedIn: Boolean = false,
     modifier: Modifier = Modifier,
     listState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
 ) {
@@ -178,20 +180,84 @@ fun SessionsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                if (searchResults.isEmpty()) {
-                    item(key = "empty_state") {
-                        Box(
+                if (isSyncing && isLoggedIn) {
+                    item(key = "syncing_indicator_banner") {
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 40.dp),
-                            contentAlignment = Alignment.Center
+                                .padding(bottom = 6.dp)
+                                .depthGlass(cornerRadius = 12.dp, borderWidth = 1.dp)
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text(
-                                text = "No historic sessions found.",
-                                color = TextMutedColor,
-                                fontSize = 12.sp,
-                                fontFamily = InstrumentSansFontFamily
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = ElectricViolet,
+                                strokeWidth = 2.dp
                             )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Updating chat history…",
+                                    color = TextPrimaryColor,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                                Text(
+                                    text = "Syncing local database cache with cloud server",
+                                    color = TextMutedColor,
+                                    fontSize = 10.5.sp,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (searchResults.isEmpty()) {
+                    item(key = "empty_state") {
+                        if (isSyncing && isLoggedIn) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 48.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(32.dp),
+                                    color = ElectricViolet,
+                                    strokeWidth = 2.5.dp
+                                )
+                                Text(
+                                    text = "Syncing your chats…",
+                                    color = TextPrimaryColor,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                                Text(
+                                    text = "Restoring historic conversations from cloud storage",
+                                    color = TextMutedColor,
+                                    fontSize = 12.sp,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No historic sessions found.",
+                                    color = TextMutedColor,
+                                    fontSize = 12.sp,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                            }
                         }
                     }
                 } else {

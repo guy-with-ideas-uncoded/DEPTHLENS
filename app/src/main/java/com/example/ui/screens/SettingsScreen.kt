@@ -394,15 +394,16 @@ fun SettingsMainView(
                         onClick = { onNavigateToSub("privacy") }
                     )
                     val context = LocalContext.current
+                    val currentInstalledVer = com.example.ui.screens.GithubUpdateManager.getInstalledVersion(context)
                     val latestReleaseState by com.example.ui.screens.GithubUpdateManager.latestRelease.collectAsState()
                     val hasUpdate = latestReleaseState?.let {
-                        com.example.ui.screens.GithubUpdateManager.isNewerVersion(it.tagName, com.example.ui.screens.GithubUpdateManager.getInstalledVersion(context))
+                        com.example.ui.screens.GithubUpdateManager.isNewerVersion(it.tagName, currentInstalledVer)
                     } ?: false
 
                     SettingsRow(
                         icon = Icons.Default.SystemUpdate,
                         title = "Update App",
-                        desc = if (hasUpdate) "Update Available (v${latestReleaseState?.tagName})" else if (latestReleaseState != null) "Latest: v${latestReleaseState?.tagName}" else "Check for updates",
+                        desc = if (hasUpdate) "Update Available (v${latestReleaseState?.tagName})" else "Up to date (v$currentInstalledVer)",
                         onClick = { onNavigateToSub("update") }
                     )
                     SettingsRow(
@@ -2274,8 +2275,8 @@ fun UpdateSubscreen(onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Release details card if release is known
-                if (latestReleaseState != null) {
+                // If update is available, show new release card. Otherwise, show up-to-date card.
+                if (hasUpdate && latestReleaseState != null) {
                     val rel = latestReleaseState!!
                     Box(
                         modifier = Modifier
@@ -2296,14 +2297,11 @@ fun UpdateSubscreen(onBack: () -> Unit) {
                                     Box(
                                         modifier = Modifier
                                             .size(8.dp)
-                                            .background(
-                                                if (hasUpdate) Color(0xFF10B981) else Color(0xFF38E1D8),
-                                                CircleShape
-                                            )
+                                            .background(Color(0xFF10B981), CircleShape)
                                     )
                                     Text(
-                                        text = if (hasUpdate) "UPDATE AVAILABLE" else "LATEST RELEASE",
-                                        color = if (hasUpdate) Color(0xFF10B981) else Color(0xFF38E1D8),
+                                        text = "UPDATE AVAILABLE",
+                                        color = Color(0xFF10B981),
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 1.sp
@@ -2337,6 +2335,52 @@ fun UpdateSubscreen(onBack: () -> Unit) {
                                 color = textMuted,
                                 fontSize = 11.sp
                             )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                } else {
+                    // Up to date card
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .premiumGlassBg(cornerRadius = 20.dp)
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF10B981).copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF10B981),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "DepthLens is up to date",
+                                    color = textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Version $versionName is currently installed. No updates needed.",
+                                    color = textMuted,
+                                    fontSize = 11.sp,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(14.dp))
@@ -2475,16 +2519,16 @@ fun UpdateSubscreen(onBack: () -> Unit) {
                             )
                         )
                         .clickable(enabled = !isDownloading && !isChecking && !manualChecking) {
-                            if (latestReleaseState != null) {
+                            if (hasUpdate && latestReleaseState != null) {
                                 com.example.ui.screens.GithubUpdateManager.downloadAndUpdate(context, latestReleaseState!!)
                             } else {
                                 manualChecking = true
-                                com.example.ui.screens.GithubUpdateManager.checkForUpdates(context, force = true) { _, rel ->
+                                com.example.ui.screens.GithubUpdateManager.checkForUpdates(context, force = true) { isNew, rel ->
                                     manualChecking = false
-                                    if (rel != null) {
-                                        Toast.makeText(context, "Update v${rel.tagName} is available!", Toast.LENGTH_SHORT).show()
+                                    if (isNew && rel != null) {
+                                        Toast.makeText(context, "New update v${rel.tagName} is available!", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        Toast.makeText(context, "DepthLens is up to date", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "DepthLens is already up to date (v$versionName)", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             }
@@ -2495,7 +2539,7 @@ fun UpdateSubscreen(onBack: () -> Unit) {
                     val buttonText = when {
                         isDownloading -> "Downloading update (${((downloadProgress.coerceAtLeast(0f)) * 100).toInt()}%)..."
                         isChecking || manualChecking -> "Checking for updates..."
-                        latestReleaseState != null -> "Download & Install Update (v${latestReleaseState!!.tagName})"
+                        hasUpdate && latestReleaseState != null -> "Update & Install (v${latestReleaseState!!.tagName})"
                         else -> "Check for updates"
                     }
                     Text(
@@ -2511,7 +2555,7 @@ fun UpdateSubscreen(onBack: () -> Unit) {
                 
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "WHAT'S NEW",
+                        text = if (hasUpdate && latestReleaseState != null) "WHAT'S NEW IN v${latestReleaseState!!.tagName}" else "VERSION HIGHLIGHTS (v$versionName)",
                         color = labelViolet,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold,
@@ -2528,7 +2572,7 @@ fun UpdateSubscreen(onBack: () -> Unit) {
                             .padding(16.dp)
                     ) {
                         Text(
-                            text = if (latestReleaseState != null && latestReleaseState!!.body.isNotBlank()) {
+                            text = if (hasUpdate && latestReleaseState != null && latestReleaseState!!.body.isNotBlank()) {
                                 latestReleaseState!!.body
                             } else {
                                 "• Truth-first response engine without sycophancy\n• Profile-name synchronization\n• In-app update system with verified APK installer\n• High performance UI and clean typography"

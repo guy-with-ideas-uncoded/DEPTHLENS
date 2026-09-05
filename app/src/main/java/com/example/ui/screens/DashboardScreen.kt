@@ -131,6 +131,7 @@ fun DashboardScreen(
     val voiceAccent by viewModel.voiceAccent.collectAsState()
 
     val syncStatus by viewModel.syncStatus.collectAsState()
+    val isSyncing by viewModel.isSyncing.collectAsState()
     val lastSyncedTime by viewModel.lastSyncedTime.collectAsState()
     val chatsSyncedCount by viewModel.chatsSyncedCount.collectAsState()
     val pendingUploadsCount by viewModel.pendingUploadsCount.collectAsState()
@@ -2199,6 +2200,8 @@ Text(
                                 onTogglePinSession = { sessionId -> viewModel.togglePinSession(sessionId) },
                                 onRenameSession = { sessionId, newTitle -> viewModel.renameSession(sessionId, newTitle) },
                                 onScreenVisible = { viewModel.ensureSessionTitlesMigrated() },
+                                isSyncing = isSyncing,
+                                isLoggedIn = isLoggedIn,
                                 listState = sessionsListState
                             )
                         }

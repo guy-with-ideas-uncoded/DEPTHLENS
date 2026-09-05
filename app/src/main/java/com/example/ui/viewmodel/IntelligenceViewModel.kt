@@ -8,6 +8,7 @@ import com.example.data.model.*
 import com.example.data.repository.IntelligenceRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -471,6 +472,13 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     private val _syncStatus = MutableStateFlow("Offline")
     val syncStatus: StateFlow<String> = _syncStatus.asStateFlow()
 
+    val isSyncing: StateFlow<Boolean> = combine(
+        _syncStatus,
+        repository.isCloudSyncingFlow
+    ) { status, isRepoSyncing ->
+        isRepoSyncing || status == "Syncing..."
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     private val _lastSyncedTime = MutableStateFlow<String?>(null)
     val lastSyncedTime: StateFlow<String?> = _lastSyncedTime.asStateFlow()
 
@@ -596,6 +604,15 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             userEmail.value = email
             isGuest.value = false
             android.util.Log.d("AUTH_STATE", "Restored local cached login state on launch: userId=$uid email=$email")
+            
+            if (uid.isNotBlank() && uid != "guest_local") {
+                viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    repository.fetchAndSyncFromFirestore(uid, email)
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        restoreActiveSession()
+                    }
+                }
+            }
         } else {
             val wasGuest = prefs.getBoolean("is_guest", false)
             if (wasGuest) {
@@ -645,6 +662,14 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             repository.runOneTimeTitleMigration()
             kotlinx.coroutines.delay(5000)
             isFirstLaunchSessionSetup = false
+        }
+
+        viewModelScope.launch {
+            repository.allSessionsFlow.collect { list ->
+                if (list.isNotEmpty() && (_activeSessionId.value == "draft_session_id" || _activeSessionId.value.isNullOrBlank())) {
+                    restoreActiveSession()
+                }
+            }
         }
     }
 
@@ -1244,25 +1269,24 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         _syncStatus.value = "Local Active"
         _lastSyncedTime.value = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
         
-        if (uid != previousUserId) {
-            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                android.util.Log.i("AUTH_STATE", "onLocalAuthSuccess: User switch detected ($previousUserId -> $uid). Clearing local cache tables.")
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val lastSyncedEmail = prefs.getString("previous_sync_email", "")
+            if (lastSyncedEmail?.isNotBlank() == true && lastSyncedEmail != email) {
+                android.util.Log.i("AUTH_STATE", "onLocalAuthSuccess: Different user email switch detected ($lastSyncedEmail -> $email). Clearing local cache tables.")
                 repository.clearLocalData()
-                prefs.edit().putString("last_synced_user_id", uid).apply()
-                
-                // Immediately seed a clean session for a landing in the local profile
-                val newSession = repository.createNewSession("New Chat")
-                _activeSessionId.value = newSession.id
-                prefs.edit().putString("last_active_session_id", newSession.id).apply()
+            }
+            prefs.edit().putString("last_synced_user_id", uid).putString("previous_sync_email", email).apply()
+            
+            _syncStatus.value = "Syncing..."
+            val syncSuccess = repository.fetchAndSyncFromFirestore(uid, email)
+            _syncStatus.value = if (syncSuccess) "Active" else "Local Active"
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                restoreActiveSession()
             }
         }
     }
 
     fun restoreActiveSession() {
-        if (isFirstLaunchSessionSetup) {
-            _activeSessionId.value = "draft_session_id"
-            return
-        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val sessionList = repository.getAllSessionsDirect()
             if (sessionList.isNotEmpty()) {
@@ -1371,11 +1395,13 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             }
             try {
                 val lastSyncedUser = prefs.getString("last_synced_user_id", "")
-                if (uid != lastSyncedUser && lastSyncedUser?.isNotEmpty() == true) {
-                    android.util.Log.i("AUTH_STATE", "onAuthSuccess: User switch detected (lastSynced=$lastSyncedUser -> uid=$uid). Clearing local cache tables.")
+                val previousEmail = prefs.getString("previous_sync_email", "")
+                val isDifferentUser = lastSyncedUser?.isNotEmpty() == true && uid != lastSyncedUser && (previousEmail?.isNotBlank() == true && previousEmail != email)
+                if (isDifferentUser) {
+                    android.util.Log.i("AUTH_STATE", "onAuthSuccess: Different user email switch detected ($lastSyncedUser / $previousEmail -> $uid / $email). Clearing local cache tables.")
                     repository.clearLocalData()
                 }
-                prefs.edit().putString("last_synced_user_id", uid).apply()
+                prefs.edit().putString("last_synced_user_id", uid).putString("previous_sync_email", email).apply()
 
                 android.util.Log.d("USER_FETCH", "onAuthSuccess: Assuring remote Firestore profile exists for uid=$uid")
                 com.example.data.network.CloudSyncService.createProfileIfNotExist(uid, email, name)
@@ -1397,27 +1423,24 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                     android.util.Log.e("USER_FETCH", "onAuthSuccess: Failed fetching optional user details: ${pe.message}")
                 }
 
-                android.util.Log.d("CHAT_LOAD", "onAuthSuccess: Launching fetchAndSyncAll from Firestore for uid=$uid")
+                android.util.Log.d("CHAT_LOAD", "onAuthSuccess: Launching fetchAndSyncAll from Firestore for uid=$uid, email=$email")
                 _syncStatus.value = "Syncing..."
-                val syncSuccess = repository.fetchAndSyncFromFirestore(uid)
+                val syncSuccess = repository.fetchAndSyncFromFirestore(uid, email)
                 
                 // Update sync status AFTER fetch completes so counts are accurate
-                if (syncSuccess) {
-                    _lastSyncedTime.value = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
-                    val refreshedCount = repository.getAllSessionsDirect().size
-                    _chatsSyncedCount.value = refreshedCount
-                    _pendingUploadsCount.value = 0
-                    _syncStatus.value = "Active"
-                    android.util.Log.d("SYNC_STATUS", "onAuthSuccess: Cloud sync task succeeded. Refreshed counts to $refreshedCount sessions")
-                    
+                _lastSyncedTime.value = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                val refreshedCount = repository.getAllSessionsDirect().size
+                _chatsSyncedCount.value = refreshedCount
+                _pendingUploadsCount.value = 0
+                _syncStatus.value = "Active"
+                android.util.Log.d("SYNC_STATUS", "onAuthSuccess: Cloud sync task finished. Refreshed counts to $refreshedCount sessions (syncSuccess=$syncSuccess)")
+                
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
                     restoreActiveSession()
-                    runAutomatedInsightExtraction()
-                    
-                    android.util.Log.d("SESSION_RESTORE", "onAuthSuccess: Restoration complete. Active sessionId=${_activeSessionId.value}")
-                } else {
-                    android.util.Log.w("SYNC_STATUS", "onAuthSuccess: fetchAndSyncAll returned false")
-                    _syncStatus.value = "Error: Sync Failed"
                 }
+                runAutomatedInsightExtraction()
+                
+                android.util.Log.d("SESSION_RESTORE", "onAuthSuccess: Restoration complete. Active sessionId=${_activeSessionId.value}")
             } catch (e: Exception) {
                 android.util.Log.e("SYNC_STATUS", "onAuthSuccess background sync failed for uid=$uid", e)
                 _syncStatus.value = "Error: Sync Failed"

@@ -104,6 +104,7 @@ class MainActivity : FragmentActivity() {
     // Initialize the DepthLens Theme and Software Update Systems safely to prevent startup crashes
     try {
         com.google.firebase.FirebaseApp.initializeApp(applicationContext)
+        com.example.data.network.CloudSyncService.ensureFirestoreConfigured()
     } catch (e: Exception) {
         e.printStackTrace()
     }

@@ -274,6 +274,45 @@ class IntelligenceRepository(private val context: Context) {
     }
 
     private val backgroundScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO)
+    private val _isCloudSyncingFlow = MutableStateFlow(false)
+    val isCloudSyncingFlow: StateFlow<Boolean> = _isCloudSyncingFlow.asStateFlow()
+
+    private var authStateListener: com.google.firebase.auth.FirebaseAuth.AuthStateListener? = null
+    private var lastSyncedAuthUid: String? = null
+
+    init {
+        setupAuthStateListener()
+    }
+
+    private fun setupAuthStateListener() {
+        try {
+            val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+            authStateListener = com.google.firebase.auth.FirebaseAuth.AuthStateListener { firebaseAuth ->
+                val currentUser = firebaseAuth.currentUser
+                val uid = currentUser?.uid
+                val email = currentUser?.email.orEmpty()
+                
+                if (!uid.isNullOrEmpty() && uid != lastSyncedAuthUid) {
+                    lastSyncedAuthUid = uid
+                    Log.i("REPO_AUTH_LISTENER", "Explicit AuthStateListener: User authenticated/restored (uid=$uid, email=$email). Immediately re-fetching chat history from Firestore.")
+                    backgroundScope.launch {
+                        try {
+                            fetchAndSyncFromFirestore(uid, email)
+                            Log.i("REPO_AUTH_LISTENER", "Chat history re-fetch from Firestore completed for uid=$uid")
+                        } catch (e: Exception) {
+                            Log.e("REPO_AUTH_LISTENER", "Error in AuthStateListener chat sync: ${e.message}", e)
+                        }
+                    }
+                } else if (uid == null) {
+                    lastSyncedAuthUid = null
+                }
+            }
+            auth.addAuthStateListener(authStateListener!!)
+            Log.d("REPO_AUTH_LISTENER", "Repository AuthStateListener registered successfully")
+        } catch (e: Exception) {
+            Log.e("REPO_AUTH_LISTENER", "Failed to register AuthStateListener: ${e.message}")
+        }
+    }
 
     /** Read the user-selected model from SharedPrefs; falls back to DEFAULT_MODEL */
     private fun getPreferredModel(): String {
@@ -3658,8 +3697,17 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             userId, sessionId, db.sessionDao(), db.messageDao(), db.attachmentDao()
         )
     }
-    suspend fun fetchAndSyncFromFirestore(userId: String): Boolean {
-        return com.example.data.network.CloudSyncService.fetchAndSyncAll(userId, sessionDao, messageDao, attachmentDao)
+    suspend fun fetchAndSyncFromFirestore(userId: String, userEmail: String = ""): Boolean {
+        _isCloudSyncingFlow.value = true
+        try {
+            val emailToUse = if (userEmail.isNotBlank()) userEmail else {
+                val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+                prefs.getString("user_email", "") ?: ""
+            }
+            return com.example.data.network.CloudSyncService.fetchAndSyncAll(userId, sessionDao, messageDao, attachmentDao, emailToUse)
+        } finally {
+            _isCloudSyncingFlow.value = false
+        }
     }
 
     private fun extractUrls(text: String): List<String> {
