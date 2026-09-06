@@ -66,8 +66,6 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
-    var showGuestDialog by remember { mutableStateOf(false) }
-    var guestNameInput by remember { mutableStateOf(IntelligenceViewModel.getRandomExplorerName()) }
 
     // Infinite animations for ambient glow
     val infiniteTransition = rememberInfiniteTransition(label = "ambient_login")
@@ -394,24 +392,30 @@ fun LoginScreen(
                 Button(
                     onClick = {
                         focusManager.clearFocus()
-                        if (email.isBlank() || password.isBlank()) {
-                            Toast.makeText(context, "Please fill in all details.", Toast.LENGTH_SHORT).show()
+                        val cleanEmail = email.trim()
+                        val cleanPassword = password.trim()
+                        if (cleanEmail.isBlank() || cleanPassword.isBlank()) {
+                            Toast.makeText(context, "Please enter both email and password.", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
-                        isLoading = true
                         if (authMode == "signin") {
-                            viewModel.signInWithEmailAndPassword(email.trim(), password) { success, message ->
+                            isLoading = true
+                            viewModel.signInWithEmailAndPassword(cleanEmail, cleanPassword) { success, message ->
                                 isLoading = false
                                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                             }
                         } else {
-                            if (displayName.trim().isBlank()) {
-                                isLoading = false
-                                Toast.makeText(context, "Please set your Profile Name or tap Randomize.", Toast.LENGTH_SHORT).show()
+                            val nameToUse = displayName.trim().ifBlank {
+                                val generated = IntelligenceViewModel.getRandomExplorerName()
+                                displayName = generated
+                                generated
+                            }
+                            if (cleanPassword.length < 6) {
+                                Toast.makeText(context, "Password must be at least 6 characters.", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
-                            val nameToUse = displayName.trim()
-                            viewModel.signUpWithEmailAndPassword(email.trim(), password, nameToUse) { success, message ->
+                            isLoading = true
+                            viewModel.signUpWithEmailAndPassword(cleanEmail, cleanPassword, nameToUse) { success, message ->
                                 isLoading = false
                                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                             }
@@ -453,9 +457,14 @@ fun LoginScreen(
             Button(
                 onClick = {
                     focusManager.clearFocus()
-                    googleSignInClient.signOut().addOnCompleteListener {
+                    try {
                         val signInIntent = googleSignInClient.signInIntent
                         googleSignInLauncher.launch(signInIntent)
+                    } catch (e: Exception) {
+                        googleSignInClient.signOut().addOnCompleteListener {
+                            val signInIntent = googleSignInClient.signInIntent
+                            googleSignInLauncher.launch(signInIntent)
+                        }
                     }
                 },
                 shape = RoundedCornerShape(16.dp),
@@ -488,117 +497,6 @@ fun LoginScreen(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // Guest Option
-            Text(
-                text = "Continue as Guest",
-                color = PremiumCyan,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = InstrumentSansFontFamily,
-                modifier = Modifier
-                    .clickable {
-                        focusManager.clearFocus()
-                        guestNameInput = IntelligenceViewModel.getRandomExplorerName()
-                        showGuestDialog = true
-                    }
-                    .padding(8.dp)
-            )
-        }
-
-        if (showGuestDialog) {
-            AlertDialog(
-                onDismissRequest = { showGuestDialog = false },
-                containerColor = DeepMidnight,
-                shape = RoundedCornerShape(20.dp),
-                title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "GUEST EXPLORER",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PremiumCyan,
-                            fontFamily = DMMonoFontFamily,
-                            letterSpacing = 1.3.sp
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Set Profile Name",
-                            fontSize = 18.sp,
-                            fontFamily = DMSerifDisplayFontFamily,
-                            color = TextPrimaryColor
-                        )
-                    }
-                },
-                text = {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = "Choose your profile name or generate a fresh explorer handle to start:",
-                            color = TextMutedColor,
-                            fontSize = 12.sp,
-                            fontFamily = InstrumentSansFontFamily
-                        )
-                        OutlinedTextField(
-                            value = guestNameInput,
-                            onValueChange = { guestNameInput = it },
-                            placeholder = { Text("Enter guest name", color = TextMutedColor, fontSize = 13.sp) },
-                            textStyle = TextStyle(color = TextPrimaryColor, fontSize = 13.sp, fontFamily = InstrumentSansFontFamily),
-                            shape = RoundedCornerShape(14.dp),
-                            singleLine = true,
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = null,
-                                    tint = ElectricViolet,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            trailingIcon = {
-                                IconButton(onClick = {
-                                    guestNameInput = IntelligenceViewModel.getRandomExplorerName()
-                                }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "Randomize",
-                                        tint = PremiumCyan,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = ElectricViolet,
-                                unfocusedBorderColor = GlassBorder,
-                                focusedContainerColor = DynamicGlassFill,
-                                unfocusedContainerColor = DynamicGlassFill
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            val finalName = guestNameInput.trim().ifBlank { IntelligenceViewModel.getRandomExplorerName() }
-                            showGuestDialog = false
-                            viewModel.loginAsGuest(finalName)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Start Exploring", color = Color.White, fontWeight = FontWeight.Bold, fontFamily = InstrumentSansFontFamily, fontSize = 12.sp)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showGuestDialog = false }) {
-                        Text("Cancel", color = TextMutedColor, fontFamily = InstrumentSansFontFamily, fontSize = 12.sp)
-                    }
-                }
-            )
         }
     }
 }

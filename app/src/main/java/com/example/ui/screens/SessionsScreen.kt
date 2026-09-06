@@ -56,6 +56,7 @@ fun SessionsScreen(
     onTogglePinSession: (String) -> Unit,
     onRenameSession: (String, String) -> Unit,
     onScreenVisible: () -> Unit = {},
+    onRestoreChats: () -> Unit = {},
     isSyncing: Boolean = false,
     isLoggedIn: Boolean = false,
     modifier: Modifier = Modifier,
@@ -64,6 +65,7 @@ fun SessionsScreen(
     val context = LocalContext.current
     var renamingSession by remember { mutableStateOf<SessionEntity?>(null) }
     var renamingTitleText by remember { mutableStateOf("") }
+    var deletingSession by remember { mutableStateOf<SessionEntity?>(null) }
 
     LaunchedEffect(Unit) {
         onScreenVisible()
@@ -112,19 +114,42 @@ fun SessionsScreen(
                     fontFamily = InstrumentSansFontFamily
                 )
 
-                // Create new session ✎
-                IconButton(
-                    onClick = {
-                        onCreateNewSession()
-                        onNavigateToChat()
-                    },
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Text(
-                        text = "✎",
-                        color = TextPrimaryColor,
-                        fontSize = 18.sp
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Sync / Restore history ↻
+                    IconButton(
+                        onClick = onRestoreChats,
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        if (isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = ElectricViolet,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text(
+                                text = "↻",
+                                color = TextPrimaryColor,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Create new session ✎
+                    IconButton(
+                        onClick = {
+                            onCreateNewSession()
+                            onNavigateToChat()
+                        },
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Text(
+                            text = "✎",
+                            color = TextPrimaryColor,
+                            fontSize = 18.sp
+                        )
+                    }
                 }
             }
 
@@ -217,7 +242,7 @@ fun SessionsScreen(
 
                 if (searchResults.isEmpty()) {
                     item(key = "empty_state") {
-                        if (isSyncing && isLoggedIn) {
+                        if (isSyncing) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -231,32 +256,55 @@ fun SessionsScreen(
                                     strokeWidth = 2.5.dp
                                 )
                                 Text(
-                                    text = "Syncing your chats…",
+                                    text = "Restoring historic chats…",
                                     color = TextPrimaryColor,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     fontFamily = InstrumentSansFontFamily
                                 )
                                 Text(
-                                    text = "Restoring historic conversations from cloud storage",
+                                    text = "Scanning local database backups and cloud storage",
                                     color = TextMutedColor,
                                     fontSize = 12.sp,
                                     fontFamily = InstrumentSansFontFamily
                                 )
                             }
                         } else {
-                            Box(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 40.dp),
-                                contentAlignment = Alignment.Center
+                                    .padding(vertical = 40.dp, horizontal = 16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 Text(
                                     text = "No historic sessions found.",
                                     color = TextMutedColor,
-                                    fontSize = 12.sp,
+                                    fontSize = 13.sp,
                                     fontFamily = InstrumentSansFontFamily
                                 )
+                                Text(
+                                    text = "Tap below to restore your conversations",
+                                    color = TextMutedColor.copy(alpha = 0.8f),
+                                    fontSize = 12.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    fontFamily = InstrumentSansFontFamily
+                                )
+                                Button(
+                                    onClick = onRestoreChats,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = ElectricViolet,
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(
+                                        text = "↻ Restore Historic Chats",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontFamily = InstrumentSansFontFamily
+                                    )
+                                }
                             }
                         }
                     }
@@ -289,7 +337,7 @@ fun SessionsScreen(
                                     renamingSession = session
                                     renamingTitleText = session.title
                                 },
-                                onDeleteSession = onDeleteSession,
+                                onDeleteSession = { deletingSession = result.session },
                                 modifier = Modifier.animateItemPlacement(animationSpec = tween(durationMillis = 250))
                             )
                         }
@@ -340,7 +388,7 @@ fun SessionsScreen(
                                     renamingSession = session
                                     renamingTitleText = session.title
                             },
-                            onDeleteSession = onDeleteSession,
+                            onDeleteSession = { deletingSession = result.session },
                             modifier = Modifier.animateItemPlacement(animationSpec = tween(durationMillis = 250))
                         )
                     }
@@ -442,6 +490,68 @@ fun SessionsScreen(
                     )
                 }
             }
+        )
+    }
+
+    // Delete Confirmation Dialog
+    if (deletingSession != null) {
+        val session = deletingSession!!
+        AlertDialog(
+            onDismissRequest = { deletingSession = null },
+            containerColor = DeepMidnight,
+            title = {
+                Text(
+                    text = "Delete Conversation?",
+                    color = TextPrimaryColor,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = InstrumentSansFontFamily
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to permanently delete \"${session.title.ifBlank { "Untitled" }}\"? This action cannot be undone.",
+                    color = TextSecondaryColor,
+                    fontSize = 13.sp,
+                    fontFamily = InstrumentSansFontFamily,
+                    lineHeight = 18.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val idToDelete = session.id
+                        deletingSession = null
+                        onDeleteSession(idToDelete)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ErrorColor,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "Delete",
+                        fontSize = 12.sp,
+                        fontFamily = InstrumentSansFontFamily,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { deletingSession = null }
+                ) {
+                    Text(
+                        text = "Cancel",
+                        color = TextMutedColor,
+                        fontSize = 12.sp,
+                        fontFamily = InstrumentSansFontFamily
+                    )
+                }
+            },
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.border(1.2.dp, ErrorColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
         )
     }
 }

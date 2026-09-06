@@ -73,6 +73,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -619,6 +621,10 @@ fun HomeScreen(
     onSetReplyState: (String, String) -> Unit = { _, _ -> },
     onClearReplyState: () -> Unit = {},
     userName: String = "",
+    activeSessionId: String? = null,
+    onSaveScrollPosition: (String, Int) -> Unit = { _, _ -> },
+    onGetScrollPosition: (String) -> Int = { 0 },
+    onBranchFromMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -822,11 +828,9 @@ fun HomeScreen(
                         currentOnRegenerateLastAnalysis(msg.id)
                     }
                     MessageActionType.BRANCH -> {
-                        val quoteText = msg.text.trim().take(500)
-                        replyQuoteText = quoteText
-                        isBranchPending = true
-                        onSetReplyState(msg.id, quoteText)
+                        onBranchFromMessage(msg.id)
                         focusRequester.requestFocus()
+                        android.widget.Toast.makeText(context, "Branched into new conversation", android.widget.Toast.LENGTH_SHORT).show()
                     }
                     MessageActionType.SEARCH -> {
                         val indexOfMsg = msgs.indexOfFirst { it.id == msg.id }
@@ -852,19 +856,62 @@ fun HomeScreen(
     ) {
         val scrollState = rememberScrollState()
 
+        // Per-session scroll position persistence
+        val currentSessionKey = activeSessionId ?: "draft_session_id"
+        var hasRestoredScrollForSession by remember(currentSessionKey) { mutableStateOf(false) }
+
+        LaunchedEffect(currentSessionKey, scrollState.maxValue) {
+            if (!hasRestoredScrollForSession && scrollState.maxValue > 0) {
+                val savedOffset = onGetScrollPosition(currentSessionKey)
+                if (savedOffset > 0) {
+                    val targetY = if (savedOffset == Int.MAX_VALUE) scrollState.maxValue else savedOffset.coerceAtMost(scrollState.maxValue)
+                    scrollState.scrollTo(targetY)
+                }
+                hasRestoredScrollForSession = true
+            }
+        }
+
+        LaunchedEffect(scrollState.value) {
+            if (hasRestoredScrollForSession || scrollState.value > 0) {
+                onSaveScrollPosition(currentSessionKey, scrollState.value)
+            }
+        }
+
+        // Coordinate tracking for precise jumping to replied/quoted messages
+        val messageOffsets = remember { mutableStateMapOf<String, Int>() }
+        var chatColumnRootY by remember { mutableStateOf(0) }
+        var targetHighlightedMessageId by remember { mutableStateOf<String?>(null) }
+
+        val scrollToTargetMessage: (String) -> Unit = { targetId ->
+            coroutineScope.launch {
+                targetHighlightedMessageId = targetId
+                val exactY = messageOffsets[targetId]
+                if (exactY != null) {
+                    scrollState.animateScrollTo((exactY - 50).coerceAtLeast(0))
+                } else {
+                    val idx = activeMessages.indexOfFirst { it.id == targetId }
+                    if (idx >= 0) {
+                        val approxY = (scrollState.maxValue * (idx.toFloat() / activeMessages.size.coerceAtLeast(1).toFloat())).toInt()
+                        scrollState.animateScrollTo(approxY)
+                    }
+                }
+                kotlinx.coroutines.delay(2500)
+                if (targetHighlightedMessageId == targetId) {
+                    targetHighlightedMessageId = null
+                }
+            }
+        }
+
         // Hoisted here so the scroll arrow button can hide when keyboard is open
         var inputFocused by remember { mutableStateOf(false) }
 
-        // Stream / load states do not force scroll-to-top to preserve reading flow, especially for Dig Deeper.
-
-        // Track whether the user is "stuck" to the bottom of the chat. Only when the
-        // user is already at (or very near) the bottom do we auto-scroll as new content
-        // streams in. If the user has scrolled up to read an earlier reply, we leave
-        // their scroll position alone instead of yanking them back down.
+        // Track whether the user is "stuck" to the bottom of the chat.
+        // ChatGPT / Claude style: when user is near bottom, follow streaming responses.
+        // If user scrolled up to read earlier parts, preserve their reading spot.
         var stickToBottom by remember { mutableStateOf(true) }
         LaunchedEffect(scrollState.value, scrollState.maxValue) {
             val distanceFromBottom = scrollState.maxValue - scrollState.value
-            stickToBottom = distanceFromBottom <= 120
+            stickToBottom = distanceFromBottom <= 150
         }
 
         // When a brand new user message is sent, snap to bottom and re-engage stick mode.
@@ -877,8 +924,7 @@ fun HomeScreen(
             }
         }
 
-        // While content streams in (new tokens / cards expanding), only follow the bottom
-        // if the user hasn't scrolled away to read something.
+        // While content streams in, only follow the bottom if stickToBottom is true
         LaunchedEffect(scrollState.maxValue) {
             if (activeMessages.isNotEmpty() && stickToBottom) {
                 scrollState.scrollTo(scrollState.maxValue)
@@ -1220,8 +1266,11 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .weight(1f)
+                    .onGloballyPositioned { coords ->
+                        chatColumnRootY = coords.positionInRoot().y.toInt()
+                    }
                     .verticalScroll(scrollState)
-                    .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 180.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.Top
             ) {
 
@@ -1685,16 +1734,21 @@ fun HomeScreen(
                                             }
 
                                             val isMsgSelected = selectedMessageId == message.id
+                                            val isTargetHighlighted = targetHighlightedMessageId == message.id
                                             Box(
                                                 modifier = Modifier
                                                     .widthIn(max = maxWidth * 0.78f)
+                                                    .onGloballyPositioned { coords ->
+                                                        val yInCol = coords.positionInRoot().y.toInt() - chatColumnRootY
+                                                        messageOffsets[message.id] = scrollState.value + yInCol
+                                                    }
                                                     .graphicsLayer {
                                                         scaleX = bubbleScale.value
                                                         scaleY = bubbleScale.value
                                                         alpha = bubbleAlpha.value
                                                     }
                                                     .shadow(
-                                                        elevation = 8.dp,
+                                                        elevation = if (isTargetHighlighted) 14.dp else 8.dp,
                                                         shape = RoundedCornerShape(
                                                             topStart = 20.dp,
                                                             topEnd = 20.dp,
@@ -1702,12 +1756,12 @@ fun HomeScreen(
                                                             bottomEnd = 6.dp
                                                         ),
                                                         clip = false,
-                                                        ambientColor = if (isMsgSelected) ElectricViolet else ElectricViolet.copy(alpha = 0.4f),
-                                                        spotColor = if (isMsgSelected) ElectricViolet else ElectricViolet.copy(alpha = 0.4f)
+                                                        ambientColor = if (isTargetHighlighted) PremiumCyan else if (isMsgSelected) ElectricViolet else ElectricViolet.copy(alpha = 0.4f),
+                                                        spotColor = if (isTargetHighlighted) PremiumCyan else if (isMsgSelected) ElectricViolet else ElectricViolet.copy(alpha = 0.4f)
                                                     )
                                                     .border(
-                                                        width = if (isMsgSelected) 2.dp else 0.dp,
-                                                        color = if (isMsgSelected) Color.White else Color.Transparent,
+                                                        width = if (isTargetHighlighted) 2.5.dp else if (isMsgSelected) 2.dp else 0.dp,
+                                                        color = if (isTargetHighlighted) PremiumCyan else if (isMsgSelected) Color.White else Color.Transparent,
                                                         shape = RoundedCornerShape(
                                                             topStart = 20.dp,
                                                             topEnd = 20.dp,
@@ -1740,13 +1794,7 @@ fun HomeScreen(
                                                                 allMessages = activeMessages,
                                                                 isUserMessage = true,
                                                             onRepliedBoxClick = { targetId ->
-                                                                val idx = activeMessages.indexOfFirst { it.id == targetId }
-                                                                if (idx >= 0) {
-                                                                    coroutineScope.launch {
-                                                                        val targetVal = (scrollState.maxValue * (idx.toFloat() / activeMessages.size.coerceAtLeast(1).toFloat())).toInt()
-                                                                        scrollState.animateScrollTo(targetVal)
-                                                                    }
-                                                                }
+                                                                scrollToTargetMessage(targetId)
                                                             }
                                                         )
                                                         }
@@ -1982,17 +2030,23 @@ fun HomeScreen(
                                         horizontalAlignment = Alignment.Start
                                     ) {
                                         val isAIsgSelected = selectedMessageId == message.id
+                                        val isTargetHighlighted = targetHighlightedMessageId == message.id
                                         Box(
                                             modifier = Modifier
-                                                .widthIn(max = 280.dp)
+                                                .fillMaxWidth()
+                                                .padding(end = 8.dp)
+                                                .onGloballyPositioned { coords ->
+                                                    val yInCol = coords.positionInRoot().y.toInt() - chatColumnRootY
+                                                    messageOffsets[message.id] = scrollState.value + yInCol
+                                                }
                                                 .graphicsLayer {
                                                     scaleX = aiBubbleScale.value
                                                     scaleY = aiBubbleScale.value
                                                     alpha = aiBubbleAlpha.value
                                                 }
                                                 .border(
-                                                    width = if (isAIsgSelected) 2.dp else 0.dp,
-                                                    color = if (isAIsgSelected) ElectricViolet.copy(alpha = 0.8f) else Color.Transparent,
+                                                    width = if (isTargetHighlighted) 2.5.dp else if (isAIsgSelected) 2.dp else 0.dp,
+                                                    color = if (isTargetHighlighted) PremiumCyan else if (isAIsgSelected) ElectricViolet.copy(alpha = 0.8f) else Color.Transparent,
                                                     shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 6.dp, bottomEnd = 20.dp)
                                                 )
                                                 .premiumGlassBg(
@@ -2013,13 +2067,7 @@ fun HomeScreen(
                                                         allMessages = activeMessages,
                                                         isUserMessage = false,
                                                         onRepliedBoxClick = { targetId ->
-                                                            val idx = activeMessages.indexOfFirst { it.id == targetId }
-                                                            if (idx >= 0) {
-                                                                coroutineScope.launch {
-                                                                    val targetVal = (scrollState.maxValue * (idx.toFloat() / activeMessages.size.coerceAtLeast(1).toFloat())).toInt()
-                                                                    scrollState.animateScrollTo(targetVal)
-                                                                 }
-                                                            }
+                                                            scrollToTargetMessage(targetId)
                                                         }
                                                     )
                                                     }
@@ -2129,27 +2177,19 @@ fun HomeScreen(
                      }
                  }
 
-                 if (activeMessages.isNotEmpty()) {
-                     Spacer(modifier = Modifier.height(16.dp))
-                 }
-                 
                  if (isLoading && activeMessages.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.Start
-                        ) {
-                            ThreeDotThinkingIndicator()
-                        }
-                    }
-                }
-
-                if (activeMessages.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-            } // Close the main scrollable Column (which starts on line 1217)
+                     Row(
+                         modifier = Modifier
+                             .fillMaxWidth()
+                             .padding(vertical = 4.dp),
+                         horizontalArrangement = Arrangement.Start
+                     ) {
+                         ThreeDotThinkingIndicator()
+                     }
+                 }
+             }
+             }
+             } // Close the main scrollable Column
 
         // ── ChatGPT-style unified input bar + floating popups wrapper ──────
         Column(
@@ -2385,13 +2425,7 @@ fun HomeScreen(
                                 .clickable {
                                     val targetId = targetReplyId
                                     if (targetId != null) {
-                                        val idx = activeMessages.indexOfFirst { it.id == targetId }
-                                        if (idx >= 0) {
-                                            coroutineScope.launch {
-                                                val targetVal = (scrollState.maxValue * (idx.toFloat() / activeMessages.size.coerceAtLeast(1).toFloat())).toInt()
-                                                scrollState.animateScrollTo(targetVal)
-                                            }
-                                        }
+                                        scrollToTargetMessage(targetId)
                                     }
                                 }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -6601,12 +6635,6 @@ fun CustomSelectionProvider(
     var lastCapturedText by remember { mutableStateOf("") }
     var selectionKey by remember { mutableStateOf(0) }
     var popupMenuState by remember { mutableStateOf<PopupMenuState?>(null) }
-
-    androidx.compose.runtime.LaunchedEffect(isMessageSelected) {
-        if (!isMessageSelected) {
-            popupMenuState = null
-        }
-    }
     
     val customClipboardManager = remember {
         object : androidx.compose.ui.platform.ClipboardManager {
@@ -6786,7 +6814,11 @@ private fun CustomSelectionMenu(
         onDismissRequest = onDismiss,
         // focusable = false: keeps the SelectionContainer focused so Android's
         // native start/end selection handles stay visible and draggable.
-        properties = androidx.compose.ui.window.PopupProperties(focusable = false)
+        properties = androidx.compose.ui.window.PopupProperties(
+            focusable = false,
+            dismissOnClickOutside = true,
+            dismissOnBackPress = true
+        )
     ) {
         Box(
             modifier = Modifier

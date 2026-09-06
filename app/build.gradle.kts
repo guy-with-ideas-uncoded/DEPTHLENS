@@ -77,8 +77,8 @@ android {
     applicationId = "com.aistudio.depthlens.v6.final"
     minSdk = 24
     targetSdk = 35
-    versionCode = 6010
-    versionName = "6.0.1"
+    versionCode = 6020
+    versionName = "6.0.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -309,6 +309,8 @@ androidComponents {
         val rootDirResolved = rootProject.rootDir
         val buildOutputDirResolved = File(rootDirResolved, "build-outputs")
         val dotBuildOutputDirResolved = File(rootDirResolved, ".build-outputs")
+        val curVer = android.defaultConfig.versionName ?: "6.0.2"
+        val singleApkName = if (vName == "release") "DepthLens_v$curVer.apk" else "DepthLens_v$curVer-debug.apk"
 
         tasks.matching { it.name == "package$variantName" }.configureEach {
             doLast {
@@ -320,8 +322,6 @@ androidComponents {
                     buildOutputDirResolved.listFiles { f -> f.extension == "apk" }?.forEach { it.delete() }
                     dotBuildOutputDirResolved.listFiles { f -> f.extension == "apk" }?.forEach { it.delete() }
 
-                    val singleApkName = if (vName == "release") "DepthLens_v6.0.1.apk" else "DepthLens_v6.0.1-debug.apk"
-                    
                     // Copy single APK to build-outputs
                     originalApkResolved.copyTo(File(buildOutputDirResolved, singleApkName), overwrite = true)
                     

@@ -2181,12 +2181,12 @@ fun UpdateSubscreen(onBack: () -> Unit) {
             null
         }
     }
-    val versionName = packageInfo?.versionName ?: "6.0.0"
+    val versionName = packageInfo?.versionName ?: "6.0.2"
     val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-        packageInfo?.longVersionCode ?: 6010L
+        packageInfo?.longVersionCode ?: 6020L
     } else {
         @Suppress("DEPRECATION")
-        (packageInfo?.versionCode ?: 6010).toLong()
+        (packageInfo?.versionCode ?: 6020).toLong()
     }
 
     val currentInstalled = remember { com.example.ui.screens.GithubUpdateManager.getInstalledVersion(context) }
@@ -2575,7 +2575,7 @@ fun UpdateSubscreen(onBack: () -> Unit) {
                             text = if (hasUpdate && latestReleaseState != null && latestReleaseState!!.body.isNotBlank()) {
                                 latestReleaseState!!.body
                             } else {
-                                "• Truth-first response engine without sycophancy\n• Profile-name synchronization\n• In-app update system with verified APK installer\n• High performance UI and clean typography"
+                                "• Ultra-fast chat synchronization (1-3s)\n• Instant login and account onboarding\n• Zero-delay local database commit engine\n• Memory & battery optimizations\n• Truth-first response pipeline\n• Modern Android 15 & dynamic theme refinements"
                             },
                             color = textMuted,
                             fontSize = 12.sp,

@@ -22,6 +22,8 @@ import com.example.ui.viewmodel.IntelligenceViewModel
 import androidx.fragment.app.FragmentActivity
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
   companion object {
@@ -124,6 +126,12 @@ class MainActivity : FragmentActivity() {
     try {
         GithubUpdateManager.init(applicationContext)
         GithubUpdateManager.checkForUpdates(applicationContext, force = true)
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            com.example.data.network.CloudSyncService.broadcastReleaseUpdate(
+                versionName = "6.0.2",
+                versionCode = 6020L
+            )
+        }
     } catch (e: Exception) {
         e.printStackTrace()
     }

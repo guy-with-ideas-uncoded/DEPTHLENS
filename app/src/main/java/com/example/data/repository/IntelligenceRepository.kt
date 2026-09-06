@@ -36,6 +36,8 @@ const val SYSTEM_ERROR_PREFIX = "[DEPTHLENS_SYSTEM_ERROR]"
 class IntelligenceRepository(private val context: Context) {
 
     companion object {
+        @Volatile var currentVisibleSessionId: String? = null
+
         // ── All available Gemini models (display name → API model string) ──
         // Ordered: best/newest first, lightweight last as final fallback.
         // "gemini-flash-latest" always points to the newest Flash release automatically.
@@ -282,6 +284,9 @@ class IntelligenceRepository(private val context: Context) {
 
     init {
         setupAuthStateListener()
+        backgroundScope.launch(Dispatchers.IO) {
+            recoverFromLocalBackupsIfEmpty()
+        }
     }
 
     private fun setupAuthStateListener() {
@@ -324,8 +329,11 @@ class IntelligenceRepository(private val context: Context) {
     private fun triggerUpload(block: suspend (userId: String) -> Unit) {
         val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
         val isLoggedIn = prefs.getBoolean("is_logged_in", false)
-        val userId = prefs.getString("user_id", "") ?: ""
-        if (isLoggedIn && userId.isNotEmpty()) {
+        var userId = prefs.getString("user_id", "") ?: ""
+        if (userId.isEmpty()) {
+            userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+        }
+        if (isLoggedIn || userId.isNotEmpty()) {
             backgroundScope.launch {
                 try {
                     block(userId)
@@ -896,7 +904,16 @@ $conversationText
         return resolveToLocalUri(attachment)
     }
 
+    suspend fun getSessionById(sessionId: String): com.example.data.model.SessionEntity? = withContext(Dispatchers.IO) {
+        sessionDao.getSessionById(sessionId)
+    }
+
     suspend fun deleteSession(sessionId: String) = withContext(Dispatchers.IO) {
+        val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
+        val deletedSet = prefs.getStringSet("deleted_session_ids_set", emptySet())?.toMutableSet() ?: mutableSetOf()
+        deletedSet.add(sessionId)
+        prefs.edit().putStringSet("deleted_session_ids_set", deletedSet).apply()
+
         attachmentDao.deleteAttachmentsForSession(sessionId)
         messageDao.deleteMessagesForSession(sessionId)
         sessionDao.deleteSessionById(sessionId)
@@ -940,6 +957,35 @@ $conversationText
 
     suspend fun clearAllMemoryInsights() = withContext(Dispatchers.IO) {
         memoryInsightDao.deleteAllInsights()
+    }
+
+    suspend fun getMessagesForSession(sessionId: String): List<MessageEntity> = withContext(Dispatchers.IO) {
+        messageDao.getMessagesForSession(sessionId)
+    }
+
+    suspend fun cloneMessageToSession(original: MessageEntity, targetSessionId: String): MessageEntity = withContext(Dispatchers.IO) {
+        val newMsgId = UUID.randomUUID().toString()
+        val cloned = original.copy(
+            id = newMsgId,
+            sessionId = targetSessionId
+        )
+        messageDao.insertMessage(cloned)
+        
+        try {
+            val attachments = attachmentDao.getAttachmentsForMessage(original.id)
+            for (att in attachments) {
+                attachmentDao.insertAttachment(
+                    att.copy(
+                        attachmentId = UUID.randomUUID().toString(),
+                        messageId = newMsgId
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
+        cloned
     }
 
     suspend fun insertUserMessage(sessionId: String, text: String, imageUri: String? = null, replyToMessageId: String? = null, selectedText: String? = null) = withContext(Dispatchers.IO) {
@@ -1652,13 +1698,16 @@ $memoryBlock
             // Add text part
             var msgText = msg.text
             
-            // Inject reply / branch context if this message is a reply or branch from another message
+            // Inject reply / quote context if this message is a reply to selected text
             if (!msg.selectedText.isNullOrEmpty()) {
                 val repliedMsg = compressedHistory.find { it.id == msg.replyToMessageId }
-                val repliedRoleName = if (repliedMsg?.role == "user") "You" else "DepthLens"
-                val originalText = if (!repliedMsg?.text.isNullOrBlank()) repliedMsg!!.text else msg.selectedText
-                msgText = "[Context: This message is branching from / replying to the following prior context:\n" +
-                          "\"$originalText\"]\n\n$msgText"
+                val repliedRoleName = if (repliedMsg?.role == "user") "User" else "Assistant"
+                val quoteSnippet = msg.selectedText.trim()
+                msgText = """[Context: The user is specifically referencing and replying to the following quoted snippet from $repliedRoleName's previous message:
+> "$quoteSnippet"
+Please directly address the user's inquiry regarding this exact quoted text.]
+
+$msgText""".trimIndent()
             }
 
             // Inject Web material if this is the user's query and links are fetched
@@ -3286,7 +3335,11 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             }
             try {
                 // Start foreground service to ensure network access and process survival in background
-                AnalysisService.start(context)
+                try {
+                    AnalysisService.start(context)
+                } catch (st: Throwable) {
+                    android.util.Log.w("IntelligenceRepository", "Foreground service could not be started: ${st.message}")
+                }
                 
                 generateAnalysis(sessionId, category, depth)
             } catch (e: Exception) {
@@ -3324,9 +3377,9 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
                 return
             }
 
-            // Foreground detection: if the main app is currently in the foreground, do NOT notify
-            if (com.example.MainActivity.isAppInForeground) {
-                android.util.Log.d("IntelligenceRepository", "App is in foreground, skipping system notification.")
+            // Foreground detection: if the main app is currently in the foreground AND user is on this exact session, do NOT notify
+            if (com.example.MainActivity.isAppInForeground && currentVisibleSessionId == sessionId) {
+                android.util.Log.d("IntelligenceRepository", "App is in foreground on current session $sessionId, skipping system notification.")
                 return
             }
 
@@ -3707,6 +3760,24 @@ Observe carefully. Understand deeply. Detect distortions. Analyze objectively. M
             return com.example.data.network.CloudSyncService.fetchAndSyncAll(userId, sessionDao, messageDao, attachmentDao, emailToUse)
         } finally {
             _isCloudSyncingFlow.value = false
+        }
+    }
+
+    suspend fun recoverFromLocalBackupsIfEmpty(): Int = withContext(Dispatchers.IO) {
+        try {
+            val existing = sessionDao.getAllSessions()
+            if (existing.isNotEmpty()) {
+                return@withContext 0
+            }
+            com.example.data.database.DepthDatabase.recoverFromLocalBackups(
+                context,
+                sessionDao,
+                messageDao,
+                attachmentDao
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("DB_RECOVERY", "Failed to recover from local backups: ${e.message}", e)
+            0
         }
     }
 

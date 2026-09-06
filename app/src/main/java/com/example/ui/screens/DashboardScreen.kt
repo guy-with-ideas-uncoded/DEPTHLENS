@@ -754,7 +754,7 @@ fun DashboardScreen(
 
     if (showUpdatesDialog) {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        val curVerStr = packageInfo.versionName ?: "6.0.1"
+        val curVerStr = packageInfo.versionName ?: "6.0.2"
         SoftwareUpdatesDialog(
             onDismissRequest = { showUpdatesDialog = false },
             onManualCheck = {
@@ -1309,7 +1309,7 @@ fun DashboardScreen(
         } catch (e: java.lang.Exception) {
             null
         }
-        val appVersion = packageInfo?.versionName ?: "6.0.1"
+        val appVersion = packageInfo?.versionName ?: "6.0.2"
         
         AlertDialog(
             onDismissRequest = { showAboutDialog = false },
@@ -1814,7 +1814,7 @@ Text(
         } catch (e: Exception) {
             null
         }
-        val appVerStr = packageInfoReport?.versionName ?: "6.0.1"
+        val appVerStr = packageInfoReport?.versionName ?: "6.0.2"
         val deviceModel = android.os.Build.MODEL ?: "Unknown Device"
         val androidVer = android.os.Build.VERSION.RELEASE ?: "Unknown Android"
         val reportTimestamp = remember { java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()) }
@@ -2178,7 +2178,11 @@ Text(
                                 onClearSelectionMode = { viewModel.clearSelectionMode() },
                                 onSetReplyState = { msgId, txt -> viewModel.setReplyState(msgId, txt) },
                                 onClearReplyState = { viewModel.clearReplyState() },
-                                userName = userName
+                                userName = userName,
+                                activeSessionId = activeSessionId,
+                                onSaveScrollPosition = { id, y -> viewModel.saveSessionScrollPosition(id, y) },
+                                onGetScrollPosition = { id -> viewModel.getSessionScrollPosition(id) },
+                                onBranchFromMessage = { msgId -> viewModel.branchFromMessage(msgId) }
                             )
                         }
                         "sessions" -> {
@@ -2199,7 +2203,11 @@ Text(
                                 },
                                 onTogglePinSession = { sessionId -> viewModel.togglePinSession(sessionId) },
                                 onRenameSession = { sessionId, newTitle -> viewModel.renameSession(sessionId, newTitle) },
-                                onScreenVisible = { viewModel.ensureSessionTitlesMigrated() },
+                                onScreenVisible = { 
+                                    viewModel.ensureSessionTitlesMigrated()
+                                    viewModel.restoreHistoricChats()
+                                },
+                                onRestoreChats = { viewModel.restoreHistoricChats() },
                                 isSyncing = isSyncing,
                                 isLoggedIn = isLoggedIn,
                                 listState = sessionsListState

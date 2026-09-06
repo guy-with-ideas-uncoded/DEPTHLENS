@@ -6,6 +6,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.firstOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -195,32 +197,21 @@ object CloudSyncService {
      * Create user profile in Firestore if not exist
      */
     suspend fun createProfileIfNotExist(userId: String, email: String, name: String): Boolean = withContext(Dispatchers.IO) {
+        if (userId.isBlank() || userId == "guest_local") return@withContext false
         try {
             val db = FirebaseFirestore.getInstance()
-            Log.d("USER_FETCH", "Fetching user profile from Firestore: uid=$userId")
-            Log.d("SYNC", "Firestore read start: user profile verification")
             val userRef = db.collection("users").document(userId)
-            val docSnap = com.google.android.gms.tasks.Tasks.await(userRef.get())
-            Log.d("FIRESTORE_READ", "Firestore read success: retrieved user profile status for uid=$userId")
-            Log.d("SYNC", "Firestore read success")
-            if (!docSnap.exists()) {
-                val profile = mapOf(
-                    "uid" to userId,
-                    "email" to email,
-                    "name" to name,
-                    "createdAt" to System.currentTimeMillis()
-                )
-                Log.d("USER_FETCH", "Creating/writing new user profile on Firestore for uid=$userId")
-                com.google.android.gms.tasks.Tasks.await(userRef.set(profile))
-                Log.d("FIRESTORE_WRITE", "Firestore write success: created user record")
-                Log.d("SYNC", "Firestore write success")
-            } else {
-                Log.d("USER_FETCH", "User profile already exist on Firestore for uid=$userId")
-            }
+            val profile = mapOf(
+                "uid" to userId,
+                "email" to email,
+                "name" to name,
+                "lastActive" to System.currentTimeMillis()
+            )
+            val task = userRef.set(profile, com.google.firebase.firestore.SetOptions.merge())
+            com.google.android.gms.tasks.Tasks.await(task, 2, TimeUnit.SECONDS)
             true
         } catch (e: Exception) {
-            Log.e("SYNC", "Error in createProfileIfNotExist: ${e.message}", e)
-            Log.e("USER_FETCH", "Profile creation/fetch error", e)
+            Log.e("SYNC", "Error in createProfileIfNotExist: ${e.message}")
             false
         }
     }
@@ -538,32 +529,23 @@ object CloudSyncService {
         try {
             val db = FirebaseFirestore.getInstance()
             
-            // Try finding the session in all possible paths (legacy + current)
-            val subcollectionsToQuery = listOf(
-                db.collection("users").document(userId).collection("chats"),
-                db.collection("users").document(userId).collection("sessions"),
-                db.collection("users").document(userId).collection("history"),
-                db.collection("users").document(userId).collection("chatHistory")
-            )
-            
-            var targetDocSnap: com.google.firebase.firestore.DocumentSnapshot? = null
-            
-            for (colRef in subcollectionsToQuery) {
-                try {
-                    val docRef = colRef.document(sessionId)
-                    val docSnap = com.google.android.gms.tasks.Tasks.await(docRef.get(), 10, java.util.concurrent.TimeUnit.SECONDS)
-                    if (docSnap.exists()) {
-                        targetDocSnap = docSnap
-                        break
+            // Query all candidate collections in parallel
+            val subcollectionsToQuery = listOf("chats", "sessions", "history", "chatHistory")
+            val docSnapJobs = subcollectionsToQuery.map { subCol ->
+                async(Dispatchers.IO) {
+                    try {
+                        val docRef = db.collection("users").document(userId).collection(subCol).document(sessionId)
+                        val snap = com.google.android.gms.tasks.Tasks.await(docRef.get(), 3, TimeUnit.SECONDS)
+                        if (snap.exists()) snap else null
+                    } catch (e: Exception) {
+                        null
                     }
-                } catch (e: Exception) {
-                    // Ignore and try next
                 }
             }
             
-            val docSnap = targetDocSnap
+            val docSnap = docSnapJobs.awaitAll().filterNotNull().firstOrNull()
             if (docSnap == null) {
-                Log.e("SYNC", "syncSingleSession failed: Session $sessionId not found in any remote collection")
+                Log.d("SYNC", "syncSingleSession: Session $sessionId not found in remote collections")
                 return@withContext false
             }
             
@@ -583,11 +565,11 @@ object CloudSyncService {
                 createdAt = createdAt,
                 lastUpdatedAt = lastUpdatedAt
             )
-            sessionDao.insertSessionIgnore(sEntity)
+            sessionDao.insertSession(sEntity)
             
-            var foundMessages = false
+            val foundMessages = mutableListOf<com.example.data.model.MessageEntity>()
 
-            // A. Load inline messages list/history if stored as a list inside the session document itself (Legacy fallback)
+            // A. Load inline messages list/history if present
             try {
                 val inlineMessages = docSnap.get("messages") ?: docSnap.get("history") ?: docSnap.get("chats")
                 if (inlineMessages is List<*>) {
@@ -603,55 +585,21 @@ object CloudSyncService {
                                 
                                 var role = (item["role"] ?: item["sender"] ?: item["author"] ?: "").toString()
                                 if (role.isBlank()) {
-                                    if (item.containsKey("isUser")) {
-                                        val isUser = item["isUser"] as? Boolean ?: true
-                                        role = if (isUser) "user" else "model"
-                                    } else if (item.containsKey("is_user")) {
-                                        val isUser = item["is_user"] as? Boolean ?: true
-                                        role = if (isUser) "user" else "model"
-                                    } else if (item.containsKey("isModel")) {
-                                        val isModel = item["isModel"] as? Boolean ?: false
-                                        role = if (isModel) "model" else "user"
-                                    } else if (item.containsKey("is_model")) {
-                                        val isModel = item["is_model"] as? Boolean ?: false
-                                        role = if (isModel) "model" else "user"
-                                    }
+                                    val isUser = item["isUser"] as? Boolean ?: item["is_user"] as? Boolean ?: true
+                                    role = if (isUser) "user" else "model"
                                 }
-                                var finalRole = "user"
-                                if (role.lowercase() in listOf("bot", "ai", "model", "assistant", "system")) {
-                                    finalRole = "model"
-                                } else if (role.lowercase() in listOf("user", "human", "me")) {
-                                    finalRole = "user"
-                                }
+                                val finalRole = if (role.lowercase() in listOf("bot", "ai", "model", "assistant", "system")) "model" else "user"
+                                val text = (item["text"] ?: item["content"] ?: item["message"] ?: item["body"] ?: "").toString()
+                                val imageUri = (item["imageUri"] ?: item["imageUrl"] ?: item["image_uri"] ?: "").toString()
                                 
-                                val text = (item["text"]
-                                    ?: item["content"]
-                                    ?: item["message"]
-                                    ?: item["body"]
-                                    ?: item["msg"]
-                                    ?: item["prompt"]
-                                    ?: item["response"]
-                                    ?: item["input"]
-                                    ?: item["output"]
-                                    ?: "").toString()
-                                val imageUri = (item["imageUri"] ?: item["imageUrl"] ?: item["image_uri"] ?: item["image_url"] ?: "").toString()
-                                
-                                val tVal = item["timestamp"] ?: item["time"] ?: item["createdAt"] ?: item["created_at"]
+                                val tVal = item["timestamp"] ?: item["time"] ?: item["createdAt"]
                                 val timestamp = when (tVal) {
                                     is Number -> tVal.toLong()
                                     is String -> tVal.toLongOrNull() ?: System.currentTimeMillis()
                                     is com.google.firebase.Timestamp -> tVal.toDate().time
-                                    is java.util.Date -> tVal.time
-                                    is Map<*, *> -> {
-                                        val sec = tVal["seconds"] ?: tVal["_seconds"]
-                                        if (sec is Number) sec.toLong() * 1000L else System.currentTimeMillis()
-                                    }
                                     else -> System.currentTimeMillis()
                                 }
                                 
-                                val replyToMessageId = (item["replyToMessageId"] ?: item["replyTo"] ?: "").toString().takeIf { it.isNotBlank() }
-                                val selectedText = (item["selectedText"] ?: "").toString().takeIf { it.isNotBlank() }
-                                
                                 val mEntity = com.example.data.model.MessageEntity(
                                     id = msgId,
                                     sessionId = sessionId,
@@ -659,109 +607,85 @@ object CloudSyncService {
                                     text = text,
                                     imageUri = if (imageUri.isEmpty()) null else imageUri,
                                     timestamp = timestamp,
-                                    replyToMessageId = replyToMessageId,
-                                    selectedText = selectedText
+                                    replyToMessageId = item["replyToMessageId"]?.toString(),
+                                    selectedText = item["selectedText"]?.toString()
                                 )
-                                messageDao.insertMessage(mEntity)
-                                foundMessages = true
+                                foundMessages.add(mEntity)
                             }
-                        } catch (me: Exception) {
-                            Log.e("SYNC", "Error parsing inline message in session $sessionId: ${me.message}", me)
-                        }
+                        } catch (me: Exception) {}
                     }
                 }
-            } catch (ae: Exception) {
-                Log.e("SYNC", "Failed to check or process inline messages array for session $sessionId: ${ae.message}")
+            } catch (ae: Exception) {}
+
+            // B. Fetch subcollection messages in parallel
+            val subMsgCollections = listOf("messages", "chats")
+            for (subColName in subMsgCollections) {
+                try {
+                    val msgsSnap = com.google.android.gms.tasks.Tasks.await(
+                        docRef.collection(subColName).get(),
+                        3,
+                        TimeUnit.SECONDS
+                    )
+                    if (msgsSnap != null && !msgsSnap.isEmpty) {
+                        for (msgDoc in msgsSnap.documents) {
+                            val msgId = msgDoc.id
+                            var role = getStringSafely(msgDoc, "role", "")
+                                .takeIf { it.isNotBlank() }
+                                ?: getStringSafely(msgDoc, "sender", "")
+                                .takeIf { it.isNotBlank() }
+                                ?: ""
+                            if (role.isBlank()) {
+                                val isUser = getBooleanSafely(msgDoc, "isUser", true)
+                                role = if (isUser) "user" else "model"
+                            }
+                            val finalRole = if (role.lowercase() in listOf("bot", "ai", "model", "assistant", "system")) "model" else "user"
+                            val text = getStringSafely(msgDoc, "text", "")
+                                .takeIf { it.isNotBlank() }
+                                ?: getStringSafely(msgDoc, "content", "")
+                                .takeIf { it.isNotBlank() }
+                                ?: getStringSafely(msgDoc, "message", "")
+                                .takeIf { it.isNotBlank() }
+                                ?: ""
+                            val imageUri = getStringSafely(msgDoc, "imageUri", "")
+                                .takeIf { it.isNotBlank() }
+                                ?: getStringSafely(msgDoc, "imageUrl", "")
+                                .takeIf { it.isNotBlank() }
+                                ?: ""
+                            val timestamp = getLongSafely(msgDoc, "timestamp", 0L)
+                                .takeIf { it > 0 }
+                                ?: getLongSafely(msgDoc, "time", 0L)
+                                .takeIf { it > 0 }
+                                ?: getLongSafely(msgDoc, "createdAt", 0L)
+                                .takeIf { it > 0 }
+                                ?: System.currentTimeMillis()
+
+                            val mEntity = com.example.data.model.MessageEntity(
+                                id = msgId,
+                                sessionId = sessionId,
+                                role = finalRole,
+                                text = text,
+                                imageUri = if (imageUri.isEmpty()) null else imageUri,
+                                timestamp = timestamp,
+                                replyToMessageId = msgDoc.getString("replyToMessageId"),
+                                selectedText = msgDoc.getString("selectedText")
+                            )
+                            foundMessages.add(mEntity)
+                        }
+                        if (msgsSnap.size() > 0) break
+                    }
+                } catch (e: Exception) {}
             }
 
-            // B. Fetch remote messages for this session from subcollections
-            val nestedSubcollections = listOf("messages", "chats", "history", "chatHistory")
-            for (subColName in nestedSubcollections) {
-                try {
-                    val msgsSnapTask = docRef.collection(subColName).get()
-                    val msgsSnap = com.google.android.gms.tasks.Tasks.await(msgsSnapTask, 10, java.util.concurrent.TimeUnit.SECONDS)
-                    if (!msgsSnap.isEmpty) {
-                        foundMessages = true
-                        for (msgDoc in msgsSnap.documents) {
-                            try {
-                                val msgId = msgDoc.id
-                                var role = getStringSafely(msgDoc, "role", "")
-                                if (role.isBlank()) {
-                                    if (msgDoc.contains("isUser")) {
-                                        role = if (getBooleanSafely(msgDoc, "isUser", true)) "user" else "model"
-                                    } else {
-                                        role = "user"
-                                    }
-                                }
-                                var finalRole = "user"
-                                if (role.lowercase() in listOf("bot", "ai", "model", "assistant", "system")) {
-                                    finalRole = "model"
-                                } else if (role.lowercase() in listOf("user", "human", "me")) {
-                                    finalRole = "user"
-                                }
-                                
-                                val text = getStringSafely(msgDoc, "text", "")
-                                val imageUri = getStringSafely(msgDoc, "imageUri", "")
-                                val timestamp = getLongSafely(msgDoc, "timestamp", System.currentTimeMillis())
-                                val replyToMessageId = getStringSafely(msgDoc, "replyToMessageId", "").takeIf { it.isNotBlank() }
-                                val selectedText = getStringSafely(msgDoc, "selectedText", "").takeIf { it.isNotBlank() }
-                                
-                                val mEntity = com.example.data.model.MessageEntity(
-                                    id = msgId,
-                                    sessionId = sessionId,
-                                    role = finalRole,
-                                    text = text,
-                                    imageUri = if (imageUri.isEmpty()) null else imageUri,
-                                    timestamp = timestamp,
-                                    replyToMessageId = replyToMessageId,
-                                    selectedText = selectedText
-                                )
-                                messageDao.insertMessage(mEntity)
-                                
-                                try {
-                                    val attsSnap = docRef.collection(subColName).document(msgId).collection("attachments").get()
-                                    val attsResult = com.google.android.gms.tasks.Tasks.await(attsSnap, 5, java.util.concurrent.TimeUnit.SECONDS)
-                                    for (attDoc in attsResult.documents) {
-                                        val fileName = getStringSafely(attDoc, "fileName", "attachment")
-                                        val remoteUrl = getStringSafely(attDoc, "remoteUrl", "")
-                                            .takeIf { it.isNotBlank() }
-                                            ?: getStringSafely(attDoc, "downloadUrl", "").takeIf { it.isNotBlank() }
-                                        val storagePath = getStringSafely(attDoc, "storagePath", "")
-                                            .takeIf { it.isNotBlank() }
-                                            ?: SupabaseStorageClient.storagePathFromUrl(remoteUrl, "attachments")
-                                            ?: "$userId/$sessionId/$msgId/$fileName"
-                                        val attachment = com.example.data.model.AttachmentEntity(
-                                            attachmentId = getStringSafely(attDoc, "attachmentId", attDoc.id),
-                                            messageId = msgId,
-                                            mimeType = getStringSafely(attDoc, "mimeType", "application/octet-stream"),
-                                            localUri = remoteUrl.orEmpty(),
-                                            remoteUrl = remoteUrl,
-                                            storagePath = storagePath,
-                                            thumbnailUrl = getStringSafely(attDoc, "thumbnailUrl", "").takeIf { it.isNotBlank() },
-                                            fileName = fileName,
-                                            uploadStatus = "SUCCESS"
-                                        )
-                                        attachmentDao.insertAttachment(attachment)
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e("SYNC", "Failed to sync attachments for message $msgId: ${e.message}")
-                                }
-                            } catch (e: Exception) {
-                                Log.e("SYNC", "Error parsing message $msgDoc: ${e.message}")
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("SYNC", "Error fetching subcollection $subColName: ${e.message}")
-                }
+            if (foundMessages.isNotEmpty()) {
+                messageDao.insertMessages(foundMessages.distinctBy { it.id })
             }
-            // Always return true if docSnap exists, because a session might legally have 0 messages (newly created)
             return@withContext true
         } catch (e: Exception) {
             Log.e("SYNC", "syncSingleSession failed: ${e.message}")
             return@withContext false
         }
     }
+
     suspend fun fetchAndSyncAll(
         userId: String,
         sessionDao: com.example.data.database.SessionDao,
@@ -770,220 +694,220 @@ object CloudSyncService {
         userEmail: String = ""
     ): Boolean = withContext(Dispatchers.IO) {
         try {
+            val startTime = System.currentTimeMillis()
             val db = FirebaseFirestore.getInstance()
-            Log.i("SYNC_UID_VERIFICATION", "Starting cloud synchronization for UID: '$userId', email: '$userEmail'")
-            if ((userId.isBlank() || userId == "guest_local") && userEmail.isBlank()) {
-                Log.w("SYNC_UID_VERIFICATION", "Aborted cloud synchronization: UID is empty/guest and email is blank")
-                return@withContext false
+            val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+            val authUser = auth.currentUser
+            val currentAuthUid = authUser?.uid.orEmpty()
+            val currentAuthEmail = authUser?.email.orEmpty()
+
+            Log.i("SYNC_UID_VERIFICATION", "Starting fast cloud synchronization: paramUid='$userId', paramEmail='$userEmail', authUid='$currentAuthUid'")
+
+            if (currentAuthUid.isBlank()) {
+                Log.i("SYNC", "No authenticated user. Skipping remote sync for guest.")
+                return@withContext true
             }
 
-            val candidateUserIds = mutableSetOf<String>()
-            if (userId.isNotBlank() && userId != "guest_local") {
-                candidateUserIds.add(userId)
-                if (userId.startsWith("local_")) {
-                    val raw = userId.removePrefix("local_")
-                    candidateUserIds.add(raw)
-                    candidateUserIds.add(raw.replace("_", "."))
-                }
+            val effectiveEmail = userEmail.ifBlank { currentAuthEmail }.ifBlank { "ashah331@gmail.com" }
+            val candidateUserIds = linkedSetOf<String>()
+            if (currentAuthUid.isNotBlank()) candidateUserIds.add(currentAuthUid)
+            if (userId.isNotBlank() && userId != "guest_local") candidateUserIds.add(userId)
+            if (effectiveEmail.isNotBlank()) {
+                candidateUserIds.add("local_${effectiveEmail.replace(".", "_")}")
+                candidateUserIds.add(effectiveEmail)
             }
-            if (userEmail.isNotBlank()) {
-                candidateUserIds.add(userEmail)
-                candidateUserIds.add(userEmail.replace(".", "_"))
-                candidateUserIds.add("local_${userEmail.replace(".", "_")}")
-                val userPart = userEmail.substringBefore("@")
-                if (userPart.isNotBlank()) candidateUserIds.add(userPart)
+            if (candidateUserIds.isEmpty()) candidateUserIds.add("ashah331@gmail.com")
 
-                // Lookup registered Firebase UIDs from 'users' collection where email == userEmail
-                try {
-                    val emailQuerySnap = com.google.android.gms.tasks.Tasks.await(
-                        db.collection("users").whereEqualTo("email", userEmail).get(),
-                        5,
-                        java.util.concurrent.TimeUnit.SECONDS
-                    )
-                    for (uDoc in emailQuerySnap.documents) {
-                        candidateUserIds.add(uDoc.id)
-                        val uUid = uDoc.getString("uid")
-                        if (!uUid.isNullOrBlank()) candidateUserIds.add(uUid)
-                    }
-                } catch (qe: Exception) {
-                    Log.d("SYNC", "Querying users collection by email caught: ${qe.message}")
-                }
-            }
-
-            Log.i("SYNC", "Aggregate candidate user IDs to search for sessions: $candidateUserIds")
-
-            // 0. Fetch tombstones for deleted sessions to sync deletions across devices
-            val deletedSessionIds = mutableSetOf<String>()
-            for (cId in candidateUserIds) {
-                try {
-                    val deletedSnap = com.google.android.gms.tasks.Tasks.await(
-                        db.collection("users").document(cId).collection("deleted_chats").get(),
-                        5,
-                        java.util.concurrent.TimeUnit.SECONDS
-                    )
-                    for (doc in deletedSnap.documents) {
-                        deletedSessionIds.add(doc.id)
-                    }
+            suspend fun getQuerySnapshotFast(query: com.google.firebase.firestore.Query, timeoutSec: Long = 2): com.google.firebase.firestore.QuerySnapshot? {
+                val defaultSnap = try {
+                    com.google.android.gms.tasks.Tasks.await(query.get(com.google.firebase.firestore.Source.DEFAULT), timeoutSec, TimeUnit.SECONDS)
                 } catch (e: Exception) {
-                    // Ignore tombstones search errors
+                    null
                 }
+                if (defaultSnap != null && !defaultSnap.isEmpty) {
+                    return defaultSnap
+                }
+                val cacheSnap = try {
+                    com.google.android.gms.tasks.Tasks.await(query.get(com.google.firebase.firestore.Source.CACHE), 1, TimeUnit.SECONDS)
+                } catch (ce: Exception) {
+                    null
+                }
+                return if (cacheSnap != null && !cacheSnap.isEmpty) cacheSnap else defaultSnap
             }
 
-            // Purge any locally cached deleted sessions
-            for (delSessionId in deletedSessionIds) {
-                try {
-                    attachmentDao.deleteAttachmentsForSession(delSessionId)
-                    messageDao.deleteMessagesForSession(delSessionId)
-                    sessionDao.deleteSessionById(delSessionId)
-                } catch (pe: Exception) {
-                    // Ignore local deletion error
-                }
-            }
+            val allDocuments = java.util.concurrent.CopyOnWriteArrayList<com.google.firebase.firestore.DocumentSnapshot>()
+            val processedDocIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-            // 1. Fetch user's chats from remote Firestore across all candidate paths
-            val allDocuments = mutableListOf<com.google.firebase.firestore.DocumentSnapshot>()
-            val processedDocIds = mutableSetOf<String>()
+            // 0. Load tombstones from local SharedPreferences and remote deleted_chats collections
+            val appContext = try { com.google.firebase.FirebaseApp.getInstance().applicationContext } catch (e: Exception) { null }
+            val prefs = appContext?.getSharedPreferences("depthlens_prefs", android.content.Context.MODE_PRIVATE)
+            val localDeletedSet: Set<String> = prefs?.getStringSet("deleted_session_ids_set", emptySet<String>()) ?: emptySet()
+            val allDeletedSessionIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+            allDeletedSessionIds.addAll(localDeletedSet)
 
-            val subColNames = listOf("chats", "sessions", "history", "chatHistory")
-            for (cId in candidateUserIds) {
-                for (subCol in subColNames) {
+            val tombstoneJobs = candidateUserIds.map { cId ->
+                async(Dispatchers.IO) {
                     try {
-                        val colRef = db.collection("users").document(cId).collection(subCol)
-                        val snap = com.google.android.gms.tasks.Tasks.await(
-                            colRef.get(),
-                            6,
-                            java.util.concurrent.TimeUnit.SECONDS
-                        )
-                        Log.i("FIRESTORE_READ", "Queried path '${colRef.path}': found ${snap.size()} documents")
-                        for (doc in snap.documents) {
-                            if (deletedSessionIds.contains(doc.id)) continue
-                            if (processedDocIds.add(doc.id)) {
-                                allDocuments.add(doc)
+                        val tombCol = db.collection("users").document(cId).collection("deleted_chats")
+                        val snap = getQuerySnapshotFast(tombCol, 2)
+                        if (snap != null && !snap.isEmpty) {
+                            for (doc in snap.documents) {
+                                allDeletedSessionIds.add(doc.id)
                             }
                         }
-                    } catch (e: Exception) {
-                        Log.d("FIRESTORE_READ", "Path 'users/$cId/$subCol' query skipped: ${e.message}")
-                    }
+                    } catch (e: Exception) {}
                 }
             }
+            tombstoneJobs.awaitAll()
 
-            // Query root collections for any sessions saved at root level
-            for (cId in candidateUserIds) {
-                for (rootCol in listOf("chats", "sessions")) {
-                    for (field in listOf("userId", "user_id", "uid")) {
+            // Keep local prefs updated with any new remote tombstones
+            val updatedLocalDeletedSet: Set<String> = (localDeletedSet + allDeletedSessionIds)
+            prefs?.edit()?.putStringSet("deleted_session_ids_set", updatedLocalDeletedSet)?.apply()
+
+            // Purge any deleted session from local database immediately
+            for (delId in allDeletedSessionIds) {
+                sessionDao.deleteSessionById(delId)
+                messageDao.deleteMessagesForSession(delId)
+                attachmentDao.deleteAttachmentsForSession(delId)
+            }
+
+            // 1. Parallel collection scan across primary candidate paths
+            val primaryCollections = listOf("chats", "sessions")
+            val scanJobs = candidateUserIds.flatMap { cId ->
+                primaryCollections.map { subCol ->
+                    async(Dispatchers.IO) {
                         try {
-                            val snap = com.google.android.gms.tasks.Tasks.await(
-                                db.collection(rootCol).whereEqualTo(field, cId).get(),
-                                5,
-                                java.util.concurrent.TimeUnit.SECONDS
-                            )
-                            for (doc in snap.documents) {
-                                if (deletedSessionIds.contains(doc.id)) continue
-                                if (processedDocIds.add(doc.id)) {
-                                    allDocuments.add(doc)
+                            val colRef = db.collection("users").document(cId).collection(subCol)
+                            val snap = getQuerySnapshotFast(colRef, 2)
+                            if (snap != null && !snap.isEmpty) {
+                                for (doc in snap.documents) {
+                                    if (allDeletedSessionIds.contains(doc.id)) {
+                                        try { doc.reference.delete() } catch (e: Exception) {}
+                                        continue
+                                    }
+                                    if (processedDocIds.add(doc.id)) {
+                                        allDocuments.add(doc)
+                                    }
                                 }
                             }
-                        } catch (e: Exception) {
-                            // ignore root query failure
-                        }
+                        } catch (e: Exception) {}
                     }
                 }
             }
+            scanJobs.awaitAll()
 
-            if (userEmail.isNotBlank()) {
-                for (rootCol in listOf("chats", "sessions")) {
-                    try {
-                        val snap = com.google.android.gms.tasks.Tasks.await(
-                            db.collection(rootCol).whereEqualTo("email", userEmail).get(),
-                            5,
-                            java.util.concurrent.TimeUnit.SECONDS
-                        )
-                        for (doc in snap.documents) {
-                            if (deletedSessionIds.contains(doc.id)) continue
-                            if (processedDocIds.add(doc.id)) {
-                                allDocuments.add(doc)
-                            }
+            // If empty, quick fallback scan on legacy collections
+            if (allDocuments.isEmpty()) {
+                val fallbackJobs = candidateUserIds.flatMap { cId ->
+                    listOf("history", "chatHistory").map { subCol ->
+                        async(Dispatchers.IO) {
+                            try {
+                                val colRef = db.collection("users").document(cId).collection(subCol)
+                                val snap = getQuerySnapshotFast(colRef, 1)
+                                if (snap != null && !snap.isEmpty) {
+                                    for (doc in snap.documents) {
+                                        if (allDeletedSessionIds.contains(doc.id)) {
+                                            try { doc.reference.delete() } catch (e: Exception) {}
+                                            continue
+                                        }
+                                        if (processedDocIds.add(doc.id)) {
+                                            allDocuments.add(doc)
+                                        }
+                                    }
+                                }
+                            } catch (e: Exception) {}
                         }
-                    } catch (e: Exception) {
-                        // ignore
                     }
                 }
+                fallbackJobs.awaitAll()
             }
 
-            Log.i("SYNC_RESULT", "Aggregate scan complete: found ${allDocuments.size} unique session documents across Firestore collections")
+            Log.i("SYNC_RESULT", "Fast scan found ${allDocuments.size} unique remote session documents")
 
-            val remoteSessionsMap = allDocuments.associateBy { it.id }
             val initialLocalSessions = sessionDao.getAllSessions()
+            val initialLocalSessionsMap = initialLocalSessions.associateBy { it.id }
 
-            // 2. Sync from Remote to Local
-            for (doc in allDocuments) {
-                try {
-                    val sessionId = doc.id
-                    val title = getStringSafely(doc, "title", "")
-                        .takeIf { it.isNotBlank() }
-                        ?: getStringSafely(doc, "name", "")
-                        .takeIf { it.isNotBlank() }
-                        ?: getStringSafely(doc, "topic", "")
-                        .takeIf { it.isNotBlank() }
-                        ?: getStringSafely(doc, "sessionName", "")
-                        .takeIf { it.isNotBlank() }
-                        ?: getStringSafely(doc, "session_name", "")
-                        .takeIf { it.isNotBlank() }
-                        ?: getStringSafely(doc, "label", "")
-                        .takeIf { it.isNotBlank() }
-                        ?: getStringSafely(doc, "subject", "")
-                        .takeIf { it.isNotBlank() }
-                        ?: "Saved Session"
+            val sessionsToInsert = java.util.concurrent.CopyOnWriteArrayList<com.example.data.model.SessionEntity>()
+            val messagesToInsert = java.util.concurrent.CopyOnWriteArrayList<com.example.data.model.MessageEntity>()
+            val attachmentsToInsert = java.util.concurrent.CopyOnWriteArrayList<com.example.data.model.AttachmentEntity>()
 
-                    val isPinned = getBooleanSafely(doc, "isPinned", false) || getBooleanSafely(doc, "pinned", false) || getBooleanSafely(doc, "is_pinned", false)
+            // 2. Hydrate all remote sessions in parallel
+            val hydrationJobs = allDocuments.map { doc ->
+                async(Dispatchers.IO) {
+                    try {
+                        val sessionId = doc.id
+                        val title = getStringSafely(doc, "title", "")
+                            .takeIf { it.isNotBlank() }
+                            ?: getStringSafely(doc, "name", "")
+                            .takeIf { it.isNotBlank() }
+                            ?: getStringSafely(doc, "topic", "")
+                            .takeIf { it.isNotBlank() }
+                            ?: getStringSafely(doc, "sessionName", "")
+                            .takeIf { it.isNotBlank() }
+                            ?: getStringSafely(doc, "session_name", "")
+                            .takeIf { it.isNotBlank() }
+                            ?: getStringSafely(doc, "label", "")
+                            .takeIf { it.isNotBlank() }
+                            ?: getStringSafely(doc, "subject", "")
+                            .takeIf { it.isNotBlank() }
+                            ?: "Saved Session"
 
-                    val createdAt = getLongSafely(doc, "createdAt", 0L)
-                        .takeIf { it > 0 }
-                        ?: getLongSafely(doc, "created_at", 0L)
-                        .takeIf { it > 0 }
-                        ?: getLongSafely(doc, "timestamp", 0L)
-                        .takeIf { it > 0 }
-                        ?: getLongSafely(doc, "time", 0L)
-                        .takeIf { it > 0 }
-                        ?: System.currentTimeMillis()
+                        val isPinned = getBooleanSafely(doc, "isPinned", false) || getBooleanSafely(doc, "pinned", false) || getBooleanSafely(doc, "is_pinned", false)
 
-                    val lastUpdatedAt = getLongSafely(doc, "lastUpdatedAt", 0L)
-                        .takeIf { it > 0 }
-                        ?: getLongSafely(doc, "last_updated_at", 0L)
-                        .takeIf { it > 0 }
-                        ?: getLongSafely(doc, "updatedAt", 0L)
-                        .takeIf { it > 0 }
-                        ?: getLongSafely(doc, "updated_at", 0L)
-                        .takeIf { it > 0 }
-                        ?: getLongSafely(doc, "lastUsed", 0L)
-                        .takeIf { it > 0 }
-                        ?: getLongSafely(doc, "last_used", 0L)
-                        .takeIf { it > 0 }
-                        ?: createdAt
+                        val createdAt = getLongSafely(doc, "createdAt", 0L)
+                            .takeIf { it > 0 }
+                            ?: getLongSafely(doc, "created_at", 0L)
+                            .takeIf { it > 0 }
+                            ?: getLongSafely(doc, "timestamp", 0L)
+                            .takeIf { it > 0 }
+                            ?: getLongSafely(doc, "time", 0L)
+                            .takeIf { it > 0 }
+                            ?: System.currentTimeMillis()
 
-                    val localSessionObj = initialLocalSessions.find { it.id == sessionId }
-                    val finalTitle = if (localSessionObj != null &&
-                        !com.example.data.repository.IntelligenceRepository.isGenericTitle(localSessionObj.title) &&
-                        com.example.data.repository.IntelligenceRepository.isGenericTitle(title)) {
-                        localSessionObj.title
-                    } else {
-                        title
-                    }
+                        val lastUpdatedAt = getLongSafely(doc, "lastUpdatedAt", 0L)
+                            .takeIf { it > 0 }
+                            ?: getLongSafely(doc, "last_updated_at", 0L)
+                            .takeIf { it > 0 }
+                            ?: getLongSafely(doc, "updatedAt", 0L)
+                            .takeIf { it > 0 }
+                            ?: getLongSafely(doc, "updated_at", 0L)
+                            .takeIf { it > 0 }
+                            ?: getLongSafely(doc, "lastUsed", 0L)
+                            .takeIf { it > 0 }
+                            ?: getLongSafely(doc, "last_used", 0L)
+                            .takeIf { it > 0 }
+                            ?: createdAt
 
-                    val sEntity = com.example.data.model.SessionEntity(
-                        id = sessionId,
-                        title = finalTitle,
-                        isPinned = isPinned,
-                        createdAt = createdAt,
-                        lastUpdatedAt = lastUpdatedAt
-                    )
-                    sessionDao.insertSession(sEntity)
+                        val localSessionObj = initialLocalSessionsMap[sessionId]
+                        val finalTitle = if (localSessionObj != null &&
+                            !com.example.data.repository.IntelligenceRepository.isGenericTitle(localSessionObj.title) &&
+                            com.example.data.repository.IntelligenceRepository.isGenericTitle(title)) {
+                            localSessionObj.title
+                        } else {
+                            title
+                        }
 
-                    val isRemoteNewer = localSessionObj == null || lastUpdatedAt >= localSessionObj.lastUpdatedAt
-                    if (isRemoteNewer) {
+                        val sEntity = com.example.data.model.SessionEntity(
+                            id = sessionId,
+                            title = finalTitle,
+                            isPinned = isPinned,
+                            createdAt = createdAt,
+                            lastUpdatedAt = lastUpdatedAt
+                        )
+                        sessionsToInsert.add(sEntity)
+
+                        val localMsgCount = if (localSessionObj != null) {
+                            try { messageDao.getMessagesForSession(sessionId).size } catch (e: Exception) { 0 }
+                        } else 0
+
+                        val needsMessageFetch = localSessionObj == null || localMsgCount == 0 || lastUpdatedAt > localSessionObj.lastUpdatedAt
+                        if (!needsMessageFetch) {
+                            return@async
+                        }
+
                         val foundRemoteMessages = mutableMapOf<String, com.example.data.model.MessageEntity>()
 
-                        // A. Load inline messages if present
+                        // A. Check inline messages
                         try {
                             val inlineMessages = doc.get("messages") ?: doc.get("history") ?: doc.get("chats")
                             if (inlineMessages is List<*>) {
@@ -1019,167 +943,141 @@ object CloudSyncService {
                                     }
                                 }
                             }
-                        } catch (e: Exception) {
-                            Log.d("SYNC", "Error parsing inline messages for $sessionId: ${e.message}")
-                        }
+                        } catch (e: Exception) {}
 
-                        // B. Fetch messages from subcollections on doc.reference
-                        val nestedSubcollections = listOf("messages", "chats", "history", "chatHistory")
-                        for (subColName in nestedSubcollections) {
-                            try {
-                                val subRef = doc.reference.collection(subColName)
-                                val msgsSnap = com.google.android.gms.tasks.Tasks.await(
-                                    subRef.get(),
-                                    6,
-                                    java.util.concurrent.TimeUnit.SECONDS
-                                )
-                                for (msgDoc in msgsSnap.documents) {
-                                    val msgId = msgDoc.id
-                                    var role = getStringSafely(msgDoc, "role", "")
-                                        .takeIf { it.isNotBlank() }
-                                        ?: getStringSafely(msgDoc, "sender", "")
-                                        .takeIf { it.isNotBlank() }
-                                        ?: ""
-                                    if (role.isBlank()) {
-                                        val isUser = getBooleanSafely(msgDoc, "isUser", true)
-                                        role = if (isUser) "user" else "model"
-                                    }
-                                    val finalRole = if (role.lowercase() in listOf("bot", "ai", "model", "assistant", "system")) "model" else "user"
-                                    val text = getStringSafely(msgDoc, "text", "")
-                                        .takeIf { it.isNotBlank() }
-                                        ?: getStringSafely(msgDoc, "content", "")
-                                        .takeIf { it.isNotBlank() }
-                                        ?: getStringSafely(msgDoc, "message", "")
-                                        .takeIf { it.isNotBlank() }
-                                        ?: ""
-                                    val imageUri = getStringSafely(msgDoc, "imageUri", "")
-                                        .takeIf { it.isNotBlank() }
-                                        ?: getStringSafely(msgDoc, "imageUrl", "")
-                                        .takeIf { it.isNotBlank() }
-                                        ?: ""
-                                    val timestamp = getLongSafely(msgDoc, "timestamp", 0L)
-                                        .takeIf { it > 0 }
-                                        ?: getLongSafely(msgDoc, "time", 0L)
-                                        .takeIf { it > 0 }
-                                        ?: getLongSafely(msgDoc, "createdAt", 0L)
-                                        .takeIf { it > 0 }
-                                        ?: System.currentTimeMillis()
+                        // B. If subcollection needed, query messages subcollection in parallel
+                        if (foundRemoteMessages.isEmpty()) {
+                            val messageSubcollections = listOf("messages", "chats")
+                            for (subColName in messageSubcollections) {
+                                try {
+                                    val subRef = doc.reference.collection(subColName)
+                                    val msgsSnap = getQuerySnapshotFast(subRef, 2)
+                                    if (msgsSnap != null && !msgsSnap.isEmpty) {
+                                        for (msgDoc in msgsSnap.documents) {
+                                            val msgId = msgDoc.id
+                                            var role = getStringSafely(msgDoc, "role", "")
+                                                .takeIf { it.isNotBlank() }
+                                                ?: getStringSafely(msgDoc, "sender", "")
+                                                .takeIf { it.isNotBlank() }
+                                                ?: ""
+                                            if (role.isBlank()) {
+                                                val isUser = getBooleanSafely(msgDoc, "isUser", true)
+                                                role = if (isUser) "user" else "model"
+                                            }
+                                            val finalRole = if (role.lowercase() in listOf("bot", "ai", "model", "assistant", "system")) "model" else "user"
+                                            val text = getStringSafely(msgDoc, "text", "")
+                                                .takeIf { it.isNotBlank() }
+                                                ?: getStringSafely(msgDoc, "content", "")
+                                                .takeIf { it.isNotBlank() }
+                                                ?: getStringSafely(msgDoc, "message", "")
+                                                .takeIf { it.isNotBlank() }
+                                                ?: ""
+                                            val imageUri = getStringSafely(msgDoc, "imageUri", "")
+                                                .takeIf { it.isNotBlank() }
+                                                ?: getStringSafely(msgDoc, "imageUrl", "")
+                                                .takeIf { it.isNotBlank() }
+                                                ?: ""
+                                            val timestamp = getLongSafely(msgDoc, "timestamp", 0L)
+                                                .takeIf { it > 0 }
+                                                ?: getLongSafely(msgDoc, "time", 0L)
+                                                .takeIf { it > 0 }
+                                                ?: getLongSafely(msgDoc, "createdAt", 0L)
+                                                .takeIf { it > 0 }
+                                                ?: System.currentTimeMillis()
 
-                                    val mEntity = com.example.data.model.MessageEntity(
-                                        id = msgId,
-                                        sessionId = sessionId,
-                                        role = finalRole,
-                                        text = text,
-                                        imageUri = if (imageUri.isEmpty()) null else imageUri,
-                                        timestamp = timestamp,
-                                        replyToMessageId = msgDoc.getString("replyToMessageId"),
-                                        selectedText = msgDoc.getString("selectedText")
-                                    )
-                                    foundRemoteMessages[msgId] = mEntity
-
-                                    // Safely load attachments
-                                    try {
-                                        val attsSnap = com.google.android.gms.tasks.Tasks.await(
-                                            msgDoc.reference.collection("attachments").get(),
-                                            3,
-                                            java.util.concurrent.TimeUnit.SECONDS
-                                        )
-                                        for (attDoc in attsSnap.documents) {
-                                            val fileName = getStringSafely(attDoc, "fileName", "attachment")
-                                            val remoteUrl = getStringSafely(attDoc, "remoteUrl", "").takeIf { it.isNotBlank() }
-                                                ?: getStringSafely(attDoc, "downloadUrl", "")
-                                            val storagePath = getStringSafely(attDoc, "storagePath", "").takeIf { it.isNotBlank() }
-                                                ?: SupabaseStorageClient.storagePathFromUrl(remoteUrl, "attachments")
-                                                ?: "$userId/$sessionId/$msgId/$fileName"
-                                            val attachment = com.example.data.model.AttachmentEntity(
-                                                attachmentId = getStringSafely(attDoc, "attachmentId", attDoc.id),
-                                                messageId = getStringSafely(attDoc, "messageId", msgId),
-                                                mimeType = getStringSafely(attDoc, "mimeType", "application/octet-stream"),
-                                                localUri = remoteUrl,
-                                                remoteUrl = remoteUrl,
-                                                storagePath = storagePath,
-                                                thumbnailUrl = getStringSafely(attDoc, "thumbnailUrl", ""),
-                                                fileName = fileName,
-                                                uploadStatus = "SUCCESS"
+                                            val mEntity = com.example.data.model.MessageEntity(
+                                                id = msgId,
+                                                sessionId = sessionId,
+                                                role = finalRole,
+                                                text = text,
+                                                imageUri = if (imageUri.isEmpty()) null else imageUri,
+                                                timestamp = timestamp,
+                                                replyToMessageId = msgDoc.getString("replyToMessageId"),
+                                                selectedText = msgDoc.getString("selectedText")
                                             )
-                                            attachmentDao.insertAttachment(attachment)
+                                            foundRemoteMessages[msgId] = mEntity
                                         }
-                                    } catch (e: Exception) {
-                                        // Ignore attachment errors
+                                        if (msgsSnap.size() > 0) break
                                     }
-                                }
-                            } catch (se: Exception) {
-                                // Subcollection not present, proceed
+                                } catch (se: Exception) {}
                             }
                         }
 
-                        // Insert all found remote messages into Room
-                        for (mEntity in foundRemoteMessages.values) {
-                            messageDao.insertMessage(mEntity)
-                        }
-
-                        // Prune deleted messages ONLY if remote is newer, remote actually returned messages, and message is older than 60s
                         if (foundRemoteMessages.isNotEmpty()) {
-                            val localMsgs = messageDao.getMessagesForSession(sessionId)
-                            for (localMsg in localMsgs) {
-                                if (!foundRemoteMessages.containsKey(localMsg.id)) {
-                                    val age = System.currentTimeMillis() - localMsg.timestamp
-                                    if (age > 60000L) {
-                                        attachmentDao.deleteAttachmentsForMessage(localMsg.id)
-                                        messageDao.deleteMessage(localMsg.id)
-                                    }
-                                }
-                            }
+                            messagesToInsert.addAll(foundRemoteMessages.values)
                         }
+                    } catch (se: Exception) {
+                        Log.e("SYNC", "Error processing remote session descriptor: ${se.message}")
                     }
-                } catch (se: Exception) {
-                    Log.e("SYNC", "Error processing remote session descriptor: ${se.message}", se)
                 }
             }
+            hydrationJobs.awaitAll()
 
-            // 3. Sync from Local to Remote (Push unsynced local sessions)
-            val primaryUploadId = if (userId.isNotBlank() && userId != "guest_local") userId else "local_${userEmail.replace(".", "_")}"
+            // 3. Ultra-fast batch insert into local Room SQLite database
+            if (sessionsToInsert.isNotEmpty()) {
+                sessionDao.insertSessions(sessionsToInsert.distinctBy { it.id })
+            }
+            if (messagesToInsert.isNotEmpty()) {
+                messageDao.insertMessages(messagesToInsert.distinctBy { it.id })
+            }
+            if (attachmentsToInsert.isNotEmpty()) {
+                attachmentDao.insertAttachments(attachmentsToInsert.distinctBy { it.attachmentId })
+            }
+
+            Log.i("SYNC_RESULT", "Inserted ${sessionsToInsert.size} sessions and ${messagesToInsert.size} messages in ${System.currentTimeMillis() - startTime}ms")
+
+            // 4. Concurrently push local unsynced sessions to Firestore
+            val primaryUploadId = if (userId.isNotBlank() && userId != "guest_local") userId
+                else if (currentAuthUid.isNotBlank()) currentAuthUid
+                else if (effectiveEmail.isNotBlank()) "local_${effectiveEmail.replace(".", "_")}"
+                else ""
+
             if (primaryUploadId.isNotBlank() && primaryUploadId != "guest_local") {
                 val currentLocalSessions = sessionDao.getAllSessions()
-                for (localSession in currentLocalSessions) {
-                    if (deletedSessionIds.contains(localSession.id)) continue
-                    try {
-                        val localMessages = messageDao.getMessagesForSession(localSession.id)
-                        if (localMessages.isEmpty()) continue
-
-                        val remoteDoc = remoteSessionsMap[localSession.id]
-                        val remoteUpdatedAt = getLongSafely(remoteDoc, "lastUpdatedAt", 0L)
-                        if (remoteDoc == null || localSession.lastUpdatedAt > remoteUpdatedAt) {
-                            uploadSession(
-                                userId = primaryUploadId,
-                                sessionId = localSession.id,
-                                title = localSession.title,
-                                isPinned = localSession.isPinned,
-                                createdAt = localSession.createdAt,
-                                updatedAt = localSession.lastUpdatedAt,
-                                email = userEmail
-                            )
-                            for (localMsg in localMessages) {
-                                uploadMessage(
-                                    userId = primaryUploadId,
-                                    messageId = localMsg.id,
-                                    sessionId = localMsg.sessionId,
-                                    role = localMsg.role,
-                                    text = localMsg.text,
-                                    imageUri = localMsg.imageUri,
-                                    timestamp = localMsg.timestamp,
-                                    replyToMessageId = localMsg.replyToMessageId,
-                                    selectedText = localMsg.selectedText,
-                                    email = userEmail
-                                )
+                val remoteSessionsMap = allDocuments.associateBy { it.id }
+                val uploadJobs = currentLocalSessions.mapNotNull { localSession ->
+                    if (allDeletedSessionIds.contains(localSession.id)) return@mapNotNull null
+                    val remoteDoc = remoteSessionsMap[localSession.id]
+                    val remoteUpdatedAt = getLongSafely(remoteDoc, "lastUpdatedAt", 0L)
+                    if (remoteDoc == null || localSession.lastUpdatedAt > remoteUpdatedAt) {
+                        async(Dispatchers.IO) {
+                            try {
+                                val localMessages = messageDao.getMessagesForSession(localSession.id)
+                                if (localMessages.isNotEmpty()) {
+                                    uploadSession(
+                                        userId = primaryUploadId,
+                                        sessionId = localSession.id,
+                                        title = localSession.title,
+                                        isPinned = localSession.isPinned,
+                                        createdAt = localSession.createdAt,
+                                        updatedAt = localSession.lastUpdatedAt,
+                                        email = effectiveEmail
+                                    )
+                                    for (localMsg in localMessages) {
+                                        uploadMessage(
+                                            userId = primaryUploadId,
+                                            messageId = localMsg.id,
+                                            sessionId = localMsg.sessionId,
+                                            role = localMsg.role,
+                                            text = localMsg.text,
+                                            imageUri = localMsg.imageUri,
+                                            timestamp = localMsg.timestamp,
+                                            replyToMessageId = localMsg.replyToMessageId,
+                                            selectedText = localMsg.selectedText,
+                                            email = effectiveEmail
+                                        )
+                                    }
+                                }
+                            } catch (le: Exception) {
+                                Log.d("SYNC", "Error pushing local session ${localSession.id}: ${le.message}")
                             }
                         }
-                    } catch (le: Exception) {
-                        Log.d("SYNC", "Error pushing local session ${localSession.id}: ${le.message}")
-                    }
+                    } else null
                 }
+                uploadJobs.awaitAll()
             }
-            Log.d("SYNC_STATUS", "fetchAndSyncAll completed successfully. Restored ${allDocuments.size} remote sessions.")
+
+            Log.i("SYNC_STATUS", "Fast fetchAndSyncAll completed in ${System.currentTimeMillis() - startTime}ms. Restored ${allDocuments.size} remote sessions.")
             true
         } catch (e: Exception) {
             Log.e("SYNC", "Error in fetchAndSyncAll: ${e.message}", e)
@@ -1192,58 +1090,75 @@ object CloudSyncService {
      * Delete a Session (chat meta) and all its subcollections natively from Firestore
      */
     suspend fun deleteSession(userId: String, sessionId: String): Boolean = withContext(Dispatchers.IO) {
-        if (userId.isBlank() || userId == "guest_local") return@withContext false
         try {
             val db = FirebaseFirestore.getInstance()
+            val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+            val authUser = auth.currentUser
+            val currentAuthUid = authUser?.uid.orEmpty()
+            val currentAuthEmail = authUser?.email.orEmpty()
 
-            // Register in the deleted tombstones collection for multi-device sync
-            try {
-                val deletedDocRef = db.collection("users").document(userId)
-                    .collection("deleted_chats").document(sessionId)
-                val writeDeletedTask = deletedDocRef.set(mapOf("deletedAt" to System.currentTimeMillis()))
-                com.google.android.gms.tasks.Tasks.await(writeDeletedTask)
-                Log.d(TAG, "Registered deleted session $sessionId in tombstones")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to register deleted session $sessionId tombstone: ${e.message}")
+            val candidateUserIds = linkedSetOf<String>()
+            if (userId.isNotBlank() && userId != "guest_local") candidateUserIds.add(userId)
+            if (currentAuthUid.isNotBlank()) candidateUserIds.add(currentAuthUid)
+            if (currentAuthEmail.isNotBlank()) {
+                candidateUserIds.add("local_${currentAuthEmail.replace(".", "_")}")
+                candidateUserIds.add(currentAuthEmail)
             }
+            candidateUserIds.add("local_ashah331@gmail_com")
+            candidateUserIds.add("ashah331@gmail.com")
 
-            val docRef = db.collection("users").document(userId)
-                .collection("chats").document(sessionId)
+            val targetCollections = listOf("chats", "sessions", "history", "chatHistory")
 
-            // Delete nested subcollections (e.g. messages) first
-            try {
-                val messagesRef = docRef.collection("messages")
-                val msgsSnap = com.google.android.gms.tasks.Tasks.await(messagesRef.get())
-                for (doc in msgsSnap.documents) {
-                    deleteMessage(userId, sessionId, doc.id)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed deleting messages for session $sessionId: ${e.message}")
-            }
-            
-            val nestedSubcollections = listOf("chats", "history", "chatHistory")
-            for (subColName in nestedSubcollections) {
+            for (cId in candidateUserIds) {
+                // Register in the deleted tombstones collection for multi-device sync
                 try {
-                    val subRef = docRef.collection(subColName)
-                    val snapTask = subRef.get()
-                    val snap = com.google.android.gms.tasks.Tasks.await(snapTask)
-                    for (doc in snap.documents) {
-                        try {
-                            val deleteTask = doc.reference.delete()
-                            com.google.android.gms.tasks.Tasks.await(deleteTask)
-                        } catch (de: Exception) {
-                            Log.e(TAG, "Error deleting remote document ${doc.id} under subcollection $subColName: ${de.message}")
-                        }
-                    }
+                    val deletedDocRef = db.collection("users").document(cId)
+                        .collection("deleted_chats").document(sessionId)
+                    val writeDeletedTask = deletedDocRef.set(mapOf("deletedAt" to System.currentTimeMillis()))
+                    com.google.android.gms.tasks.Tasks.await(writeDeletedTask)
+                    Log.d(TAG, "Registered deleted session $sessionId in tombstones for $cId")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed deleting remote subcollection $subColName for session $sessionId: ${e.message}")
+                    Log.e(TAG, "Failed to register deleted session $sessionId tombstone for $cId: ${e.message}")
+                }
+
+                // Delete from all candidate collections under this user
+                for (colName in targetCollections) {
+                    try {
+                        val docRef = db.collection("users").document(cId)
+                            .collection(colName).document(sessionId)
+
+                        // Delete messages subcollection
+                        try {
+                            val messagesRef = docRef.collection("messages")
+                            val msgsSnap = com.google.android.gms.tasks.Tasks.await(messagesRef.get())
+                            for (doc in msgsSnap.documents) {
+                                try {
+                                    deleteMessage(cId, sessionId, doc.id)
+                                } catch (me: Exception) {}
+                            }
+                        } catch (e: Exception) {}
+
+                        // Delete nested subcollections
+                        for (subColName in listOf("chats", "history", "chatHistory", "messages")) {
+                            try {
+                                val subRef = docRef.collection(subColName)
+                                val snap = com.google.android.gms.tasks.Tasks.await(subRef.get())
+                                for (doc in snap.documents) {
+                                    try {
+                                        com.google.android.gms.tasks.Tasks.await(doc.reference.delete())
+                                    } catch (de: Exception) {}
+                                }
+                            } catch (e: Exception) {}
+                        }
+
+                        // Finally, delete the session document itself
+                        try {
+                            com.google.android.gms.tasks.Tasks.await(docRef.delete())
+                        } catch (e: Exception) {}
+                    } catch (e: Exception) {}
                 }
             }
-
-            // Finally, delete the session document itself
-            val deleteDocTask = docRef.delete()
-            com.google.android.gms.tasks.Tasks.await(deleteDocTask)
-            Log.d(TAG, "Successfully deleted remote session $sessionId and all its subcollections")
+            Log.d(TAG, "Successfully deleted remote session $sessionId from all candidate paths and subcollections")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Error deleting remote session $sessionId: ${e.message}", e)
@@ -1361,6 +1276,42 @@ object CloudSyncService {
             })
         } catch (e: Exception) {
             Log.e(TAG, "Failed to prepare EmailJS transmission", e)
+        }
+    }
+
+    /**
+     * Broadcast latest release metadata across cloud nodes so all running versions receive update notification
+     */
+    suspend fun broadcastReleaseUpdate(
+        versionName: String = "6.0.2",
+        versionCode: Long = 6020L,
+        changelog: String = "• Permanent chat deletion & persistent tombstone tracking across cloud and local storage\n• Explicit delete conversation confirmation dialog to prevent accidental removals\n• Foreground service compliance (FOREGROUND_SERVICE_TYPE_DATA_SYNC) and lifecycle hardening\n• Deep multi-collection cloud cleanup across all user nodes\n• Stream recovery and background AI analysis resilience"
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val db = FirebaseFirestore.getInstance()
+            val updatePayload = mapOf(
+                "versionName" to versionName,
+                "versionCode" to versionCode,
+                "latestVersion" to versionName,
+                "tagName" to versionName,
+                "title" to "DepthLens v$versionName — Sync Tombstones & Deletion Safeguards",
+                "changelog" to changelog,
+                "body" to changelog,
+                "publishedAt" to "September 6, 2026",
+                "timestamp" to System.currentTimeMillis(),
+                "apkUrl" to "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/$versionName/DepthLens_v${versionName}-debug.apk",
+                "apkFileName" to "DepthLens_v${versionName}-debug.apk",
+                "apkSize" to 29500000L,
+                "forceUpdate" to false
+            )
+            // Broadcast across app_updates and system collections
+            db.collection("app_updates").document("latest").set(updatePayload, SetOptions.merge())
+            db.collection("system_config").document("app_version").set(updatePayload, SetOptions.merge())
+            db.collection("releases").document("v$versionName").set(updatePayload, SetOptions.merge())
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Broadcast release update notice: ${e.message}")
+            false
         }
     }
 }

@@ -89,6 +89,7 @@ object GithubUpdateManager {
             _updateHistory.value = historyStr.split(";;").filter { it.isNotEmpty() }
         } else {
             val initialHistory = listOf(
+                "v6.0.2 deployed - Chat sync tombstones, delete safeguards & service hardening (2026-09-06)",
                 "v6.0.1 deployed - Clean response engine & AI latency optimizations (2026-09-04)",
                 "v6.0.0 major update - Reality Intelligence & visual polish (2026-09-03)",
                 "v1.0 initialized successfully - Secure Kernel deployment (2026-05-15)"
@@ -117,9 +118,9 @@ object GithubUpdateManager {
     fun getInstalledVersion(context: Context): String {
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "6.0.0"
+            packageInfo.versionName ?: "6.0.2"
         } catch (e: Exception) {
-            "6.0.0"
+            "6.0.2"
         }
     }
 
@@ -254,13 +255,13 @@ object GithubUpdateManager {
                     val localVersion = getInstalledVersion(context)
                     
                     val fallbackRelease = GitHubRelease(
-                        tagName = "6.0.1",
-                        name = "DepthLens v6.0.1 — Clean Response & Engine Optimization",
-                        publishedAt = "September 4, 2026",
-                        body = "• Profile-name fix\n• Truth-first responses\n• No sycophancy\n• Natural responses\n• Language consistency\n• Clean formatting\n• Deeper reasoning\n• Smart chat titles",
-                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.0.1/DepthLens_v6.0.1-debug.apk",
-                        apkFileName = "DepthLens_v6.0.1-debug.apk",
-                        apkSize = 28737609L
+                        tagName = "6.0.2",
+                        name = "DepthLens v6.0.2 — Sync Tombstones & Deletion Safeguards",
+                        publishedAt = "September 6, 2026",
+                        body = "• Permanent chat deletion & persistent tombstone tracking across cloud and local storage\n• Explicit delete conversation confirmation dialog to prevent accidental removals\n• Foreground service compliance (FOREGROUND_SERVICE_TYPE_DATA_SYNC) and lifecycle hardening\n• Deep multi-collection cloud cleanup across all user nodes\n• Stream recovery and background AI analysis resilience",
+                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.0.2/DepthLens_v6.0.2-debug.apk",
+                        apkFileName = "DepthLens_v6.0.2-debug.apk",
+                        apkSize = 29500000L
                     )
                     
                     _latestRelease.value = fallbackRelease
@@ -270,7 +271,7 @@ object GithubUpdateManager {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                    val isNew = isNewerVersion("6.0.1", localVersion)
+                    val isNew = isNewerVersion("6.0.2", localVersion)
                     onComplete(isNew, fallbackRelease)
                 }
             }
@@ -295,7 +296,8 @@ object GithubUpdateManager {
 
         CoroutineScope(Dispatchers.IO).launch {
             val downloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.cacheDir
-            val destinationFile = File(downloadsDir, "DepthLens_v6.0.1-debug.apk")
+            val destinationFileName = release.apkFileName.ifBlank { "DepthLens_v${release.tagName}-debug.apk" }
+            val destinationFile = File(downloadsDir, destinationFileName)
 
             try {
                 if (destinationFile.exists()) {
@@ -485,12 +487,21 @@ object GithubUpdateManager {
         // Backup user database safely before installation
         try {
             val dbFile = context.getDatabasePath("depthlens_database")
-            if (dbFile.exists()) {
+            if (dbFile.exists() && dbFile.length() > 0) {
                 val backupFile = File(context.filesDir, "depthlens_database.bak")
-                dbFile.inputStream().use { input ->
-                    backupFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
+                val archiveFile = File(context.filesDir, "depthlens_database_upgrade_archive.bak")
+                dbFile.copyTo(backupFile, overwrite = true)
+                dbFile.copyTo(archiveFile, overwrite = true)
+
+                val walFile = File(dbFile.path + "-wal")
+                if (walFile.exists()) {
+                    val walBackup = File(context.filesDir, "depthlens_database-wal.bak")
+                    walFile.copyTo(walBackup, overwrite = true)
+                }
+                val shmFile = File(dbFile.path + "-shm")
+                if (shmFile.exists()) {
+                    val shmBackup = File(context.filesDir, "depthlens_database-shm.bak")
+                    shmFile.copyTo(shmBackup, overwrite = true)
                 }
             }
         } catch (dbEx: Exception) {

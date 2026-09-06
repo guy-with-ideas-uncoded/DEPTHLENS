@@ -200,179 +200,21 @@ data class ParsedResponse(
     val isFollowUp: Boolean = false
 ) {
     fun exportText(): String {
-        val builder = java.lang.StringBuilder()
-        
-        // 1. Replicate cleanIntroDisplay logic from the UI
-        val summaryText = executiveSummary ?: ""
-        var intro = introduction.trim()
-        
-        if (summaryText.isNotBlank()) {
-            if (intro == summaryText) {
-                intro = ""
-            } else if (intro.contains(summaryText)) {
-                intro = intro.replace(summaryText, "").trim()
-            } else {
-                val paragraphs = intro.split("\n\n")
-                val filtered = paragraphs.filter { p ->
-                    val pClean = p.trim()
-                    pClean.isNotBlank() && !summaryText.contains(pClean) && !pClean.contains(summaryText)
-                }
-                intro = filtered.joinToString("\n\n").trim()
-            }
-        }
-        
-        // Sanitize introduction using unified cleaner
-        intro = sanitizeCleanResponseText(intro)
-        
-        val cleanIntro = intro
+        val cleanIntro = sanitizeCleanResponseText(introduction.trim())
         if (cleanIntro.isNotBlank()) {
-            builder.append(cleanIntro).append("\n\n")
+            return cleanIntro
         }
-        
         val summary = executiveSummary?.trim()
         if (!summary.isNullOrBlank()) {
             val cleanSummary = sanitizeCleanResponseText(summary)
-            if (cleanSummary.isNotBlank()) {
-                builder.append("EXECUTIVE SUMMARY\n")
-                builder.append(cleanSummary).append("\n\n")
-            }
+            if (cleanSummary.isNotBlank()) return cleanSummary
         }
-        
         val synthesis = deepSynthesis?.trim()
         if (!synthesis.isNullOrBlank()) {
             val cleanSynth = sanitizeCleanResponseText(synthesis)
-            if (cleanSynth.isNotBlank()) {
-                builder.append("DEEP SYNTHESIS\n")
-                builder.append(cleanSynth).append("\n\n")
-            }
+            if (cleanSynth.isNotBlank()) return cleanSynth
         }
-
-        if (depthLayers.isNotEmpty()) {
-            builder.append("DEPTH LAYERS OF REALITY\n")
-            depthLayers.forEach { layer ->
-                builder.append("Layer ").append(layer.layerNumber).append(" - ").append(layer.layerName).append(": ").append(sanitizeCleanResponseText(layer.description)).append("\n")
-            }
-            builder.append("\n")
-        }
-        
-        val rcr = rootCauseReport
-        if (rcr != null) {
-            builder.append("ROOT CAUSE REPORT (THE 'WHY')\n")
-            builder.append("Surface Cause: ").append(rcr.symptom.trim()).append("\n")
-            builder.append("Immediate Cause: ").append(rcr.immediateCause.trim()).append("\n")
-            builder.append("Underlying Cause: ").append(rcr.underlyingCause.trim()).append("\n")
-            builder.append("Deeper Cause: ").append(rcr.deeperCause.trim()).append("\n")
-            builder.append("Root Cause Conclusion: ").append(rcr.rootCauseEstimate.trim()).append("\n")
-            builder.append("Supporting Evidence: ").append(rcr.supportingEvidence.trim()).append("\n")
-            if (rcr.alternativeExplanation.isNotBlank()) {
-                builder.append("Alternative Explanation: ").append(rcr.alternativeExplanation.trim()).append("\n")
-            }
-            builder.append("\n")
-        }
-        
-        val hd = humanDrivers
-        if (hd != null) {
-            builder.append("HUMAN DRIVERS (PSYCHOMOTIVE ANATOMY)\n")
-            builder.append("Surface Intention: ").append(hd.surfaceIntention.trim()).append("\n")
-            builder.append("Emotional Driver: ").append(hd.emotionalDriver.trim()).append("\n")
-            builder.append("Core Need: ").append(hd.needDriver.trim()).append("\n")
-            builder.append("Core Fear: ").append(hd.fearDriver.trim()).append("\n")
-            builder.append("Incentives: ").append(hd.incentiveDriver.trim()).append("\n")
-            builder.append("Identity Alignment: ").append(hd.identityDriver.trim()).append("\n")
-            builder.append("Hidden Motives: ").append(hd.hiddenMotives.trim()).append("\n")
-            builder.append("\n")
-        }
-        
-        if (futureScenarios.isNotEmpty()) {
-            builder.append("FUTURE SCENARIOS & PROBABILITIES\n")
-            futureScenarios.forEach { scenario ->
-                builder.append("- ").append(scenario.codeName.uppercase()).append(" - ").append(scenario.displayName).append(" (Prob: ").append(scenario.probability).append("%)\n")
-                builder.append("  Outcome: ").append(scenario.impactText.trim()).append("\n")
-                if (scenario.earlyWarningSigns.isNotEmpty()) {
-                    builder.append("  Early Warning Signs:\n")
-                    scenario.earlyWarningSigns.forEach { sign ->
-                        builder.append("    * ").append(sign.trim()).append("\n")
-                    }
-                }
-            }
-            builder.append("\n")
-        }
-        
-        if (probabilityMetrics != null) {
-            builder.append("PROBABILITY METRICS\n")
-            builder.append("Likelihood: ").append(probabilityMetrics!!.likelihood).append("%\n")
-            builder.append("Risk: ").append(probabilityMetrics!!.risk).append("%\n")
-            builder.append("Opportunity: ").append(probabilityMetrics!!.opportunity).append("%\n\n")
-        }
-
-        if (probabilityAssessment != null) {
-            builder.append("PROBABILITY ASSESSMENT\n")
-            builder.append("Likelihood: ").append(probabilityAssessment!!.likelihood).append("%\n")
-            if (probabilityAssessment!!.reasoningFactors.isNotEmpty()) {
-                builder.append("Reasoning Factors:\n")
-                probabilityAssessment!!.reasoningFactors.forEach { factor ->
-                    builder.append("- ").append(factor.trim()).append("\n")
-                }
-            }
-            builder.append("\n")
-        }
-
-        if (futurePathways.isNotEmpty()) {
-            builder.append("FUTURE PATHWAYS\n")
-            futurePathways.forEach { pathway ->
-                builder.append("- ").append(pathway.title).append(" (Prob: ").append(pathway.probability).append("%)\n")
-                builder.append("  Description: ").append(pathway.description.trim()).append("\n")
-                if (pathway.drivers.isNotBlank()) builder.append("  Drivers: ").append(pathway.drivers.trim()).append("\n")
-                if (pathway.risks.isNotBlank()) builder.append("  Risks: ").append(pathway.risks.trim()).append("\n")
-                if (pathway.opportunities.isNotBlank()) builder.append("  Opportunities: ").append(pathway.opportunities.trim()).append("\n")
-            }
-            builder.append("\n")
-        }
-
-        if (timelineForecast != null) {
-            builder.append("TIMELINE FORECAST\n")
-            builder.append("Short Term: ").append(timelineForecast!!.shortTermDesc.trim()).append(" (Prob: ").append(timelineForecast!!.shortTermProb).append("%)\n")
-            builder.append("Mid Term: ").append(timelineForecast!!.midTermDesc.trim()).append(" (Prob: ").append(timelineForecast!!.midTermProb).append("%)\n")
-            builder.append("Long Term: ").append(timelineForecast!!.longTermDesc.trim()).append(" (Prob: ").append(timelineForecast!!.longTermProb).append("%)\n")
-            builder.append("Explanation: ").append(timelineForecast!!.explanation.trim()).append("\n\n")
-        }
-
-        if (decisionImpact != null) {
-            builder.append("DECISION IMPACT\n")
-            builder.append("If Nothing Changes: ").append(decisionImpact!!.statusQuoDesc.trim()).append(" (Prob: ").append(decisionImpact!!.statusQuoProb).append("%)\n")
-            builder.append("If Action Is Taken: ").append(decisionImpact!!.actionDesc.trim()).append(" (Prob: ").append(decisionImpact!!.actionProb).append("%)\n")
-            if (decisionImpact!!.comparison.isNotBlank()) builder.append("Comparison: ").append(decisionImpact!!.comparison.trim()).append("\n")
-            if (decisionImpact!!.risks.isNotBlank()) builder.append("Risks: ").append(decisionImpact!!.risks.trim()).append("\n")
-            if (decisionImpact!!.benefits.isNotBlank()) builder.append("Benefits: ").append(decisionImpact!!.benefits.trim()).append("\n")
-            if (decisionImpact!!.tradeoffs.isNotBlank()) builder.append("Tradeoffs: ").append(decisionImpact!!.tradeoffs.trim()).append("\n")
-            builder.append("\n")
-        }
-
-        if (forecastSummary != null) {
-            builder.append("FORECAST SUMMARY\n")
-            builder.append("Most Likely Outcome: ").append(forecastSummary!!.mostLikelyOutcome).append("%\n")
-            builder.append("Key Risk: ").append(forecastSummary!!.keyRisk).append("%\n")
-            builder.append("Opportunity Window: ").append(forecastSummary!!.opportunityWindow).append("%\n\n")
-        }
-
-        if (suggestedQuestions.isNotEmpty()) {
-            builder.append("SUGGESTED QUESTIONS\n")
-            suggestedQuestions.forEach { q ->
-                builder.append("- ").append(q.trim()).append("\n")
-            }
-            builder.append("\n")
-        }
-
-        if (explorationPaths.isNotEmpty()) {
-            builder.append("EXPLORATION PATHS\n")
-            explorationPaths.forEach { p ->
-                builder.append("- ").append(p.trim()).append("\n")
-            }
-            builder.append("\n")
-        }
-
-        // Clean any lingering boilerplate/meta phrases and return
-        return sanitizeCleanResponseText(builder.toString())
+        return sanitizeCleanResponseText(introduction)
     }
 }
 

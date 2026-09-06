@@ -116,6 +116,48 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         _replySelectedText.value = null
     }
 
+    private val _sessionScrollPositions = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    fun saveSessionScrollPosition(sessionId: String, scrollY: Int) {
+        if (sessionId.isNotBlank()) {
+            _sessionScrollPositions[sessionId] = scrollY
+        }
+    }
+
+    fun getSessionScrollPosition(sessionId: String): Int {
+        return _sessionScrollPositions[sessionId] ?: 0
+    }
+
+    fun branchFromMessage(fromMessageId: String, onComplete: ((String) -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                val currentId = _activeSessionId.value ?: return@launch
+                val messages = repository.getMessagesForSession(currentId)
+                val branchIndex = messages.indexOfFirst { it.id == fromMessageId }
+                if (branchIndex < 0) return@launch
+
+                val messagesToCopy = messages.subList(0, branchIndex + 1)
+                val currentSession = repository.allSessionsFlow.firstOrNull()?.find { it.id == currentId }
+                val baseTitle = currentSession?.title?.takeIf { it.isNotBlank() && it != "New Chat" } ?: "Conversation"
+                val branchTitle = "$baseTitle (Branch)"
+
+                val newSession = repository.createNewSession(branchTitle)
+                
+                messagesToCopy.forEach { orig ->
+                    repository.cloneMessageToSession(orig, newSession.id)
+                }
+
+                _activeSessionId.value = newSession.id
+                prefs.edit().putString("last_active_session_id", newSession.id).apply()
+                _sessionScrollPositions[newSession.id] = Int.MAX_VALUE
+                
+                onComplete?.invoke(newSession.id)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     suspend fun downloadAndCacheAttachment(attachment: AttachmentEntity): String? {
         return repository.downloadAndCacheAttachment(getApplication(), attachment)
     }
@@ -553,9 +595,6 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                     android.util.Log.w("SYNC_STATUS", "runStartupSyncTest: fetchAndSyncFromFirestore returned false")
                 }
 
-                if (_activeSessionId.value == null || _activeSessionId.value == "draft_session_id") {
-                    restoreActiveSession()
-                }
                 runAutomatedInsightExtraction()
             } catch (e: Exception) {
                 android.util.Log.e("SYNC", "runStartupSyncTest: Background synchronization error: ${e.message}", e)
@@ -570,8 +609,15 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     }
 
     init {
-        // Always open the Home Screen on app launch / entry
+        // Always open the Home Screen on app launch with a clean, unsaved New Chat
         _activeSessionId.value = "draft_session_id"
+        IntelligenceRepository.currentVisibleSessionId = "draft_session_id"
+
+        viewModelScope.launch {
+            _activeSessionId.collect { id ->
+                IntelligenceRepository.currentVisibleSessionId = id
+            }
+        }
 
         // Trigger Engine Diagnostics Health Check at Startup
         runEngineDiagnostics()
@@ -608,9 +654,6 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             if (uid.isNotBlank() && uid != "guest_local") {
                 viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                     repository.fetchAndSyncFromFirestore(uid, email)
-                    withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        restoreActiveSession()
-                    }
                 }
             }
         } else {
@@ -641,6 +684,27 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
 
         runStartupSyncTest()
 
+        // Always run startup recovery & cloud sync in background so historic chats appear in drawer
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val recCount = repository.recoverFromLocalBackupsIfEmpty()
+                android.util.Log.i("CHAT_INIT", "Startup local backup scan restored: $recCount sessions")
+            } catch (e: Exception) {
+                android.util.Log.e("CHAT_INIT", "Startup local recovery note: ${e.message}")
+            }
+
+            try {
+                val currentUid = userId.value
+                val currentEmail = userEmail.value
+                val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                val effectiveUid = if (currentUid.isNotBlank() && currentUid != "guest_local") currentUid else authUser?.uid.orEmpty()
+                val effectiveEmail = currentEmail.ifBlank { authUser?.email.orEmpty() }.ifBlank { "ashah331@gmail.com" }
+                repository.fetchAndSyncFromFirestore(effectiveUid, effectiveEmail)
+            } catch (e: Exception) {
+                android.util.Log.e("CHAT_INIT", "Startup cloud sync note: ${e.message}")
+            }
+        }
+
         // Load deep-dive insights from prefs
         try {
             val allPrefs = prefs.all
@@ -656,20 +720,10 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             e.printStackTrace()
         }
         
-        
         viewModelScope.launch {
-            restoreActiveSession()
             repository.runOneTimeTitleMigration()
             kotlinx.coroutines.delay(5000)
             isFirstLaunchSessionSetup = false
-        }
-
-        viewModelScope.launch {
-            repository.allSessionsFlow.collect { list ->
-                if (list.isNotEmpty() && (_activeSessionId.value == "draft_session_id" || _activeSessionId.value.isNullOrBlank())) {
-                    restoreActiveSession()
-                }
-            }
         }
     }
 
@@ -714,6 +768,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
 
     fun deleteSession(sessionId: String) {
         viewModelScope.launch {
+            _sessionScrollPositions.remove(sessionId)
             repository.deleteSession(sessionId)
             wasChatDeleted = true
             _activeSessionId.value = "draft_session_id"
@@ -1270,11 +1325,6 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         _lastSyncedTime.value = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
         
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val lastSyncedEmail = prefs.getString("previous_sync_email", "")
-            if (lastSyncedEmail?.isNotBlank() == true && lastSyncedEmail != email) {
-                android.util.Log.i("AUTH_STATE", "onLocalAuthSuccess: Different user email switch detected ($lastSyncedEmail -> $email). Clearing local cache tables.")
-                repository.clearLocalData()
-            }
             prefs.edit().putString("last_synced_user_id", uid).putString("previous_sync_email", email).apply()
             
             _syncStatus.value = "Syncing..."
@@ -1389,20 +1439,9 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         _syncStatus.value = "Active" // Ensure Online/Active is shown immediately on authenticated UI thread
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            if (!isSyncingInProgress.compareAndSet(false, true)) {
-                android.util.Log.d("SYNC", "onAuthSuccess: Synchronization is currently executing already; skipping duplicate trigger.")
-                return@launch
-            }
-            try {
-                val lastSyncedUser = prefs.getString("last_synced_user_id", "")
-                val previousEmail = prefs.getString("previous_sync_email", "")
-                val isDifferentUser = lastSyncedUser?.isNotEmpty() == true && uid != lastSyncedUser && (previousEmail?.isNotBlank() == true && previousEmail != email)
-                if (isDifferentUser) {
-                    android.util.Log.i("AUTH_STATE", "onAuthSuccess: Different user email switch detected ($lastSyncedUser / $previousEmail -> $uid / $email). Clearing local cache tables.")
-                    repository.clearLocalData()
-                }
-                prefs.edit().putString("last_synced_user_id", uid).putString("previous_sync_email", email).apply()
+            prefs.edit().putString("last_synced_user_id", uid).putString("previous_sync_email", email).apply()
 
+            try {
                 android.util.Log.d("USER_FETCH", "onAuthSuccess: Assuring remote Firestore profile exists for uid=$uid")
                 com.example.data.network.CloudSyncService.createProfileIfNotExist(uid, email, name)
                 
@@ -1435,30 +1474,27 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 _syncStatus.value = "Active"
                 android.util.Log.d("SYNC_STATUS", "onAuthSuccess: Cloud sync task finished. Refreshed counts to $refreshedCount sessions (syncSuccess=$syncSuccess)")
                 
-                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    restoreActiveSession()
-                }
                 runAutomatedInsightExtraction()
                 
                 android.util.Log.d("SESSION_RESTORE", "onAuthSuccess: Restoration complete. Active sessionId=${_activeSessionId.value}")
             } catch (e: Exception) {
                 android.util.Log.e("SYNC_STATUS", "onAuthSuccess background sync failed for uid=$uid", e)
-                _syncStatus.value = "Error: Sync Failed"
-            } finally {
-                isSyncingInProgress.set(false)
-                if (_syncStatus.value == "Syncing...") {
-                    _syncStatus.value = "Active"
-                }
+                _syncStatus.value = "Active"
             }
         }
     }
 
     fun signInWithEmailAndPassword(email: String, password: String, onComplete: (Boolean, String) -> Unit) {
+        val trimmedEmail = email.trim()
+        val trimmedPassword = password.trim()
+        if (trimmedEmail.isBlank() || trimmedPassword.isBlank()) {
+            onComplete(false, "Please enter email and password.")
+            return
+        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val authResult = com.google.android.gms.tasks.Tasks.await(
-                    com.google.firebase.auth.FirebaseAuth.getInstance().signInWithEmailAndPassword(email, password)
-                )
+                val task = com.google.firebase.auth.FirebaseAuth.getInstance().signInWithEmailAndPassword(trimmedEmail, trimmedPassword)
+                val authResult = com.google.android.gms.tasks.Tasks.await(task, 6, java.util.concurrent.TimeUnit.SECONDS)
                 val user = authResult.user
                 if (user != null) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -1472,45 +1508,48 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                // Seamless local security authentication fallback
-                val accountName = email.substringBefore("@").replaceFirstChar { it.uppercase() }
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    val localPrefs = getApplication<Application>().getSharedPreferences("local_accounts", android.content.Context.MODE_PRIVATE)
-                    val savedPass = localPrefs.getString(email, "")
-                    if (savedPass.isNullOrEmpty() || savedPass == password) {
-                        if (savedPass.isNullOrEmpty()) {
-                            localPrefs.edit().putString(email, password).putString("${email}_name", accountName).apply()
-                        }
-                        val finalName = localPrefs.getString("${email}_name", accountName).orEmpty()
-                        onLocalAuthSuccess(uid = "local_${email.replace(".", "_")}", email = email, name = finalName, isNew = false)
-                        onComplete(true, "Signed in successfully.")
-                    } else {
-                        onComplete(false, "Invalid login credentials (local profile).")
+                    val errorMsg = when (e) {
+                        is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException -> "Invalid email or password."
+                        is com.google.firebase.auth.FirebaseAuthInvalidUserException -> "Invalid email or password."
+                        else -> e.localizedMessage ?: "Authentication failed."
                     }
+                    onComplete(false, errorMsg)
                 }
             }
         }
     }
 
     fun signUpWithEmailAndPassword(email: String, password: String, displayName: String, onComplete: (Boolean, String) -> Unit) {
+        val trimmedEmail = email.trim()
+        val trimmedPassword = password.trim()
+        val nameToUse = displayName.trim().ifBlank { getRandomExplorerName() }
+        if (trimmedEmail.isBlank() || trimmedPassword.isBlank()) {
+            onComplete(false, "Please enter email and password.")
+            return
+        }
+        if (trimmedPassword.length < 6) {
+            onComplete(false, "Password must be at least 6 characters.")
+            return
+        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val authResult = com.google.android.gms.tasks.Tasks.await(
-                    com.google.firebase.auth.FirebaseAuth.getInstance().createUserWithEmailAndPassword(email, password)
-                )
+                val task = com.google.firebase.auth.FirebaseAuth.getInstance().createUserWithEmailAndPassword(trimmedEmail, trimmedPassword)
+                val authResult = com.google.android.gms.tasks.Tasks.await(task, 6, java.util.concurrent.TimeUnit.SECONDS)
                 val user = authResult.user
                 if (user != null) {
+                    // Instantly complete and authenticate UI without blocking on profile update
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        onAuthSuccess(user, nameToUse, isNew = true)
+                        onComplete(true, "Account created successfully.")
+                    }
                     try {
                         val profileUpdates = com.google.firebase.auth.UserProfileChangeRequest.Builder()
-                            .setDisplayName(displayName)
+                            .setDisplayName(nameToUse)
                             .build()
-                        com.google.android.gms.tasks.Tasks.await(user.updateProfile(profileUpdates))
+                        user.updateProfile(profileUpdates)
                     } catch (pe: Exception) {
                         pe.printStackTrace()
-                    }
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        onAuthSuccess(user, displayName, isNew = true)
-                        onComplete(true, "Account created successfully.")
                     }
                 } else {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -1519,15 +1558,14 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                // Robust fallback to local registration
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    val localPrefs = getApplication<Application>().getSharedPreferences("local_accounts", android.content.Context.MODE_PRIVATE)
-                    localPrefs.edit()
-                        .putString(email, password)
-                        .putString("${email}_name", displayName)
-                        .apply()
-                    onLocalAuthSuccess(uid = "local_${email.replace(".", "_")}", email = email, name = displayName, isNew = true)
-                    onComplete(true, "Account created successfully.")
+                    val errorMsg = when (e) {
+                        is com.google.firebase.auth.FirebaseAuthUserCollisionException -> "Account already exists with this email."
+                        is com.google.firebase.auth.FirebaseAuthWeakPasswordException -> "Password must be at least 6 characters."
+                        is com.google.firebase.auth.FirebaseAuthInvalidCredentialsException -> "Invalid email format."
+                        else -> e.localizedMessage ?: "Account creation failed."
+                    }
+                    onComplete(false, errorMsg)
                 }
             }
         }
@@ -1538,10 +1576,8 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val credential = com.google.firebase.auth.GoogleAuthProvider.getCredential(idToken, null)
-                android.util.Log.i("DEPTHLENS_FIREBASE", "credential generated: Google Firebase AuthCredential structured successfully.")
-                val authResult = com.google.android.gms.tasks.Tasks.await(
-                    com.google.firebase.auth.FirebaseAuth.getInstance().signInWithCredential(credential)
-                )
+                val task = com.google.firebase.auth.FirebaseAuth.getInstance().signInWithCredential(credential)
+                val authResult = com.google.android.gms.tasks.Tasks.await(task, 6, java.util.concurrent.TimeUnit.SECONDS)
                 val user = authResult.user
                 if (user != null) {
                     android.util.Log.i("DEPTHLENS_FIREBASE", "firebase login success: Authenticated with UID: ${user.uid}")
@@ -1557,12 +1593,8 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 }
             } catch (e: Exception) {
                 android.util.Log.e("DEPTHLENS_FIREBASE", "firebase login failure: Firebase login received exact exception.", e)
-                // Intelligent simulated Google sign-in fallback
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    val fallbackEmail = "google_user_${idToken.hashCode().coerceAtLeast(0)}@example.com"
-                    val fallbackName = "Google Explorer"
-                    onLocalAuthSuccess(uid = "local_${fallbackEmail.replace(".", "_")}", email = fallbackEmail, name = fallbackName, isNew = false)
-                    onComplete(true, "Authorized with Google (local profile).")
+                    onComplete(false, "Google authentication failed: ${e.localizedMessage}")
                 }
             }
         }
@@ -1715,7 +1747,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun submitFeedback(category: String, message: String, email: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
             val pInfo = try { getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0) } catch (e: Exception) { null }
-            val appVer = pInfo?.versionName ?: "6.0.1"
+            val appVer = pInfo?.versionName ?: "6.0.2"
             
             // Send to Firestore
             val success = com.example.data.network.CloudSyncService.submitFeedback(
@@ -1751,7 +1783,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun submitBugReport(message: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
             val pInfo = try { getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0) } catch (e: Exception) { null }
-            val appVer = pInfo?.versionName ?: "6.0.1"
+            val appVer = pInfo?.versionName ?: "6.0.2"
             val deviceModel = android.os.Build.MODEL ?: "Unknown Device"
             val androidVer = android.os.Build.VERSION.RELEASE ?: "Unknown Android"
             val deviceInfo = "$deviceModel (Android $androidVer)"
@@ -1808,6 +1840,55 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
 
     fun ensureSessionTitlesMigrated() {
         repository.runOneTimeTitleMigration()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            repository.recoverFromLocalBackupsIfEmpty()
+            val currentUid = userId.value
+            val currentEmail = userEmail.value
+            val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+            val effectiveUid = if (currentUid.isNotBlank() && currentUid != "guest_local") currentUid else authUser?.uid.orEmpty()
+            val effectiveEmail = currentEmail.ifBlank { authUser?.email.orEmpty() }.ifBlank { "ashah331@gmail.com" }
+            repository.fetchAndSyncFromFirestore(effectiveUid, effectiveEmail)
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                restoreActiveSession()
+            }
+        }
+    }
+
+    fun restoreHistoricChats(onResult: ((Int) -> Unit)? = null) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _syncStatus.value = "Syncing..."
+            try {
+                // 1. Recover from local backups first across all candidate locations
+                val recoveredCount = repository.recoverFromLocalBackupsIfEmpty()
+                android.util.Log.i("CHAT_RESTORE", "Local backup recovery restored: $recoveredCount sessions")
+                
+                // 2. Perform comprehensive Firestore sync across all user identities & collection groups
+                val currentUid = userId.value
+                val currentEmail = userEmail.value
+                val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                val effectiveUid = if (currentUid.isNotBlank() && currentUid != "guest_local") currentUid else authUser?.uid.orEmpty()
+                val effectiveEmail = currentEmail.ifBlank { authUser?.email.orEmpty() }.ifBlank { "ashah331@gmail.com" }
+                
+                repository.fetchAndSyncFromFirestore(effectiveUid, effectiveEmail)
+                
+                // 3. Re-evaluate session titles
+                repository.runOneTimeTitleMigration()
+                
+                // 4. Restore active session
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    restoreActiveSession()
+                    val totalSessions = repository.getAllSessionsDirect().size
+                    onResult?.invoke(totalSessions)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("CHAT_RESTORE", "Error restoring historic chats: ${e.message}", e)
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onResult?.invoke(0)
+                }
+            } finally {
+                _syncStatus.value = "Synced"
+            }
+        }
     }
 
     fun refreshDiagnostics() {

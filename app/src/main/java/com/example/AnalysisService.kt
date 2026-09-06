@@ -22,19 +22,27 @@ class AnalysisService : Service() {
         var isServiceRunning = false
 
         fun start(context: Context) {
-            val intent = Intent(context, AnalysisService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                val intent = Intent(context, AnalysisService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (t: Throwable) {
+                android.util.Log.w("AnalysisService", "Could not start foreground service: ${t.message}")
             }
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, AnalysisService::class.java).apply {
-                action = "STOP_SERVICE"
+            try {
+                val intent = Intent(context, AnalysisService::class.java).apply {
+                    action = "STOP_SERVICE"
+                }
+                context.startService(intent)
+            } catch (t: Throwable) {
+                android.util.Log.w("AnalysisService", "Could not stop foreground service: ${t.message}")
             }
-            context.startService(intent)
         }
     }
 
@@ -47,8 +55,12 @@ class AnalysisService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         if (action == "STOP_SERVICE") {
-            stopForeground(true)
-            stopSelf()
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            } catch (t: Throwable) {
+                android.util.Log.w("AnalysisService", "Error stopping service: ${t.message}")
+            }
             return START_NOT_STICKY
         }
 
@@ -60,7 +72,19 @@ class AnalysisService : Service() {
             .setOngoing(true)
             .build()
 
-        startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (t: Throwable) {
+            android.util.Log.w("AnalysisService", "Failed startForeground: ${t.message}")
+        }
         return START_STICKY
     }
 
