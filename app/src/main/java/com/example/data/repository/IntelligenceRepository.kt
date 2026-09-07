@@ -963,6 +963,86 @@ $conversationText
         messageDao.getMessagesForSession(sessionId)
     }
 
+    /**
+     * Clones all conversation messages from the beginning up to and including [fromMessageId]
+     * into a newly created session titled [branchTitle]. This strictly follows ChatGPT's
+     * "Branch in a new chat" design: creating an independent conversation while preserving
+     * the exact contextual lineage up to the branch point.
+     */
+    suspend fun branchSessionFromMessage(
+        sourceSessionId: String,
+        fromMessageId: String,
+        branchTitle: String
+    ): Pair<SessionEntity, MessageEntity?> = withContext(Dispatchers.IO) {
+        val newSession = createNewSession(branchTitle)
+        val sourceMessages = messageDao.getMessagesForSession(sourceSessionId)
+        val targetIndex = sourceMessages.indexOfFirst { it.id == fromMessageId }
+        val messagesToBranch = if (targetIndex >= 0) {
+            sourceMessages.subList(0, targetIndex + 1)
+        } else {
+            sourceMessages.filter { it.id == fromMessageId }
+        }
+
+        val idMap = mutableMapOf<String, String>()
+        val clonedList = mutableListOf<MessageEntity>()
+        var clonedTargetMsg: MessageEntity? = null
+
+        for (orig in messagesToBranch) {
+            val newId = UUID.randomUUID().toString()
+            idMap[orig.id] = newId
+            val cloned = orig.copy(
+                id = newId,
+                sessionId = newSession.id,
+                replyToMessageId = orig.replyToMessageId?.let { idMap[it] ?: it }
+            )
+            clonedList.add(cloned)
+            if (orig.id == fromMessageId) {
+                clonedTargetMsg = cloned
+            }
+        }
+
+        if (clonedList.isNotEmpty()) {
+            messageDao.insertMessages(clonedList)
+
+            // Clone attachments if any exist for the branched messages
+            for (orig in messagesToBranch) {
+                val newMsgId = idMap[orig.id] ?: continue
+                try {
+                    val attachments = attachmentDao.getAttachmentsForMessage(orig.id)
+                    for (att in attachments) {
+                        attachmentDao.insertAttachment(
+                            att.copy(
+                                attachmentId = UUID.randomUUID().toString(),
+                                messageId = newMsgId
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            // Sync cloned messages to Firebase Firestore
+            triggerUpload { uid ->
+                for (cloned in clonedList) {
+                    CloudSyncService.uploadMessage(
+                        uid,
+                        cloned.id,
+                        cloned.sessionId,
+                        cloned.role,
+                        cloned.text,
+                        cloned.imageUri,
+                        cloned.timestamp,
+                        cloned.replyToMessageId,
+                        cloned.selectedText
+                    )
+                }
+            }
+        }
+
+        Pair(newSession, clonedTargetMsg ?: clonedList.lastOrNull())
+    }
+
     suspend fun cloneMessageToSession(original: MessageEntity, targetSessionId: String): MessageEntity = withContext(Dispatchers.IO) {
         val newMsgId = UUID.randomUUID().toString()
         val cloned = original.copy(

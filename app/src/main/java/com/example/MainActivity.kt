@@ -125,8 +125,7 @@ class MainActivity : FragmentActivity() {
 
     try {
         GithubUpdateManager.init(applicationContext)
-        GithubUpdateManager.checkForUpdates(applicationContext, force = true)
-        GithubUpdateManager.pushInAppUpdate(applicationContext)
+        GithubUpdateManager.checkForUpdates(applicationContext, force = false)
     } catch (e: Exception) {
         e.printStackTrace()
     }

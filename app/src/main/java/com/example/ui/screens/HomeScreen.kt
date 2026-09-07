@@ -140,6 +140,10 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
@@ -651,6 +655,7 @@ fun HomeScreen(
     }
 
     var rawText by remember { mutableStateOf(TextFieldValue("")) }
+    var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
     val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
     var isSearchActive by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -841,6 +846,7 @@ fun HomeScreen(
                             msg.text.trim()
                         }
                         val quoteSnippet = if (cleanSnippet.length > 300) cleanSnippet.take(300).trimEnd() + "..." else cleanSnippet
+                        isBranchPending = true
                         replyQuoteText = quoteSnippet
                         onSetReplyState(msg.id, quoteSnippet)
                         onBranchFromMessage(msg.id)
@@ -876,10 +882,11 @@ fun HomeScreen(
 
     // Reset any temporary reply or selection state whenever switching or loading chats
     LaunchedEffect(activeSessionId) {
-        replyQuoteText = null
-        isBranchPending = false
-        onClearReplyState()
-        onClearSelectionMode()
+        if (!isBranchPending) {
+            replyQuoteText = null
+            onClearReplyState()
+            onClearSelectionMode()
+        }
     }
         var hasRestoredScrollForSession by remember(currentSessionKey) { mutableStateOf(false) }
 
@@ -2512,8 +2519,9 @@ fun HomeScreen(
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
+                                val headerTitle = if (isBranchPending) "Branching from $senderLabel" else "Replying to $senderLabel"
                                 Text(
-                                    text = "Replying to $senderLabel",
+                                    text = headerTitle,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = ElectricViolet,
@@ -2567,11 +2575,46 @@ fun HomeScreen(
                         BasicTextField(
                             value = rawText,
                             onValueChange = { rawText = it },
+                            onTextLayout = { textLayoutResult = it },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 28.dp, max = 120.dp)
                                 .focusRequester(focusRequester)
-                                .onFocusChanged { inputFocused = it.isFocused },
+                                .onFocusChanged { inputFocused = it.isFocused }
+                                .pointerInput(rawText.text) {
+                                    var lastTapTime = 0L
+                                    var lastTapPos = Offset.Zero
+                                    val doubleTapTimeoutMs = 320L
+                                    val doubleTapSlop = 40.dp.toPx()
+
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                                        val now = System.currentTimeMillis()
+                                        val isDoubleTap = (now - lastTapTime in 40L..doubleTapTimeoutMs) &&
+                                                ((down.position - lastTapPos).getDistance() < doubleTapSlop)
+
+                                        if (isDoubleTap) {
+                                            lastTapTime = 0L
+                                            val layout = textLayoutResult
+                                            val currentText = rawText.text
+                                            if (layout != null && currentText.isNotEmpty()) {
+                                                val verticalPad = 5.dp.toPx()
+                                                val adjustedPos = Offset(down.position.x, down.position.y - verticalPad)
+                                                val charOffset = layout.getOffsetForPosition(adjustedPos).coerceIn(0, currentText.length)
+                                                val wordRange = getWordBoundaryAt(currentText, charOffset, layout)
+                                                if (wordRange.start < wordRange.end) {
+                                                    focusRequester.requestFocus()
+                                                    inputFocused = true
+                                                    rawText = rawText.copy(selection = wordRange)
+                                                    down.consume()
+                                                }
+                                            }
+                                        } else {
+                                            lastTapTime = now
+                                            lastTapPos = down.position
+                                        }
+                                    }
+                                },
                             cursorBrush = SolidColor(ElectricViolet),
                             textStyle = TextStyle(
                                 fontFamily = InstrumentSansFontFamily,
@@ -2840,7 +2883,6 @@ fun HomeScreen(
                                                 rawText = TextFieldValue("")
                                                 replyQuoteText = null
                                                 isBranchPending = false
-                                                onClearReplyState()
                                                 onClearSelectionMode()
                                                 if (editingMessageId != null) {
                                                     val editedId = editingMessageId!!
@@ -7012,4 +7054,62 @@ private fun CustomSelectionMenu(
             }
         }
     }
+}
+
+private fun isInputWordDelimiter(c: Char): Boolean {
+    return c in ".,!?;:\"'()[]{}<>`~@#$%^&*+-=/\\|"
+}
+
+private fun getWordBoundaryAt(text: String, offset: Int, layout: TextLayoutResult?): TextRange {
+    if (text.isEmpty()) return TextRange.Zero
+    val clampedOffset = offset.coerceIn(0, text.length)
+
+    // 1. Try Compose's native TextLayoutResult.getWordBoundary
+    if (layout != null && clampedOffset in 0..text.length) {
+        try {
+            val nativeBoundary = layout.getWordBoundary(clampedOffset)
+            if (nativeBoundary.start < nativeBoundary.end && nativeBoundary.end <= text.length) {
+                val candidate = text.substring(nativeBoundary.start, nativeBoundary.end)
+                if (candidate.isNotBlank() && candidate.any { it.isLetterOrDigit() }) {
+                    var s = nativeBoundary.start
+                    var e = nativeBoundary.end
+                    while (s < e && (text[s].isWhitespace() || isInputWordDelimiter(text[s]))) s++
+                    while (e > s && (text[e - 1].isWhitespace() || isInputWordDelimiter(text[e - 1]))) e--
+                    if (s < e) return TextRange(s, e)
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    // 2. Natural editor word boundary fallback (matching ChatGPT, Claude, WhatsApp)
+    var targetIndex = clampedOffset
+    if (targetIndex >= text.length || (text[targetIndex].isWhitespace() && targetIndex > 0)) {
+        targetIndex = (targetIndex - 1).coerceAtLeast(0)
+    }
+
+    if (text[targetIndex].isWhitespace()) {
+        if (clampedOffset + 1 < text.length && !text[clampedOffset + 1].isWhitespace()) {
+            targetIndex = clampedOffset + 1
+        }
+    }
+
+    if (targetIndex in text.indices && !text[targetIndex].isWhitespace()) {
+        val isTargetDelimiter = isInputWordDelimiter(text[targetIndex])
+        var start = targetIndex
+        var end = targetIndex
+
+        if (isTargetDelimiter) {
+            while (start > 0 && text[start - 1] == text[targetIndex]) start--
+            while (end < text.length && text[end] == text[targetIndex]) end++
+        } else {
+            while (start > 0 && !text[start - 1].isWhitespace() && !isInputWordDelimiter(text[start - 1])) start--
+            while (end < text.length && !text[end].isWhitespace() && !isInputWordDelimiter(text[end])) end++
+        }
+
+        if (start < end) {
+            return TextRange(start, end)
+        }
+    }
+
+    return TextRange(clampedOffset, clampedOffset)
 }

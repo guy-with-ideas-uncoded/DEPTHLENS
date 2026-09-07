@@ -1309,9 +1309,9 @@ object CloudSyncService {
      * Broadcast latest release metadata across cloud nodes so all running versions receive update notification
      */
     suspend fun broadcastReleaseUpdate(
-        versionName: String = "6.1.0",
-        versionCode: Long = 6100L,
-        changelog: String = "• iOS 27 Liquid Glass Navigation Redesign with 3-State Floating Capsule\n• Vibrant Active Neon Light Bar & upward bloom aesthetics\n• Smart Scroll-Driven Navigation (auto-hide on scroll down, open on scroll up)\n• Full-width edge-to-edge typing bar with reduced vertical spacing\n• ChatGPT-style Branch in New Chat with quote context\n• Proportional brevity & intelligence tuning"
+        versionName: String = "6.1.1",
+        versionCode: Long = 6101L,
+        changelog: String = "• ChatGPT-style Branch in New Chat: full conversation context lineage cloned up to selected message\n• Quoted Context Persistence: branch reference stays active in new chat input & permanent reply header\n• Double-Tap Word Selection: natural word boundary selection in chat input field (ChatGPT/Claude/WhatsApp style)\n• In-app update system & APK refresh for v6.1.1\n• iOS 27 Liquid Glass Navigation & performance optimizations"
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val db = FirebaseFirestore.getInstance()

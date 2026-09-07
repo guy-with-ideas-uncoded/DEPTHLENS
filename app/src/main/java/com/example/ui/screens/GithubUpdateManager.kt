@@ -47,6 +47,8 @@ object GithubUpdateManager {
     private const val KEY_AUTO_CHECK = "is_auto_check_enabled"
     private const val KEY_DISMISSED_VER = "dismissed_version_tag"
     private const val KEY_UPDATE_HISTORY = "update_history"
+    private const val KEY_LAST_NOTIFIED_VER = "last_notified_version_tag"
+    const val UPDATE_NOTIFICATION_ID = 6101
 
     private val _latestRelease = MutableStateFlow<GitHubRelease?>(null)
     val latestRelease: StateFlow<GitHubRelease?> = _latestRelease.asStateFlow()
@@ -90,11 +92,20 @@ object GithubUpdateManager {
         _lastChecked.value = prefs.getLong(KEY_LAST_CHECK, 0L)
         _autoCheckEnabled.value = prefs.getBoolean(KEY_AUTO_CHECK, true)
         
+        // If current app is already at or above the last notified version, clear any lingering update notification!
+        val localVersion = getInstalledVersion(context)
+        val lastNotified = prefs.getString(KEY_LAST_NOTIFIED_VER, null)
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        if (lastNotified != null && !isNewerVersion(lastNotified, localVersion)) {
+            notificationManager?.cancel(UPDATE_NOTIFICATION_ID)
+        }
+        
         val historyStr = prefs.getString(KEY_UPDATE_HISTORY, "") ?: ""
         if (historyStr.isNotEmpty()) {
             _updateHistory.value = historyStr.split(";;").filter { it.isNotEmpty() }
         } else {
             val initialHistory = listOf(
+                "v6.1.1 deployed - ChatGPT Branching with full context, Word Double-Tap & UI Polish (2026-09-07)",
                 "v6.1.0 deployed - iOS 27 Glass Nav, 3-State Capsule & Chat Branching (2026-09-07)",
                 "v6.0.2 deployed - Chat sync tombstones, delete safeguards & service hardening (2026-09-06)",
                 "v6.0.1 deployed - Clean response engine & AI latency optimizations (2026-09-04)",
@@ -138,6 +149,9 @@ object GithubUpdateManager {
                         val localVersion = getInstalledVersion(context)
                         if (isNewerVersion(tagName, localVersion)) {
                             postInAppUpdateNotification(context, release)
+                        } else {
+                            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                            notificationManager?.cancel(UPDATE_NOTIFICATION_ID)
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
@@ -148,9 +162,36 @@ object GithubUpdateManager {
         }
     }
 
-    fun postInAppUpdateNotification(context: Context, release: GitHubRelease) {
+    fun postInAppUpdateNotification(context: Context, release: GitHubRelease, force: Boolean = false) {
         try {
+            val localVersion = getInstalledVersion(context)
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+
+            // 1. If currently installed app is already on this version or newer, NEVER send notification, and cancel any existing one
+            if (!isNewerVersion(release.tagName, localVersion)) {
+                notificationManager.cancel(UPDATE_NOTIFICATION_ID)
+                return
+            }
+
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+            if (!force) {
+                // 2. If user dismissed this version or higher, do not notify
+                val dismissedVer = prefs.getString(KEY_DISMISSED_VER, null)
+                if (dismissedVer != null && !isNewerVersion(release.tagName, dismissedVer)) {
+                    return
+                }
+
+                // 3. If user has ALREADY been notified for this version or higher, DO NOT send notifications repeatedly!
+                val lastNotifiedVer = prefs.getString(KEY_LAST_NOTIFIED_VER, null)
+                if (lastNotifiedVer != null && !isNewerVersion(release.tagName, lastNotifiedVer)) {
+                    return
+                }
+            }
+
+            // Record this version as notified
+            prefs.edit().putString(KEY_LAST_NOTIFIED_VER, release.tagName).apply()
+
             val channelId = "depthlens_in_app_updates"
             val channelName = "DepthLens App Updates"
 
@@ -179,14 +220,14 @@ object GithubUpdateManager {
                 } else {
                     PendingIntent.FLAG_UPDATE_CURRENT
                 }
-                PendingIntent.getActivity(context, 6100, launchIntent, flags)
+                PendingIntent.getActivity(context, UPDATE_NOTIFICATION_ID, launchIntent, flags)
             } else null
 
             val builder = NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(android.R.drawable.stat_sys_download_done)
                 .setContentTitle("DepthLens v${release.tagName} Available")
                 .setContentText("Tap to install the latest DepthLens update.")
-                .setStyle(NotificationCompat.BigTextStyle().bigText("Version ${release.tagName} is ready with iOS 27 Glass Navigation, Smart Capsule & system improvements.\n\n${release.body}"))
+                .setStyle(NotificationCompat.BigTextStyle().bigText("Version ${release.tagName} is ready with ChatGPT Branching with full context, Word Double-Tap & system improvements.\n\n${release.body}"))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
 
@@ -194,7 +235,7 @@ object GithubUpdateManager {
                 builder.setContentIntent(pendingIntent)
             }
 
-            notificationManager.notify(6100, builder.build())
+            notificationManager.notify(UPDATE_NOTIFICATION_ID, builder.build())
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -205,21 +246,30 @@ object GithubUpdateManager {
      */
     fun pushInAppUpdate(context: Context, release: GitHubRelease? = null) {
         val targetRelease = release ?: GitHubRelease(
-            tagName = "6.1.0",
-            name = "DepthLens v6.1.0 — iOS 27 Glass Navigation & Intelligence Polish",
+            tagName = "6.1.1",
+            name = "DepthLens v6.1.1 — ChatGPT Chat Branching & Word Selection Polish",
             publishedAt = "September 7, 2026",
-            body = "• iOS 27 Liquid Glass Navigation Redesign with 3-State Floating Capsule\n• Vibrant Active Neon Light Bar & upward bloom aesthetics\n• Smart Scroll-Driven Navigation (auto-hide on scroll down, open on scroll up)\n• Full-width edge-to-edge typing bar with reduced vertical spacing\n• ChatGPT-style Branch in New Chat with quote context\n• Proportional brevity & intelligence tuning",
-            apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.1.0/DepthLens_v6.1.0-debug.apk",
-            apkFileName = "DepthLens_v6.1.0-debug.apk",
+            body = "• ChatGPT-style Branch in New Chat: full conversation context lineage cloned up to selected message\n• Quoted Context Persistence: branch reference stays active in new chat input & permanent reply header\n• Double-Tap Word Selection: natural word boundary selection in chat input field (ChatGPT/Claude/WhatsApp style)\n• In-app update system & APK refresh for v6.1.1\n• iOS 27 Liquid Glass Navigation & performance optimizations",
+            apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.1.1/DepthLens_v6.1.1-debug.apk",
+            apkFileName = "DepthLens_v6.1.1-debug.apk",
             apkSize = 28818277L
         )
         _latestRelease.value = targetRelease
+
+        val localVersion = getInstalledVersion(context)
+        // If already updated or on latest version, do not send update notification
+        if (!isNewerVersion(targetRelease.tagName, localVersion)) {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.cancel(UPDATE_NOTIFICATION_ID)
+            return
+        }
+
         postInAppUpdateNotification(context, targetRelease)
 
         CoroutineScope(Dispatchers.IO).launch {
             com.example.data.network.CloudSyncService.broadcastReleaseUpdate(
                 versionName = targetRelease.tagName,
-                versionCode = 6100L,
+                versionCode = 6101L,
                 changelog = targetRelease.body
             )
         }
@@ -234,6 +284,8 @@ object GithubUpdateManager {
     fun dismissVersion(context: Context, versionTag: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_DISMISSED_VER, versionTag).apply()
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        notificationManager?.cancel(UPDATE_NOTIFICATION_ID)
     }
 
     fun getDismissedVersion(context: Context): String? {
@@ -244,9 +296,9 @@ object GithubUpdateManager {
     fun getInstalledVersion(context: Context): String {
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "6.1.0"
+            packageInfo.versionName ?: "6.1.1"
         } catch (e: Exception) {
-            "6.1.0"
+            "6.1.1"
         }
     }
 
@@ -371,6 +423,10 @@ object GithubUpdateManager {
 
                         val localVersion = getInstalledVersion(context)
                         val isNew = isNewerVersion(tagName, localVersion)
+                        if (!isNew) {
+                            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                            notificationManager?.cancel(UPDATE_NOTIFICATION_ID)
+                        }
                         _isChecking.value = false
                         onComplete(isNew, release)
                     }
@@ -381,12 +437,12 @@ object GithubUpdateManager {
                     val localVersion = getInstalledVersion(context)
                     
                     val fallbackRelease = GitHubRelease(
-                        tagName = "6.1.0",
-                        name = "DepthLens v6.1.0 — iOS 27 Glass Navigation & Intelligence Polish",
+                        tagName = "6.1.1",
+                        name = "DepthLens v6.1.1 — ChatGPT Chat Branching & Word Selection Polish",
                         publishedAt = "September 7, 2026",
-                        body = "• iOS 27 Liquid Glass Navigation Redesign with 3-State Floating Capsule\n• Vibrant Active Neon Light Bar & upward bloom aesthetics\n• Smart Scroll-Driven Navigation (auto-hide on scroll down, open on scroll up)\n• Full-width edge-to-edge typing bar with reduced vertical spacing\n• ChatGPT-style Branch in New Chat with quote context\n• Proportional brevity & intelligence tuning",
-                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.1.0/DepthLens_v6.1.0-debug.apk",
-                        apkFileName = "DepthLens_v6.1.0-debug.apk",
+                        body = "• ChatGPT-style Branch in New Chat: full conversation context lineage cloned up to selected message\n• Quoted Context Persistence: branch reference stays active in new chat input & permanent reply header\n• Double-Tap Word Selection: natural word boundary selection in chat input field (ChatGPT/Claude/WhatsApp style)\n• In-app update system & APK refresh for v6.1.1\n• iOS 27 Liquid Glass Navigation & performance optimizations",
+                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.1.1/DepthLens_v6.1.1-debug.apk",
+                        apkFileName = "DepthLens_v6.1.1-debug.apk",
                         apkSize = 28818277L
                     )
                     
@@ -397,7 +453,11 @@ object GithubUpdateManager {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                    val isNew = isNewerVersion("6.1.0", localVersion)
+                    val isNew = isNewerVersion("6.1.1", localVersion)
+                    if (!isNew) {
+                        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                        notificationManager?.cancel(UPDATE_NOTIFICATION_ID)
+                    }
                     onComplete(isNew, fallbackRelease)
                 }
             }
@@ -682,6 +742,12 @@ object GithubUpdateManager {
             }
 
             context.startActivity(installIntent)
+            try {
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                notificationManager?.cancel(UPDATE_NOTIFICATION_ID)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             Toast.makeText(context, "Opening installer...", Toast.LENGTH_SHORT).show()
         } catch (e: SecurityException) {
             e.printStackTrace()

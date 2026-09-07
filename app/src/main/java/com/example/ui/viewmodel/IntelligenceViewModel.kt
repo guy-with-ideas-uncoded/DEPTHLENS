@@ -145,16 +145,24 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                 val quoteSnippet = if (targetText.length > 300) targetText.take(300).trimEnd() + "..." else targetText
 
                 val branchTitle = "Branch: " + (targetText.take(24).trim().ifBlank { "New Chat" })
-                val newSession = repository.createNewSession(branchTitle)
-                
-                // Immediately switch active session to the newly created branched session
-                selectSession(newSession.id)
-                _sessionScrollPositions[newSession.id] = 0
-                
+                val (newSession, clonedTarget) = repository.branchSessionFromMessage(
+                    sourceSessionId = currentId,
+                    fromMessageId = fromMessageId,
+                    branchTitle = branchTitle
+                )
+
+                val targetReplyMsgId = clonedTarget?.id ?: fromMessageId
+
+                // Switch active session to the newly created branched session directly without wiping reply state
+                _activeSessionId.value = newSession.id
+                val prefs = getApplication<android.app.Application>().getSharedPreferences("depthlens_prefs", android.content.Context.MODE_PRIVATE)
+                prefs.edit().putString("last_active_session_id", newSession.id).apply()
+                _sessionScrollPositions[newSession.id] = Int.MAX_VALUE
+
                 // Set reply quote state in the new branched session (ChatGPT style)
-                _replyMessageId.value = fromMessageId
+                _replyMessageId.value = targetReplyMsgId
                 _replySelectedText.value = quoteSnippet
-                
+
                 onComplete?.invoke(newSession.id)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -1003,9 +1011,9 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
 
         viewModelScope.launch {
             try {
-                // Determine or create session if none active or if branching into a new conversation
+                // Determine or create session if none active
                 val currentId = _activeSessionId.value
-                val sessionId = if (isBranch || currentId == null || currentId == "draft_session_id") {
+                val sessionId = if (currentId == null || currentId == "draft_session_id") {
                     val newSession = repository.createNewSession("New Chat")
                     _activeSessionId.value = newSession.id
                     prefs.edit().putString("last_active_session_id", newSession.id).apply()
@@ -1760,7 +1768,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun submitFeedback(category: String, message: String, email: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
             val pInfo = try { getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0) } catch (e: Exception) { null }
-            val appVer = pInfo?.versionName ?: "6.1.0"
+            val appVer = pInfo?.versionName ?: "6.1.1"
             
             // Send to Firestore
             val success = com.example.data.network.CloudSyncService.submitFeedback(
@@ -1796,7 +1804,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun submitBugReport(message: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
             val pInfo = try { getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0) } catch (e: Exception) { null }
-            val appVer = pInfo?.versionName ?: "6.1.0"
+            val appVer = pInfo?.versionName ?: "6.1.1"
             val deviceModel = android.os.Build.MODEL ?: "Unknown Device"
             val androidVer = android.os.Build.VERSION.RELEASE ?: "Unknown Android"
             val deviceInfo = "$deviceModel (Android $androidVer)"

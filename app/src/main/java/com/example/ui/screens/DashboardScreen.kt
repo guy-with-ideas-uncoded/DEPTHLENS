@@ -754,7 +754,7 @@ fun DashboardScreen(
 
     if (showUpdatesDialog) {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        val curVerStr = packageInfo.versionName ?: "6.1.0"
+        val curVerStr = packageInfo.versionName ?: "6.1.1"
         SoftwareUpdatesDialog(
             onDismissRequest = { showUpdatesDialog = false },
             onManualCheck = {
@@ -1309,7 +1309,7 @@ fun DashboardScreen(
         } catch (e: java.lang.Exception) {
             null
         }
-        val appVersion = packageInfo?.versionName ?: "6.1.0"
+        val appVersion = packageInfo?.versionName ?: "6.1.1"
         
         AlertDialog(
             onDismissRequest = { showAboutDialog = false },
@@ -1814,7 +1814,7 @@ Text(
         } catch (e: Exception) {
             null
         }
-        val appVerStr = packageInfoReport?.versionName ?: "6.1.0"
+        val appVerStr = packageInfoReport?.versionName ?: "6.1.1"
         val deviceModel = android.os.Build.MODEL ?: "Unknown Device"
         val androidVer = android.os.Build.VERSION.RELEASE ?: "Unknown Android"
         val reportTimestamp = remember { java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()) }
