@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TrendingUp
@@ -625,6 +627,11 @@ fun HomeScreen(
     onSaveScrollPosition: (String, Int) -> Unit = { _, _ -> },
     onGetScrollPosition: (String) -> Int = { 0 },
     onBranchFromMessage: (String) -> Unit = {},
+    isNavCompact: Boolean = true,
+    isNavHidden: Boolean = false,
+    onNavCompactChange: (Boolean) -> Unit = {},
+    onNavHiddenChange: (Boolean) -> Unit = {},
+    onToggleNav: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -828,9 +835,17 @@ fun HomeScreen(
                         currentOnRegenerateLastAnalysis(msg.id)
                     }
                     MessageActionType.BRANCH -> {
+                        val cleanSnippet = try {
+                            ResponseParser.parse(msg.text).exportText().trim()
+                        } catch (e: Exception) {
+                            msg.text.trim()
+                        }
+                        val quoteSnippet = if (cleanSnippet.length > 300) cleanSnippet.take(300).trimEnd() + "..." else cleanSnippet
+                        replyQuoteText = quoteSnippet
+                        onSetReplyState(msg.id, quoteSnippet)
                         onBranchFromMessage(msg.id)
                         focusRequester.requestFocus()
-                        android.widget.Toast.makeText(context, "Branched into new conversation", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, "Branched into new chat", android.widget.Toast.LENGTH_SHORT).show()
                     }
                     MessageActionType.SEARCH -> {
                         val indexOfMsg = msgs.indexOfFirst { it.id == msg.id }
@@ -962,6 +977,33 @@ fun HomeScreen(
             }
         }
         val showFloatingScrollButton = showScrollButtonState != "none" && isScrolling && !imeVisible
+
+        // ── 3-State Navigation Scroll-Driven Interaction ──
+        var lastScrollVal by remember { mutableStateOf(scrollState.value) }
+        LaunchedEffect(scrollState.isScrollInProgress, scrollState.value) {
+            if (scrollState.isScrollInProgress) {
+                if (activeMessages.isNotEmpty()) {
+                    val delta = scrollState.value - lastScrollVal
+                    if (delta > 8 && scrollState.value > 50) {
+                        // Scrolling down through chat → auto-hide nav bar
+                        onNavHiddenChange(true)
+                    } else if (delta < -8) {
+                        // Scrolling up towards earlier messages → reveal in Compact mode
+                        onNavHiddenChange(false)
+                        onNavCompactChange(true)
+                    }
+                }
+            }
+            lastScrollVal = scrollState.value
+        }
+
+        // When chat is empty (new session), nav bar stays permanently in Compact mode open (no auto-hiding)
+        LaunchedEffect(activeMessages.isEmpty()) {
+            if (activeMessages.isEmpty()) {
+                onNavHiddenChange(false)
+                onNavCompactChange(true)
+            }
+        }
 
 
 
@@ -1266,11 +1308,19 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .weight(1f)
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        if (!isNavCompact) {
+                            onNavCompactChange(true)
+                        }
+                    }
                     .onGloballyPositioned { coords ->
                         chatColumnRootY = coords.positionInRoot().y.toInt()
                     }
                     .verticalScroll(scrollState)
-                    .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 12.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 4.dp),
                 verticalArrangement = Arrangement.Top
             ) {
 
@@ -2232,7 +2282,32 @@ fun HomeScreen(
                         )
                     }
                 }
+            }
 
+            // ── Sleek iOS 27 Minor Hairline Divider (Seamless connection between chat & typing) ──
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.6.dp)
+                    .background(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                (if (ThemeManager.isDarkTheme) Color.White else Color.Black).copy(alpha = 0.08f),
+                                (if (ThemeManager.isDarkTheme) Color.White else Color.Black).copy(alpha = 0.14f),
+                                (if (ThemeManager.isDarkTheme) Color.White else Color.Black).copy(alpha = 0.08f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+
+            // ── Lowered iOS 27 Frosted Glass Input Container ──
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 0.dp)
+            ) {
                 // Edit mode banner
                 if (editingMessageId != null) {
                     Row(
@@ -2409,8 +2484,9 @@ fun HomeScreen(
                         }
                     }
                 } else {
-                    // Reply quote preview bar (shown when replying to selected text)
-                    replyQuoteText?.let { quote ->
+                    // Reply quote preview bar (shown when replying to selected text or branched message)
+                    val activeQuote = replyQuoteText ?: replySelectedText
+                    activeQuote?.let { quote ->
                         val targetReplyId = selectedMessageId ?: replyMessageId
                         val repliedMsg = activeMessages.find { it.id == targetReplyId }
                         val senderLabel = if (repliedMsg?.role == "user") "You" else "DepthLens"
@@ -2826,7 +2902,7 @@ fun HomeScreen(
         exit = scaleOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut(),
         modifier = Modifier
             .align(Alignment.BottomCenter)
-            .padding(bottom = 130.dp)
+            .padding(bottom = 120.dp)
     ) {
         val icon = Icons.Default.KeyboardArrowDown
         val desc = "Scroll to Bottom"

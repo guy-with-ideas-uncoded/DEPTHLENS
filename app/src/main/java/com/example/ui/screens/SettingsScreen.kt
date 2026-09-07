@@ -2181,12 +2181,12 @@ fun UpdateSubscreen(onBack: () -> Unit) {
             null
         }
     }
-    val versionName = packageInfo?.versionName ?: "6.0.2"
+    val versionName = packageInfo?.versionName ?: "6.1.0"
     val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-        packageInfo?.longVersionCode ?: 6020L
+        packageInfo?.longVersionCode ?: 6100L
     } else {
         @Suppress("DEPRECATION")
-        (packageInfo?.versionCode ?: 6020).toLong()
+        (packageInfo?.versionCode ?: 6100).toLong()
     }
 
     val currentInstalled = remember { com.example.ui.screens.GithubUpdateManager.getInstalledVersion(context) }

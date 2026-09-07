@@ -498,13 +498,22 @@ abstract class DepthDatabase : RoomDatabase() {
                                             name.endsWith(".wal") ||
                                             name.endsWith(".shm") ||
                                             name.endsWith(".journal")
-                                    val isTemp = f.name.startsWith("temp_recovery_") || isWalOrShmOrJournal
-                                    val isDbCandidate = (name.endsWith(".bak") ||
-                                            name.endsWith(".backup") ||
-                                            name.endsWith(".db") ||
-                                            name.endsWith(".sqlite") ||
-                                            name.contains("database") ||
-                                            name.contains("depthlens")) && !isTemp
+                                    val isThirdPartyOrInternal = name.contains("firestore") ||
+                                            name.contains("firebase") ||
+                                            name.contains("google") ||
+                                            name.contains("androidx") ||
+                                            name.contains("workmanager") ||
+                                            name.contains("datastore") ||
+                                            name.contains("shared_prefs") ||
+                                            name.contains("flipper") ||
+                                            name.contains("temp_recovery_")
+                                    val isDbCandidate = (name.contains("depthlens") ||
+                                            name.contains("depth_database") ||
+                                            name.contains("depthdatabase") ||
+                                            name.endsWith(".bak") ||
+                                            name.endsWith(".backup")) &&
+                                            !isWalOrShmOrJournal &&
+                                            !isThirdPartyOrInternal
                                     val isCurrentLiveDb = try { f.canonicalPath == dbFile.canonicalPath } catch (e: Exception) { false }
                                     if (isDbCandidate && !isCurrentLiveDb && isValidSqliteFile(f) && !candidateFiles.contains(f)) {
                                         candidateFiles.add(f)
@@ -586,22 +595,20 @@ abstract class DepthDatabase : RoomDatabase() {
                             continue
                         }
 
-                        // Checkpoint any WAL frames directly into the main SQLite database tables
-                        try {
-                            backupDb.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { it.moveToFirst() }
-                        } catch (cpEx: Exception) {
-                            // Ignored if WAL not enabled or read-only
-                        }
-                        
                         // Find all non-system tables in SQLite master
                         val allTables = mutableListOf<String>()
-                        backupDb.rawQuery(
-                            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'android_%' AND name NOT LIKE 'room_%'",
-                            null
-                        ).use { cursor ->
-                            while (cursor.moveToNext()) {
-                                allTables.add(cursor.getString(0))
+                        try {
+                            backupDb.rawQuery(
+                                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'android_%' AND name NOT LIKE 'room_%'",
+                                null
+                            ).use { cursor ->
+                                while (cursor.moveToNext()) {
+                                    allTables.add(cursor.getString(0))
+                                }
                             }
+                        } catch (tableEx: Exception) {
+                            android.util.Log.w("DB_RECOVERY", "Could not query tables from ${bFile.name}: ${tableEx.message}")
+                            continue
                         }
 
                         val sessionTableCandidates = listOf("sessions", "chats", "conversations", "chat_sessions", "chatHistory")

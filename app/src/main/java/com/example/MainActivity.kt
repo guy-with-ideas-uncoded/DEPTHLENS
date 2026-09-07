@@ -128,8 +128,8 @@ class MainActivity : FragmentActivity() {
         GithubUpdateManager.checkForUpdates(applicationContext, force = true)
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             com.example.data.network.CloudSyncService.broadcastReleaseUpdate(
-                versionName = "6.0.2",
-                versionCode = 6020L
+                versionName = "6.1.0",
+                versionCode = 6100L
             )
         }
     } catch (e: Exception) {

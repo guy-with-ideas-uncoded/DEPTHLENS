@@ -133,23 +133,27 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             try {
                 val currentId = _activeSessionId.value ?: return@launch
                 val messages = repository.getMessagesForSession(currentId)
-                val branchIndex = messages.indexOfFirst { it.id == fromMessageId }
-                if (branchIndex < 0) return@launch
+                val targetMsg = messages.find { it.id == fromMessageId } ?: return@launch
 
-                val messagesToCopy = messages.subList(0, branchIndex + 1)
-                val currentSession = repository.allSessionsFlow.firstOrNull()?.find { it.id == currentId }
-                val baseTitle = currentSession?.title?.takeIf { it.isNotBlank() && it != "New Chat" } ?: "Conversation"
-                val branchTitle = "$baseTitle (Branch)"
+                val targetText = targetMsg.text.let { raw ->
+                    try {
+                        com.example.data.repository.ResponseParser.parse(raw).exportText().trim()
+                    } catch (e: Exception) {
+                        raw.trim()
+                    }
+                }.takeIf { it.isNotBlank() } ?: targetMsg.text
+                val quoteSnippet = if (targetText.length > 300) targetText.take(300).trimEnd() + "..." else targetText
 
+                val branchTitle = "Branch: " + (targetText.take(24).trim().ifBlank { "New Chat" })
                 val newSession = repository.createNewSession(branchTitle)
                 
-                messagesToCopy.forEach { orig ->
-                    repository.cloneMessageToSession(orig, newSession.id)
-                }
-
-                _activeSessionId.value = newSession.id
-                prefs.edit().putString("last_active_session_id", newSession.id).apply()
-                _sessionScrollPositions[newSession.id] = Int.MAX_VALUE
+                // Immediately switch active session to the newly created branched session
+                selectSession(newSession.id)
+                _sessionScrollPositions[newSession.id] = 0
+                
+                // Set reply quote state in the new branched session (ChatGPT style)
+                _replyMessageId.value = fromMessageId
+                _replySelectedText.value = quoteSnippet
                 
                 onComplete?.invoke(newSession.id)
             } catch (e: Exception) {
@@ -1747,7 +1751,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun submitFeedback(category: String, message: String, email: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
             val pInfo = try { getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0) } catch (e: Exception) { null }
-            val appVer = pInfo?.versionName ?: "6.0.2"
+            val appVer = pInfo?.versionName ?: "6.1.0"
             
             // Send to Firestore
             val success = com.example.data.network.CloudSyncService.submitFeedback(
@@ -1783,7 +1787,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun submitBugReport(message: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
             val pInfo = try { getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0) } catch (e: Exception) { null }
-            val appVer = pInfo?.versionName ?: "6.0.2"
+            val appVer = pInfo?.versionName ?: "6.1.0"
             val deviceModel = android.os.Build.MODEL ?: "Unknown Device"
             val androidVer = android.os.Build.VERSION.RELEASE ?: "Unknown Android"
             val deviceInfo = "$deviceModel (Android $androidVer)"

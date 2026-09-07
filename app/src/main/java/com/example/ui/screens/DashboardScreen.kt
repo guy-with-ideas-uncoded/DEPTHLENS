@@ -754,7 +754,7 @@ fun DashboardScreen(
 
     if (showUpdatesDialog) {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        val curVerStr = packageInfo.versionName ?: "6.0.2"
+        val curVerStr = packageInfo.versionName ?: "6.1.0"
         SoftwareUpdatesDialog(
             onDismissRequest = { showUpdatesDialog = false },
             onManualCheck = {
@@ -1309,7 +1309,7 @@ fun DashboardScreen(
         } catch (e: java.lang.Exception) {
             null
         }
-        val appVersion = packageInfo?.versionName ?: "6.0.2"
+        val appVersion = packageInfo?.versionName ?: "6.1.0"
         
         AlertDialog(
             onDismissRequest = { showAboutDialog = false },
@@ -1814,7 +1814,7 @@ Text(
         } catch (e: Exception) {
             null
         }
-        val appVerStr = packageInfoReport?.versionName ?: "6.0.2"
+        val appVerStr = packageInfoReport?.versionName ?: "6.1.0"
         val deviceModel = android.os.Build.MODEL ?: "Unknown Device"
         val androidVer = android.os.Build.VERSION.RELEASE ?: "Unknown Android"
         val reportTimestamp = remember { java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()) }
@@ -2055,6 +2055,8 @@ Text(
         // it on every launch was wiping the user's saved accent → theme/color appeared
         // to "revert to default" after reopening the app.
         var themeApplyReady by remember { mutableStateOf(false) }
+        var isNavCompact by remember { mutableStateOf(true) }
+        var isNavHidden by remember { mutableStateOf(false) }
         LaunchedEffect(activeThemeName) {
             if (themeApplyReady) {
                 ThemeManager.setTheme(context, activeThemeName)
@@ -2068,41 +2070,104 @@ Text(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (currentTab != "voice_conversation" && !WindowInsets.isImeVisible) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(top = 0.dp, bottom = 12.dp, start = 24.dp, end = 24.dp),
-                        contentAlignment = Alignment.Center
+                    AnimatedVisibility(
+                        visible = !isNavHidden,
+                        enter = slideInVertically(
+                            initialOffsetY = { it },
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)
+                        ) + fadeIn(animationSpec = tween(180)),
+                        exit = slideOutVertically(
+                            targetOffsetY = { it },
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium)
+                        ) + fadeOut(animationSpec = tween(150))
                     ) {
-                        Row(
+                        val navHeight by animateDpAsState(
+                            targetValue = if (isNavCompact) 42.dp else 50.dp,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+                            label = "nav_height"
+                        )
+                        val navElevation by animateDpAsState(
+                            targetValue = if (isNavCompact) 4.dp else 12.dp,
+                            label = "nav_elevation"
+                        )
+
+                        Box(
                             modifier = Modifier
-                                .wrapContentWidth()
-                                .height(78.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(top = 0.dp, bottom = 0.dp, start = 16.dp, end = 16.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            listOf(
-                                Triple("home", "Chat", "home"),
-                                Triple("insights", "Insights", "insights"),
-                                Triple("settings", "Settings", "settings")
-                            ).forEach { (tabId, label, _) ->
-                                val isActive = currentTab == tabId
-                                BottomTabItem(
-                                    tabId = tabId,
-                                    label = label,
-                                    isActive = isActive,
-                                    onClick = { 
-                                        currentTab = tabId 
+                            // iOS 27 Liquid Frosted Glass Capsule Island (Transparent Glass)
+                            Box(
+                                modifier = Modifier
+                                    .shadow(
+                                        elevation = navElevation,
+                                        shape = RoundedCornerShape(26.dp),
+                                        spotColor = if (ThemeManager.isDarkTheme) ElectricViolet.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.12f)
+                                    )
+                                    .clip(RoundedCornerShape(26.dp))
+                                    .background(
+                                        if (ThemeManager.isDarkTheme) Color(0xFF252048).copy(alpha = 0.28f)
+                                        else Color(0xFFFFFFFF).copy(alpha = 0.42f)
+                                    )
+                                    .border(
+                                        width = 0.75.dp,
+                                        brush = Brush.verticalGradient(
+                                            colors = listOf(
+                                                Color.White.copy(alpha = if (ThemeManager.isDarkTheme) 0.25f else 0.55f),
+                                                Color.White.copy(alpha = if (ThemeManager.isDarkTheme) 0.05f else 0.15f)
+                                            )
+                                        ),
+                                        shape = RoundedCornerShape(26.dp)
+                                    )
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        if (isNavCompact) {
+                                            isNavCompact = false
+                                        }
                                     }
-                                )
+                                    .padding(horizontal = if (isNavCompact) 8.dp else 12.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .wrapContentWidth()
+                                        .height(navHeight),
+                                    horizontalArrangement = Arrangement.spacedBy(if (isNavCompact) 6.dp else 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    listOf(
+                                        Triple("home", "Chat", "home"),
+                                        Triple("insights", "Insights", "insights"),
+                                        Triple("settings", "Settings", "settings")
+                                    ).forEach { (tabId, label, _) ->
+                                        val isActive = currentTab == tabId
+                                        BottomTabItem(
+                                            tabId = tabId,
+                                            label = label,
+                                            isActive = isActive,
+                                            isCompact = isNavCompact,
+                                            onClick = { 
+                                                if (currentTab == tabId) {
+                                                    isNavCompact = !isNavCompact
+                                                } else {
+                                                    currentTab = tabId
+                                                    isNavCompact = false
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         ) { innerPadding ->
-            val bottomPadding = if (WindowInsets.isImeVisible) {
+            val bottomPadding = if (WindowInsets.isImeVisible || isNavHidden) {
                 0.dp
             } else {
                 innerPadding.calculateBottomPadding()
@@ -2182,7 +2247,12 @@ Text(
                                 activeSessionId = activeSessionId,
                                 onSaveScrollPosition = { id, y -> viewModel.saveSessionScrollPosition(id, y) },
                                 onGetScrollPosition = { id -> viewModel.getSessionScrollPosition(id) },
-                                onBranchFromMessage = { msgId -> viewModel.branchFromMessage(msgId) }
+                                onBranchFromMessage = { msgId -> viewModel.branchFromMessage(msgId) },
+                                isNavCompact = isNavCompact,
+                                isNavHidden = isNavHidden,
+                                onNavCompactChange = { isNavCompact = it },
+                                onNavHiddenChange = { isNavHidden = it },
+                                onToggleNav = { isNavHidden = !isNavHidden }
                             )
                         }
                         "sessions" -> {
@@ -5590,63 +5660,75 @@ fun BottomTabItem(
     tabId: String,
     label: String,
     isActive: Boolean,
+    isCompact: Boolean = false,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     
-    val transitionDuration = 280
+    val transitionDuration = 260
     val cubicBezierEasing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
 
-    // Press scale shrinks button down slightly (active press: scale(.95))
+    // Animated dimensions for auto short / compact mode
+    val itemWidth by animateDpAsState(
+        targetValue = if (isCompact) (if (isActive) 52.dp else 42.dp) else (if (isActive) 68.dp else 60.dp),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "item_width"
+    )
+    val itemHeight by animateDpAsState(
+        targetValue = if (isCompact) 38.dp else 46.dp,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "item_height"
+    )
+
+    // Press scale shrinks button down slightly
     val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else 1.0f,
-        animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing),
+        targetValue = if (isPressed) 0.93f else 1.0f,
+        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
         label = "press_scale"
     )
 
-    // popIn Animatable for scale and opacity matching HTML @keyframes popIn exactly
+    // popIn Animatable for scale and opacity
     val popInScale = remember { Animatable(if (isActive) 1f else 1f) }
     val popInOpacity = remember { Animatable(if (isActive) 1f else 1f) }
 
     LaunchedEffect(isActive) {
         if (isActive) {
             popInOpacity.snapTo(0.75f)
-            popInScale.snapTo(0.88f)
-            // Parallel execution of opacity and scale
+            popInScale.snapTo(0.90f)
             launch {
                 popInOpacity.animateTo(
                     targetValue = 1f,
-                    animationSpec = tween(durationMillis = 340, easing = cubicBezierEasing)
+                    animationSpec = tween(durationMillis = 320, easing = cubicBezierEasing)
                 )
             }
             launch {
                 popInScale.animateTo(
-                    targetValue = 1.06f,
-                    animationSpec = tween(durationMillis = 204, easing = cubicBezierEasing)
+                    targetValue = 1.05f,
+                    animationSpec = tween(durationMillis = 180, easing = cubicBezierEasing)
                 )
                 popInScale.animateTo(
                     targetValue = 1f,
-                    animationSpec = tween(durationMillis = 136, easing = cubicBezierEasing)
+                    animationSpec = tween(durationMillis = 140, easing = cubicBezierEasing)
                 )
             }
         } else {
             popInScale.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(durationMillis = 280, easing = cubicBezierEasing)
+                animationSpec = tween(durationMillis = 240, easing = cubicBezierEasing)
             )
             popInOpacity.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(durationMillis = 280, easing = cubicBezierEasing)
+                animationSpec = tween(durationMillis = 240, easing = cubicBezierEasing)
             )
         }
     }
 
     val finalScale = pressScale * popInScale.value
 
-    // Icon scale (scales icon up slightly when active, matching HTML's popIn scale on svg)
+    // Icon scale
     val iconScale by animateFloatAsState(
-        targetValue = if (isActive) 1.08f else 1.0f,
+        targetValue = if (isActive) (if (isCompact) 1.05f else 1.08f) else (if (isCompact) 0.95f else 1.0f),
         animationSpec = tween(durationMillis = transitionDuration, easing = cubicBezierEasing),
         label = "icon_scale"
     )
@@ -5657,11 +5739,11 @@ fun BottomTabItem(
             isActive -> Color.White
             else -> TextMutedColor
         },
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
         label = "content_tint"
     )
 
-    // Glow alpha transition for the Neon Halo outer glow
+    // Glow alpha transition
     val glowAlpha by animateFloatAsState(
         targetValue = if (isActive) 1.0f else 0.0f,
         animationSpec = tween(durationMillis = transitionDuration, easing = cubicBezierEasing),
@@ -5670,13 +5752,12 @@ fun BottomTabItem(
 
     Box(
         modifier = Modifier
-            .width(64.dp)
-            .height(54.dp),
+            .width(itemWidth)
+            .height(itemHeight),
         contentAlignment = Alignment.Center
     ) {
-        // Double-layer Neon Halo Glow behind the active button
+        // Soft Upward Radial Bloom behind the active tab
         if (glowAlpha > 0.01f) {
-            // Layer 1: Tight halo (20px glow, 75% intensity of Theme accent color)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -5684,24 +5765,8 @@ fun BottomTabItem(
                     .background(
                         brush = Brush.radialGradient(
                             colorStops = arrayOf(
-                                0.0f to ElectricViolet.copy(alpha = glowAlpha * 0.75f),
-                                0.4f to ElectricViolet.copy(alpha = glowAlpha * 0.35f),
-                                1.0f to Color.Transparent
-                            )
-                        )
-                    )
-            )
-
-            // Layer 2: Wide bloom (44px halo, 38% intensity of Theme accent color)
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .scale(2.2f)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colorStops = arrayOf(
-                                0.0f to ElectricViolet.copy(alpha = glowAlpha * 0.38f),
-                                0.5f to ElectricViolet.copy(alpha = glowAlpha * 0.12f),
+                                0.0f to ElectricViolet.copy(alpha = glowAlpha * 0.45f),
+                                0.40f to PremiumCyan.copy(alpha = glowAlpha * 0.18f),
                                 1.0f to Color.Transparent
                             )
                         )
@@ -5709,15 +5774,11 @@ fun BottomTabItem(
             )
         }
 
-        // Content layer - active tab is a contained rounded-corner glossy 3D button
+        // Content layer - active tab with bottom neon glowing light bar
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .scale(finalScale)
-                .then(
-                    if (isActive) Modifier.clip(RoundedCornerShape(17.dp))
-                    else Modifier
-                )
                 .clickable(
                     interactionSource = interactionSource,
                     indication = null,
@@ -5727,44 +5788,45 @@ fun BottomTabItem(
                     alpha = if (isActive) popInOpacity.value else 1f
                 }
                 .drawBehind {
-                    if (isActive) {
-                        val cornerRadiusPx = 17.dp.toPx()
-                        val cornerRadius = CornerRadius(cornerRadiusPx, cornerRadiusPx)
+                    if (glowAlpha > 0.01f) {
+                        val barWidth = if (isCompact) 18.dp.toPx() else 28.dp.toPx()
+                        val barHeight = 2.5.dp.toPx()
+                        val barLeft = (size.width - barWidth) / 2f
+                        val barTop = size.height - barHeight - 0.5.dp.toPx()
 
-                        // 1. Glossy gradient background
-                        // linear-gradient(160deg, color-mix(in srgb, var(--accent) 90%, white 14%), var(--accent) 45%, var(--accent3))
-                        val glossyBrush = Brush.linearGradient(
-                            colorStops = arrayOf(
-                                0.0f to lerp(ElectricViolet, Color.White, 0.14f),
-                                0.45f to ElectricViolet,
-                                1.0f to GradientEnd
+                        // 1. Soft glowing outer bloom around light bar
+                        drawRoundRect(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    ElectricViolet.copy(alpha = glowAlpha * 0.55f),
+                                    PremiumCyan.copy(alpha = glowAlpha * 0.75f),
+                                    ElectricViolet.copy(alpha = glowAlpha * 0.55f),
+                                    Color.Transparent
+                                ),
+                                startX = barLeft - 8.dp.toPx(),
+                                endX = barLeft + barWidth + 8.dp.toPx()
                             ),
-                            start = Offset(size.width * 0.2f, 0f),
-                            end = Offset(size.width * 0.8f, size.height)
+                            topLeft = Offset(barLeft - 6.dp.toPx(), barTop - 2.dp.toPx()),
+                            size = Size(barWidth + 12.dp.toPx(), barHeight + 4.dp.toPx()),
+                            cornerRadius = CornerRadius(barHeight + 2.dp.toPx(), barHeight + 2.dp.toPx())
                         )
-                        drawRoundRect(brush = glossyBrush, cornerRadius = cornerRadius)
 
-                        // 2. Inset top highlight: inset 0 1.5px 0 rgba(255,255,255,.55)
-                        val topHighlightBrush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.White.copy(alpha = 0.55f),
-                                Color.Transparent
+                        // 2. Vibrant neon core light bar (center white/cyan glow)
+                        drawRoundRect(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    ElectricViolet.copy(alpha = glowAlpha * 0.90f),
+                                    Color.White.copy(alpha = glowAlpha * 0.98f),
+                                    ElectricViolet.copy(alpha = glowAlpha * 0.90f)
+                                ),
+                                startX = barLeft,
+                                endX = barLeft + barWidth
                             ),
-                            startY = 0f,
-                            endY = 1.5.dp.toPx()
+                            topLeft = Offset(barLeft, barTop),
+                            size = Size(barWidth, barHeight),
+                            cornerRadius = CornerRadius(barHeight / 2f, barHeight / 2f)
                         )
-                        drawRoundRect(brush = topHighlightBrush, cornerRadius = cornerRadius)
-
-                        // 3. Inset bottom shading: inset 0 -11px 18px color-mix(in srgb, var(--accent3) 65%, transparent)
-                        val bottomShadeBrush = Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                GradientEnd.copy(alpha = 0.65f)
-                            ),
-                            startY = (size.height - 24.dp.toPx()).coerceAtLeast(0f),
-                            endY = size.height
-                        )
-                        drawRoundRect(brush = bottomShadeBrush, cornerRadius = cornerRadius)
                     }
                 },
             contentAlignment = Alignment.Center
@@ -5772,11 +5834,11 @@ fun BottomTabItem(
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(vertical = 4.dp)
+                modifier = Modifier.padding(vertical = if (isCompact) 2.dp else 3.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(19.dp)
+                        .size(if (isCompact) 17.dp else 19.dp)
                         .scale(iconScale),
                     contentAlignment = Alignment.Center
                 ) {
@@ -5884,14 +5946,16 @@ fun BottomTabItem(
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = label,
-                    fontSize = 10.sp,
-                    fontFamily = InstrumentSansFontFamily,
-                    fontWeight = FontWeight.Bold,
-                    color = tint
-                )
+                if (!isCompact) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = label,
+                        fontSize = 10.sp,
+                        fontFamily = InstrumentSansFontFamily,
+                        fontWeight = FontWeight.Bold,
+                        color = tint
+                    )
+                }
             }
         }
     }

@@ -207,11 +207,13 @@ object CloudSyncService {
                 "name" to name,
                 "lastActive" to System.currentTimeMillis()
             )
-            val task = userRef.set(profile, com.google.firebase.firestore.SetOptions.merge())
-            com.google.android.gms.tasks.Tasks.await(task, 2, TimeUnit.SECONDS)
+            userRef.set(profile, com.google.firebase.firestore.SetOptions.merge())
+                .addOnFailureListener { e ->
+                    Log.d("SYNC", "Profile sync notice: ${e.message}")
+                }
             true
         } catch (e: Exception) {
-            Log.e("SYNC", "Error in createProfileIfNotExist: ${e.message}")
+            Log.d("SYNC", "Notice in createProfileIfNotExist: ${e.message}")
             false
         }
     }
@@ -1283,9 +1285,9 @@ object CloudSyncService {
      * Broadcast latest release metadata across cloud nodes so all running versions receive update notification
      */
     suspend fun broadcastReleaseUpdate(
-        versionName: String = "6.0.2",
-        versionCode: Long = 6020L,
-        changelog: String = "• Permanent chat deletion & persistent tombstone tracking across cloud and local storage\n• Explicit delete conversation confirmation dialog to prevent accidental removals\n• Foreground service compliance (FOREGROUND_SERVICE_TYPE_DATA_SYNC) and lifecycle hardening\n• Deep multi-collection cloud cleanup across all user nodes\n• Stream recovery and background AI analysis resilience"
+        versionName: String = "6.1.0",
+        versionCode: Long = 6100L,
+        changelog: String = "• iOS 27 Liquid Glass Navigation Redesign with 3-State Floating Capsule\n• Vibrant Active Neon Light Bar & upward bloom aesthetics\n• Smart Scroll-Driven Navigation (auto-hide on scroll down, open on scroll up)\n• Full-width edge-to-edge typing bar with reduced vertical spacing\n• ChatGPT-style Branch in New Chat with quote context\n• Proportional brevity & intelligence tuning"
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val db = FirebaseFirestore.getInstance()
@@ -1294,7 +1296,7 @@ object CloudSyncService {
                 "versionCode" to versionCode,
                 "latestVersion" to versionName,
                 "tagName" to versionName,
-                "title" to "DepthLens v$versionName — Sync Tombstones & Deletion Safeguards",
+                "title" to "DepthLens v$versionName — iOS 27 Glass Navigation & Intelligence Polish",
                 "changelog" to changelog,
                 "body" to changelog,
                 "publishedAt" to "September 6, 2026",

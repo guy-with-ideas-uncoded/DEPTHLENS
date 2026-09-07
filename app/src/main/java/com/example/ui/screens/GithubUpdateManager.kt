@@ -89,6 +89,7 @@ object GithubUpdateManager {
             _updateHistory.value = historyStr.split(";;").filter { it.isNotEmpty() }
         } else {
             val initialHistory = listOf(
+                "v6.1.0 deployed - iOS 27 Glass Nav, 3-State Capsule & Chat Branching (2026-09-06)",
                 "v6.0.2 deployed - Chat sync tombstones, delete safeguards & service hardening (2026-09-06)",
                 "v6.0.1 deployed - Clean response engine & AI latency optimizations (2026-09-04)",
                 "v6.0.0 major update - Reality Intelligence & visual polish (2026-09-03)",
@@ -118,9 +119,9 @@ object GithubUpdateManager {
     fun getInstalledVersion(context: Context): String {
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "6.0.2"
+            packageInfo.versionName ?: "6.1.0"
         } catch (e: Exception) {
-            "6.0.2"
+            "6.1.0"
         }
     }
 
@@ -255,12 +256,12 @@ object GithubUpdateManager {
                     val localVersion = getInstalledVersion(context)
                     
                     val fallbackRelease = GitHubRelease(
-                        tagName = "6.0.2",
-                        name = "DepthLens v6.0.2 — Sync Tombstones & Deletion Safeguards",
+                        tagName = "6.1.0",
+                        name = "DepthLens v6.1.0 — iOS 27 Glass Navigation & Intelligence Polish",
                         publishedAt = "September 6, 2026",
-                        body = "• Permanent chat deletion & persistent tombstone tracking across cloud and local storage\n• Explicit delete conversation confirmation dialog to prevent accidental removals\n• Foreground service compliance (FOREGROUND_SERVICE_TYPE_DATA_SYNC) and lifecycle hardening\n• Deep multi-collection cloud cleanup across all user nodes\n• Stream recovery and background AI analysis resilience",
-                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.0.2/DepthLens_v6.0.2-debug.apk",
-                        apkFileName = "DepthLens_v6.0.2-debug.apk",
+                        body = "• iOS 27 Liquid Glass Navigation Redesign with 3-State Floating Capsule\n• Vibrant Active Neon Light Bar & upward bloom aesthetics\n• Smart Scroll-Driven Navigation (auto-hide on scroll down, open on scroll up)\n• Full-width edge-to-edge typing bar with reduced vertical spacing\n• ChatGPT-style Branch in New Chat with quote context\n• Proportional brevity & intelligence tuning",
+                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.1.0/DepthLens_v6.1.0-debug.apk",
+                        apkFileName = "DepthLens_v6.1.0-debug.apk",
                         apkSize = 29500000L
                     )
                     
@@ -271,7 +272,7 @@ object GithubUpdateManager {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                    val isNew = isNewerVersion("6.0.2", localVersion)
+                    val isNew = isNewerVersion("6.1.0", localVersion)
                     onComplete(isNew, fallbackRelease)
                 }
             }
