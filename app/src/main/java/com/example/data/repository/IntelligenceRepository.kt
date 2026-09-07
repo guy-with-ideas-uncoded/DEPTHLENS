@@ -992,6 +992,11 @@ $conversationText
         val prefs = context.getSharedPreferences("depthlens_prefs", Context.MODE_PRIVATE)
         val userId = prefs.getString("user_id", "") ?: ""
         
+        val cleanReplyId = replyToMessageId?.trim()?.takeIf { it.isNotBlank() }
+        val cleanSelectedText = selectedText?.trim()?.takeIf { it.isNotBlank() }
+        val validReplyId = if (cleanReplyId != null && cleanSelectedText != null) cleanReplyId else null
+        val validSelectedText = if (cleanReplyId != null && cleanSelectedText != null) cleanSelectedText else null
+
         val userMsg = MessageEntity(
             id = UUID.randomUUID().toString(),
             sessionId = sessionId,
@@ -999,8 +1004,8 @@ $conversationText
             text = text,
             imageUri = imageUri,
             timestamp = System.currentTimeMillis(),
-            replyToMessageId = replyToMessageId,
-            selectedText = selectedText
+            replyToMessageId = validReplyId,
+            selectedText = validSelectedText
         )
         messageDao.insertMessage(userMsg)
 

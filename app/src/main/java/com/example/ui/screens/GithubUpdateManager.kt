@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -7,8 +10,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,7 +95,7 @@ object GithubUpdateManager {
             _updateHistory.value = historyStr.split(";;").filter { it.isNotEmpty() }
         } else {
             val initialHistory = listOf(
-                "v6.1.0 deployed - iOS 27 Glass Nav, 3-State Capsule & Chat Branching (2026-09-06)",
+                "v6.1.0 deployed - iOS 27 Glass Nav, 3-State Capsule & Chat Branching (2026-09-07)",
                 "v6.0.2 deployed - Chat sync tombstones, delete safeguards & service hardening (2026-09-06)",
                 "v6.0.1 deployed - Clean response engine & AI latency optimizations (2026-09-04)",
                 "v6.0.0 major update - Reality Intelligence & visual polish (2026-09-03)",
@@ -97,6 +103,125 @@ object GithubUpdateManager {
             )
             _updateHistory.value = initialHistory
             prefs.edit().putString(KEY_UPDATE_HISTORY, initialHistory.joinToString(";;")).apply()
+        }
+
+        // Start real-time Firestore listener for in-app updates
+        startCloudUpdateListener(context)
+    }
+
+    private fun startCloudUpdateListener(context: Context) {
+        try {
+            val db = FirebaseFirestore.getInstance()
+            db.collection("app_updates").document("latest")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                    try {
+                        val tagName = snapshot.getString("tagName") ?: snapshot.getString("versionName") ?: return@addSnapshotListener
+                        val name = snapshot.getString("title") ?: "DepthLens v$tagName"
+                        val body = snapshot.getString("changelog") ?: snapshot.getString("body") ?: ""
+                        val publishedAt = snapshot.getString("publishedAt") ?: "September 7, 2026"
+                        val apkUrl = snapshot.getString("apkUrl") ?: "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/$tagName/DepthLens_v${tagName}-debug.apk"
+                        val apkFileName = snapshot.getString("apkFileName") ?: "DepthLens_v${tagName}-debug.apk"
+                        val apkSize = snapshot.getLong("apkSize") ?: 28818277L
+
+                        val release = GitHubRelease(
+                            tagName = tagName,
+                            name = name,
+                            publishedAt = publishedAt,
+                            body = body,
+                            apkUrl = apkUrl,
+                            apkFileName = apkFileName,
+                            apkSize = apkSize
+                        )
+
+                        _latestRelease.value = release
+                        val localVersion = getInstalledVersion(context)
+                        if (isNewerVersion(tagName, localVersion)) {
+                            postInAppUpdateNotification(context, release)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun postInAppUpdateNotification(context: Context, release: GitHubRelease) {
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val channelId = "depthlens_in_app_updates"
+            val channelName = "DepthLens App Updates"
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    channelName,
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Notifications for new DepthLens releases and in-app updates"
+                    enableLights(true)
+                    enableVibration(true)
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("show_updates_dialog", true)
+                putExtra("update_version", release.tagName)
+            }
+
+            val pendingIntent = if (launchIntent != null) {
+                val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                } else {
+                    PendingIntent.FLAG_UPDATE_CURRENT
+                }
+                PendingIntent.getActivity(context, 6100, launchIntent, flags)
+            } else null
+
+            val builder = NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle("DepthLens v${release.tagName} Available")
+                .setContentText("Tap to install the latest DepthLens update.")
+                .setStyle(NotificationCompat.BigTextStyle().bigText("Version ${release.tagName} is ready with iOS 27 Glass Navigation, Smart Capsule & system improvements.\n\n${release.body}"))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+
+            if (pendingIntent != null) {
+                builder.setContentIntent(pendingIntent)
+            }
+
+            notificationManager.notify(6100, builder.build())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Push in-app update event to all active clients and fire notification
+     */
+    fun pushInAppUpdate(context: Context, release: GitHubRelease? = null) {
+        val targetRelease = release ?: GitHubRelease(
+            tagName = "6.1.0",
+            name = "DepthLens v6.1.0 — iOS 27 Glass Navigation & Intelligence Polish",
+            publishedAt = "September 7, 2026",
+            body = "• iOS 27 Liquid Glass Navigation Redesign with 3-State Floating Capsule\n• Vibrant Active Neon Light Bar & upward bloom aesthetics\n• Smart Scroll-Driven Navigation (auto-hide on scroll down, open on scroll up)\n• Full-width edge-to-edge typing bar with reduced vertical spacing\n• ChatGPT-style Branch in New Chat with quote context\n• Proportional brevity & intelligence tuning",
+            apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.1.0/DepthLens_v6.1.0-debug.apk",
+            apkFileName = "DepthLens_v6.1.0-debug.apk",
+            apkSize = 28818277L
+        )
+        _latestRelease.value = targetRelease
+        postInAppUpdateNotification(context, targetRelease)
+
+        CoroutineScope(Dispatchers.IO).launch {
+            com.example.data.network.CloudSyncService.broadcastReleaseUpdate(
+                versionName = targetRelease.tagName,
+                versionCode = 6100L,
+                changelog = targetRelease.body
+            )
         }
     }
 
@@ -258,11 +383,11 @@ object GithubUpdateManager {
                     val fallbackRelease = GitHubRelease(
                         tagName = "6.1.0",
                         name = "DepthLens v6.1.0 — iOS 27 Glass Navigation & Intelligence Polish",
-                        publishedAt = "September 6, 2026",
+                        publishedAt = "September 7, 2026",
                         body = "• iOS 27 Liquid Glass Navigation Redesign with 3-State Floating Capsule\n• Vibrant Active Neon Light Bar & upward bloom aesthetics\n• Smart Scroll-Driven Navigation (auto-hide on scroll down, open on scroll up)\n• Full-width edge-to-edge typing bar with reduced vertical spacing\n• ChatGPT-style Branch in New Chat with quote context\n• Proportional brevity & intelligence tuning",
                         apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.1.0/DepthLens_v6.1.0-debug.apk",
                         apkFileName = "DepthLens_v6.1.0-debug.apk",
-                        apkSize = 29500000L
+                        apkSize = 28818277L
                     )
                     
                     _latestRelease.value = fallbackRelease

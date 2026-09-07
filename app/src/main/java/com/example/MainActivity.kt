@@ -126,12 +126,7 @@ class MainActivity : FragmentActivity() {
     try {
         GithubUpdateManager.init(applicationContext)
         GithubUpdateManager.checkForUpdates(applicationContext, force = true)
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            com.example.data.network.CloudSyncService.broadcastReleaseUpdate(
-                versionName = "6.1.0",
-                versionCode = 6100L
-            )
-        }
+        GithubUpdateManager.pushInAppUpdate(applicationContext)
     } catch (e: Exception) {
         e.printStackTrace()
     }

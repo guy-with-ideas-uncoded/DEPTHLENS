@@ -383,6 +383,13 @@ abstract class DepthDatabase : RoomDatabase() {
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
+                            try {
+                                // Clean up any stale, empty, or invalid reply fields from previous sessions / syncing
+                                db.execSQL("UPDATE `messages` SET `replyToMessageId` = NULL, `selectedText` = NULL WHERE `replyToMessageId` IS NULL OR `replyToMessageId` = '' OR TRIM(`replyToMessageId`) = '' OR `selectedText` IS NULL OR `selectedText` = '' OR TRIM(`selectedText`) = ''")
+                                db.execSQL("UPDATE `messages` SET `replyToMessageId` = NULL, `selectedText` = NULL WHERE `role` != 'user'")
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
                         }
                     })
                     .addMigrations(MIGRATION_1_6, MIGRATION_2_6, MIGRATION_3_6, MIGRATION_4_6, MIGRATION_5_6)
@@ -728,8 +735,10 @@ abstract class DepthDatabase : RoomDatabase() {
                                         val text = if (textIdx != null && textIdx >= 0) cursor.getString(textIdx).orEmpty() else ""
                                         val img = if (imgIdx != null && imgIdx >= 0 && !cursor.isNull(imgIdx)) cursor.getString(imgIdx) else null
                                         val time = if (timeIdx != null && timeIdx >= 0 && !cursor.isNull(timeIdx)) cursor.getLong(timeIdx) else System.currentTimeMillis()
-                                        val reply = if (replyIdx != null && replyIdx >= 0 && !cursor.isNull(replyIdx)) cursor.getString(replyIdx) else null
-                                        val sel = if (selIdx != null && selIdx >= 0 && !cursor.isNull(selIdx)) cursor.getString(selIdx) else null
+                                        val rawReply = if (replyIdx != null && replyIdx >= 0 && !cursor.isNull(replyIdx)) cursor.getString(replyIdx)?.trim() else null
+                                        val rawSel = if (selIdx != null && selIdx >= 0 && !cursor.isNull(selIdx)) cursor.getString(selIdx)?.trim() else null
+                                        val validReply = if (!rawReply.isNullOrBlank() && !rawSel.isNullOrBlank() && role == "user") rawReply else null
+                                        val validSel = if (!rawReply.isNullOrBlank() && !rawSel.isNullOrBlank() && role == "user") rawSel else null
                                         
                                         messageEntities.add(
                                             com.example.data.model.MessageEntity(
@@ -739,8 +748,8 @@ abstract class DepthDatabase : RoomDatabase() {
                                                 text = text,
                                                 imageUri = img,
                                                 timestamp = time,
-                                                replyToMessageId = reply,
-                                                selectedText = sel
+                                                replyToMessageId = validReply,
+                                                selectedText = validSel
                                             )
                                         )
                                     }

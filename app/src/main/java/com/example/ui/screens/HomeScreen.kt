@@ -873,6 +873,14 @@ fun HomeScreen(
 
         // Per-session scroll position persistence
         val currentSessionKey = activeSessionId ?: "draft_session_id"
+
+    // Reset any temporary reply or selection state whenever switching or loading chats
+    LaunchedEffect(activeSessionId) {
+        replyQuoteText = null
+        isBranchPending = false
+        onClearReplyState()
+        onClearSelectionMode()
+    }
         var hasRestoredScrollForSession by remember(currentSessionKey) { mutableStateOf(false) }
 
         LaunchedEffect(currentSessionKey, scrollState.maxValue) {
@@ -1836,17 +1844,18 @@ fun HomeScreen(
                                                     .padding(horizontal = 15.dp, vertical = 12.dp)
                                             ) {
                                                 Column {
-                                                    if (message.replyToMessageId != null && message.selectedText != null) {
+                                                    val hasExplicitReply = !message.replyToMessageId.isNullOrBlank() && !message.selectedText.isNullOrBlank()
+                                                    if (hasExplicitReply) {
                                                         androidx.compose.foundation.text.selection.DisableSelection {
                                                             ReplyHeaderBlock(
-                                                                replyToMessageId = message.replyToMessageId,
-                                                                selectedText = message.selectedText,
+                                                                replyToMessageId = message.replyToMessageId!!,
+                                                                selectedText = message.selectedText!!,
                                                                 allMessages = activeMessages,
                                                                 isUserMessage = true,
-                                                            onRepliedBoxClick = { targetId ->
-                                                                scrollToTargetMessage(targetId)
-                                                            }
-                                                        )
+                                                                onRepliedBoxClick = { targetId ->
+                                                                    scrollToTargetMessage(targetId)
+                                                                }
+                                                            )
                                                         }
                                                         Spacer(modifier = Modifier.height(6.dp))
                                                     }
@@ -2109,20 +2118,6 @@ fun HomeScreen(
                                                 .padding(horizontal = 16.dp, vertical = 14.dp)
                                         ) {
                                             Column {
-                                                if (message.replyToMessageId != null && message.selectedText != null) {
-                                                    androidx.compose.foundation.text.selection.DisableSelection {
-                                                    ReplyHeaderBlock(
-                                                        replyToMessageId = message.replyToMessageId,
-                                                        selectedText = message.selectedText,
-                                                        allMessages = activeMessages,
-                                                        isUserMessage = false,
-                                                        onRepliedBoxClick = { targetId ->
-                                                            scrollToTargetMessage(targetId)
-                                                        }
-                                                    )
-                                                    }
-                                                    Spacer(modifier = Modifier.height(6.dp))
-                                                }
                                                 // TAG label
                                                 Text(
                                                     text = tagLabel,
@@ -2484,10 +2479,11 @@ fun HomeScreen(
                         }
                     }
                 } else {
-                    // Reply quote preview bar (shown when replying to selected text or branched message)
-                    val activeQuote = replyQuoteText ?: replySelectedText
-                    activeQuote?.let { quote ->
-                        val targetReplyId = selectedMessageId ?: replyMessageId
+                    // Reply quote preview bar (shown ONLY when explicitly replying to selected text or branched message)
+                    val activeQuote = (replyQuoteText ?: replySelectedText)?.trim()?.takeIf { it.isNotBlank() }
+                    val targetReplyId = (selectedMessageId ?: replyMessageId)?.trim()?.takeIf { it.isNotBlank() }
+                    if (activeQuote != null && targetReplyId != null) {
+                        val quote = activeQuote
                         val repliedMsg = activeMessages.find { it.id == targetReplyId }
                         val senderLabel = if (repliedMsg?.role == "user") "You" else "DepthLens"
 
@@ -2543,6 +2539,7 @@ fun HomeScreen(
                                         replyQuoteText = null 
                                         isBranchPending = false
                                         onClearReplyState()
+                                        onClearSelectionMode()
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -2843,6 +2840,8 @@ fun HomeScreen(
                                                 rawText = TextFieldValue("")
                                                 replyQuoteText = null
                                                 isBranchPending = false
+                                                onClearReplyState()
+                                                onClearSelectionMode()
                                                 if (editingMessageId != null) {
                                                     val editedId = editingMessageId!!
                                                     val currentEdited = activeMessages.find { m -> m.id == editedId }
@@ -6645,8 +6644,16 @@ private fun ReplyHeaderBlock(
     isUserMessage: Boolean,
     onRepliedBoxClick: (String) -> Unit
 ) {
+    if (replyToMessageId.isBlank() || selectedText.isBlank()) return
+    val cleanSnippet = selectedText.trim()
+    if (cleanSnippet.isEmpty()) return
+
     val repliedMsg = allMessages.find { it.id == replyToMessageId }
-    val senderLabel = if (repliedMsg?.role == "user") "You" else "DepthLens"
+    val senderLabel = when (repliedMsg?.role) {
+        "user" -> "You"
+        "model", "assistant" -> "DepthLens"
+        else -> if (isUserMessage) "DepthLens" else "You"
+    }
     val barColor = if (isUserMessage) Color.White.copy(alpha = 0.6f) else ElectricViolet
     val bgColor = if (isUserMessage) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.04f)
     val textColor = if (isUserMessage) Color.White.copy(alpha = 0.85f) else TextPrimaryColor
@@ -6678,7 +6685,7 @@ private fun ReplyHeaderBlock(
                 fontFamily = InstrumentSansFontFamily
             )
             Text(
-                text = selectedText,
+                text = cleanSnippet,
                 fontSize = 10.sp,
                 color = textColor,
                 fontFamily = InstrumentSansFontFamily,

@@ -752,6 +752,8 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         }
         clearAttachment()
         clearContinuityBrief()
+        clearReplyState()
+        clearSelectionMode()
         setSelectedMode("Multi-Layer", isManual = false)
     }
 
@@ -760,11 +762,15 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
             if (title.isBlank()) {
                 _activeSessionId.value = "draft_session_id"
                 clearAttachment()
+                clearReplyState()
+                clearSelectionMode()
             } else {
                 val newSession = repository.createNewSession(title)
                 _activeSessionId.value = newSession.id
                 prefs.edit().putString("last_active_session_id", newSession.id).apply()
                 clearAttachment()
+                clearReplyState()
+                clearSelectionMode()
                 setSelectedMode("Multi-Layer", isManual = false)
             }
         }
@@ -988,9 +994,12 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         val attachedUri = _attachedImageUri.value
         clearAttachment()
         
-        val replyId = _replyMessageId.value
-        val replyText = _replySelectedText.value
+        val rawReplyId = _replyMessageId.value?.trim()?.takeIf { it.isNotBlank() }
+        val rawReplyText = _replySelectedText.value?.trim()?.takeIf { it.isNotBlank() }
+        val replyId = if (rawReplyId != null && rawReplyText != null) rawReplyId else null
+        val replyText = if (rawReplyId != null && rawReplyText != null) rawReplyText else null
         clearReplyState()
+        clearSelectionMode()
 
         viewModelScope.launch {
             try {

@@ -382,6 +382,8 @@ object CloudSyncService {
                     com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.email.orEmpty()
                 } catch (e: Exception) { "" }
             }
+            val cleanReplyId = replyToMessageId?.trim()?.takeIf { it.isNotBlank() }
+            val cleanSelectedText = selectedText?.trim()?.takeIf { it.isNotBlank() }
             val data = mutableMapOf<String, Any>(
                 "id" to messageId,
                 "sessionId" to sessionId,
@@ -389,10 +391,12 @@ object CloudSyncService {
                 "text" to text,
                 "imageUri" to (imageUri ?: ""),
                 "timestamp" to timestamp,
-                "replyToMessageId" to (replyToMessageId ?: ""),
-                "selectedText" to (selectedText ?: ""),
                 "userId" to userId
             )
+            if (cleanReplyId != null && cleanSelectedText != null) {
+                data["replyToMessageId"] = cleanReplyId
+                data["selectedText"] = cleanSelectedText
+            }
             if (resolvedEmail.isNotBlank()) {
                 data["email"] = resolvedEmail
             }
@@ -602,6 +606,11 @@ object CloudSyncService {
                                     else -> System.currentTimeMillis()
                                 }
                                 
+                                val rawReplyId = item["replyToMessageId"]?.toString()?.trim()
+                                val rawSelectedText = item["selectedText"]?.toString()?.trim()
+                                val validReplyId = if (!rawReplyId.isNullOrBlank() && !rawSelectedText.isNullOrBlank()) rawReplyId else null
+                                val validSelectedText = if (!rawReplyId.isNullOrBlank() && !rawSelectedText.isNullOrBlank()) rawSelectedText else null
+
                                 val mEntity = com.example.data.model.MessageEntity(
                                     id = msgId,
                                     sessionId = sessionId,
@@ -609,8 +618,8 @@ object CloudSyncService {
                                     text = text,
                                     imageUri = if (imageUri.isEmpty()) null else imageUri,
                                     timestamp = timestamp,
-                                    replyToMessageId = item["replyToMessageId"]?.toString(),
-                                    selectedText = item["selectedText"]?.toString()
+                                    replyToMessageId = validReplyId,
+                                    selectedText = validSelectedText
                                 )
                                 foundMessages.add(mEntity)
                             }
@@ -661,6 +670,11 @@ object CloudSyncService {
                                 .takeIf { it > 0 }
                                 ?: System.currentTimeMillis()
 
+                            val rawReplyId = msgDoc.getString("replyToMessageId")?.trim()
+                            val rawSelectedText = msgDoc.getString("selectedText")?.trim()
+                            val validReplyId = if (!rawReplyId.isNullOrBlank() && !rawSelectedText.isNullOrBlank()) rawReplyId else null
+                            val validSelectedText = if (!rawReplyId.isNullOrBlank() && !rawSelectedText.isNullOrBlank()) rawSelectedText else null
+
                             val mEntity = com.example.data.model.MessageEntity(
                                 id = msgId,
                                 sessionId = sessionId,
@@ -668,8 +682,8 @@ object CloudSyncService {
                                 text = text,
                                 imageUri = if (imageUri.isEmpty()) null else imageUri,
                                 timestamp = timestamp,
-                                replyToMessageId = msgDoc.getString("replyToMessageId"),
-                                selectedText = msgDoc.getString("selectedText")
+                                replyToMessageId = validReplyId,
+                                selectedText = validSelectedText
                             )
                             foundMessages.add(mEntity)
                         }
@@ -931,6 +945,11 @@ object CloudSyncService {
                                             is com.google.firebase.Timestamp -> tVal.toDate().time
                                             else -> System.currentTimeMillis()
                                         }
+                                        val rawReplyId = item["replyToMessageId"]?.toString()?.trim()
+                                        val rawSelectedText = item["selectedText"]?.toString()?.trim()
+                                        val validReplyId = if (!rawReplyId.isNullOrBlank() && !rawSelectedText.isNullOrBlank()) rawReplyId else null
+                                        val validSelectedText = if (!rawReplyId.isNullOrBlank() && !rawSelectedText.isNullOrBlank()) rawSelectedText else null
+
                                         val mEntity = com.example.data.model.MessageEntity(
                                             id = msgId,
                                             sessionId = sessionId,
@@ -938,8 +957,8 @@ object CloudSyncService {
                                             text = text,
                                             imageUri = if (imageUri.isEmpty()) null else imageUri,
                                             timestamp = timestamp,
-                                            replyToMessageId = item["replyToMessageId"]?.toString(),
-                                            selectedText = item["selectedText"]?.toString()
+                                            replyToMessageId = validReplyId,
+                                            selectedText = validSelectedText
                                         )
                                         foundRemoteMessages[msgId] = mEntity
                                     }
@@ -987,6 +1006,11 @@ object CloudSyncService {
                                                 .takeIf { it > 0 }
                                                 ?: System.currentTimeMillis()
 
+                                            val subReplyId = msgDoc.getString("replyToMessageId")?.trim()
+                                            val subSelectedText = msgDoc.getString("selectedText")?.trim()
+                                            val validSubReplyId = if (!subReplyId.isNullOrBlank() && !subSelectedText.isNullOrBlank()) subReplyId else null
+                                            val validSubSelectedText = if (!subReplyId.isNullOrBlank() && !subSelectedText.isNullOrBlank()) subSelectedText else null
+
                                             val mEntity = com.example.data.model.MessageEntity(
                                                 id = msgId,
                                                 sessionId = sessionId,
@@ -994,8 +1018,8 @@ object CloudSyncService {
                                                 text = text,
                                                 imageUri = if (imageUri.isEmpty()) null else imageUri,
                                                 timestamp = timestamp,
-                                                replyToMessageId = msgDoc.getString("replyToMessageId"),
-                                                selectedText = msgDoc.getString("selectedText")
+                                                replyToMessageId = validSubReplyId,
+                                                selectedText = validSubSelectedText
                                             )
                                             foundRemoteMessages[msgId] = mEntity
                                         }
@@ -1299,11 +1323,11 @@ object CloudSyncService {
                 "title" to "DepthLens v$versionName — iOS 27 Glass Navigation & Intelligence Polish",
                 "changelog" to changelog,
                 "body" to changelog,
-                "publishedAt" to "September 6, 2026",
+                "publishedAt" to "September 7, 2026",
                 "timestamp" to System.currentTimeMillis(),
                 "apkUrl" to "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/$versionName/DepthLens_v${versionName}-debug.apk",
                 "apkFileName" to "DepthLens_v${versionName}-debug.apk",
-                "apkSize" to 29500000L,
+                "apkSize" to 28818277L,
                 "forceUpdate" to false
             )
             // Broadcast across app_updates and system collections
