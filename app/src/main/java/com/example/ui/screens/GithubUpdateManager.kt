@@ -105,6 +105,7 @@ object GithubUpdateManager {
             _updateHistory.value = historyStr.split(";;").filter { it.isNotEmpty() }
         } else {
             val initialHistory = listOf(
+                "v6.2.0 deployed - Reality-First Reasoning Constitution, Compact Workflow, Meaningful Scope Engine & APK Polish (2026-09-14)",
                 "v6.1.1 deployed - ChatGPT Branching with full context, Word Double-Tap & UI Polish (2026-09-07)",
                 "v6.1.0 deployed - iOS 27 Glass Nav, 3-State Capsule & Chat Branching (2026-09-07)",
                 "v6.0.2 deployed - Chat sync tombstones, delete safeguards & service hardening (2026-09-06)",
@@ -130,10 +131,10 @@ object GithubUpdateManager {
                         val tagName = snapshot.getString("tagName") ?: snapshot.getString("versionName") ?: return@addSnapshotListener
                         val name = snapshot.getString("title") ?: "DepthLens v$tagName"
                         val body = snapshot.getString("changelog") ?: snapshot.getString("body") ?: ""
-                        val publishedAt = snapshot.getString("publishedAt") ?: "September 7, 2026"
-                        val apkUrl = snapshot.getString("apkUrl") ?: "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/$tagName/DepthLens_v${tagName}-debug.apk"
-                        val apkFileName = snapshot.getString("apkFileName") ?: "DepthLens_v${tagName}-debug.apk"
-                        val apkSize = snapshot.getLong("apkSize") ?: 28818277L
+                        val publishedAt = snapshot.getString("publishedAt") ?: "September 14, 2026"
+                        val apkUrl = snapshot.getString("apkUrl") ?: "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/$tagName/DepthLens_v${tagName}.apk"
+                        val apkFileName = snapshot.getString("apkFileName") ?: "DepthLens_v${tagName}.apk"
+                        val apkSize = snapshot.getLong("apkSize") ?: 29073613L
 
                         val release = GitHubRelease(
                             tagName = tagName,
@@ -246,13 +247,13 @@ object GithubUpdateManager {
      */
     fun pushInAppUpdate(context: Context, release: GitHubRelease? = null) {
         val targetRelease = release ?: GitHubRelease(
-            tagName = "6.1.1",
-            name = "DepthLens v6.1.1 — ChatGPT Chat Branching & Word Selection Polish",
-            publishedAt = "September 7, 2026",
-            body = "• ChatGPT-style Branch in New Chat: full conversation context lineage cloned up to selected message\n• Quoted Context Persistence: branch reference stays active in new chat input & permanent reply header\n• Double-Tap Word Selection: natural word boundary selection in chat input field (ChatGPT/Claude/WhatsApp style)\n• In-app update system & APK refresh for v6.1.1\n• iOS 27 Liquid Glass Navigation & performance optimizations",
-            apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.1.1/DepthLens_v6.1.1-debug.apk",
-            apkFileName = "DepthLens_v6.1.1-debug.apk",
-            apkSize = 28818277L
+            tagName = "6.2.0",
+            name = "DepthLens v6.2.0 — Reality-First Reasoning & Meaningful Scope Engine",
+            publishedAt = "September 14, 2026",
+            body = "• Reality-First Reasoning Constitution: master truth engine & anti-sycophancy\n• Compact Response Workflow: 10-step reality/evidence/scenario execution sequence\n• Meaningful Scope Engine: 7.5 boundary test & diminishing-return hard stop\n• In-app update system & APK refresh for v6.2.0\n• APK naming modernized to DepthLens_v6.2.0.apk",
+            apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.2.0/DepthLens_v6.2.0.apk",
+            apkFileName = "DepthLens_v6.2.0.apk",
+            apkSize = 29073613L
         )
         _latestRelease.value = targetRelease
 
@@ -269,7 +270,7 @@ object GithubUpdateManager {
         CoroutineScope(Dispatchers.IO).launch {
             com.example.data.network.CloudSyncService.broadcastReleaseUpdate(
                 versionName = targetRelease.tagName,
-                versionCode = 6101L,
+                versionCode = 6200L,
                 changelog = targetRelease.body
             )
         }
@@ -296,9 +297,9 @@ object GithubUpdateManager {
     fun getInstalledVersion(context: Context): String {
         return try {
             val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            packageInfo.versionName ?: "6.1.1"
+            packageInfo.versionName ?: "6.2.0"
         } catch (e: Exception) {
-            "6.1.1"
+            "6.2.0"
         }
     }
 
@@ -437,13 +438,13 @@ object GithubUpdateManager {
                     val localVersion = getInstalledVersion(context)
                     
                     val fallbackRelease = GitHubRelease(
-                        tagName = "6.1.1",
-                        name = "DepthLens v6.1.1 — ChatGPT Chat Branching & Word Selection Polish",
-                        publishedAt = "September 7, 2026",
-                        body = "• ChatGPT-style Branch in New Chat: full conversation context lineage cloned up to selected message\n• Quoted Context Persistence: branch reference stays active in new chat input & permanent reply header\n• Double-Tap Word Selection: natural word boundary selection in chat input field (ChatGPT/Claude/WhatsApp style)\n• In-app update system & APK refresh for v6.1.1\n• iOS 27 Liquid Glass Navigation & performance optimizations",
-                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.1.1/DepthLens_v6.1.1-debug.apk",
-                        apkFileName = "DepthLens_v6.1.1-debug.apk",
-                        apkSize = 28818277L
+                        tagName = "6.2.0",
+                        name = "DepthLens v6.2.0 — Reality-First Reasoning & Meaningful Scope Engine",
+                        publishedAt = "September 14, 2026",
+                        body = "• Reality-First Reasoning Constitution: master truth engine & anti-sycophancy\n• Compact Response Workflow: 10-step reality/evidence/scenario execution sequence\n• Meaningful Scope Engine: 7.5 boundary test & diminishing-return hard stop\n• In-app update system & APK refresh for v6.2.0\n• APK naming modernized to DepthLens_v6.2.0.apk",
+                        apkUrl = "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.2.0/DepthLens_v6.2.0.apk",
+                        apkFileName = "DepthLens_v6.2.0.apk",
+                        apkSize = 29073613L
                     )
                     
                     _latestRelease.value = fallbackRelease
@@ -453,7 +454,7 @@ object GithubUpdateManager {
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
 
-                    val isNew = isNewerVersion("6.1.1", localVersion)
+                    val isNew = isNewerVersion("6.2.0", localVersion)
                     if (!isNew) {
                         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                         notificationManager?.cancel(UPDATE_NOTIFICATION_ID)
@@ -482,7 +483,7 @@ object GithubUpdateManager {
 
         CoroutineScope(Dispatchers.IO).launch {
             val downloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.cacheDir
-            val destinationFileName = release.apkFileName.ifBlank { "DepthLens_v${release.tagName}-debug.apk" }
+            val destinationFileName = release.apkFileName.ifBlank { "DepthLens_v${release.tagName}.apk" }
             val destinationFile = File(downloadsDir, destinationFileName)
 
             try {

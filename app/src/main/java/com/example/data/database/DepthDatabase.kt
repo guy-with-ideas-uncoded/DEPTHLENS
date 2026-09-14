@@ -156,13 +156,60 @@ interface AttachmentDao {
     suspend fun getAllAttachments(): List<AttachmentEntity>
 }
 
-@Database(entities = [SessionEntity::class, MessageEntity::class, AttachmentEntity::class, MemoryInsight::class, com.example.data.model.ArchivedInsightEntity::class], version = 6, exportSchema = false)
+@Dao
+interface IdentityNodeDao {
+    @Query("SELECT * FROM identity_nodes WHERE isContradicted = 0 ORDER BY category ASC, confidence DESC, lastUpdatedAt DESC")
+    fun getAllActiveNodesFlow(): Flow<List<com.example.data.model.IdentityNodeEntity>>
+
+    @Query("SELECT * FROM identity_nodes ORDER BY category ASC, lastUpdatedAt DESC")
+    fun getAllNodesFlow(): Flow<List<com.example.data.model.IdentityNodeEntity>>
+
+    @Query("SELECT * FROM identity_nodes WHERE category = :category AND isContradicted = 0 ORDER BY confidence DESC")
+    fun getNodesByCategoryFlow(category: String): Flow<List<com.example.data.model.IdentityNodeEntity>>
+
+    @Query("SELECT * FROM identity_nodes WHERE isContradicted = 0")
+    suspend fun getAllActiveNodes(): List<com.example.data.model.IdentityNodeEntity>
+
+    @Query("SELECT * FROM identity_nodes")
+    suspend fun getAllNodes(): List<com.example.data.model.IdentityNodeEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNode(node: com.example.data.model.IdentityNodeEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertNodes(nodes: List<com.example.data.model.IdentityNodeEntity>)
+
+    @Update
+    suspend fun updateNode(node: com.example.data.model.IdentityNodeEntity)
+
+    @Query("DELETE FROM identity_nodes WHERE id = :id")
+    suspend fun deleteNodeById(id: String)
+
+    @Query("DELETE FROM identity_nodes WHERE category = :category")
+    suspend fun deleteNodesByCategory(category: String)
+
+    @Query("DELETE FROM identity_nodes")
+    suspend fun deleteAllNodes()
+
+    @Query("SELECT * FROM identity_nodes WHERE id = :id LIMIT 1")
+    suspend fun getNodeById(id: String): com.example.data.model.IdentityNodeEntity?
+}
+
+@Database(entities = [
+    SessionEntity::class,
+    MessageEntity::class,
+    AttachmentEntity::class,
+    MemoryInsight::class,
+    com.example.data.model.ArchivedInsightEntity::class,
+    com.example.data.model.IdentityNodeEntity::class
+], version = 7, exportSchema = false)
 abstract class DepthDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
     abstract fun messageDao(): MessageDao
     abstract fun attachmentDao(): AttachmentDao
     abstract fun memoryInsightDao(): MemoryInsightDao
     abstract fun archivedInsightDao(): ArchivedInsightDao
+    abstract fun identityNodeDao(): IdentityNodeDao
 
     companion object {
         private fun migrateAnyTo6(db: androidx.sqlite.db.SupportSQLiteDatabase) {
@@ -283,29 +330,58 @@ abstract class DepthDatabase : RoomDatabase() {
             """.trimIndent())
         }
 
-        val MIGRATION_1_6 = object : androidx.room.migration.Migration(1, 6) {
+        private fun migrateAnyTo7(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+            migrateAnyTo6(db)
+            // 6. Ensure identity_nodes table exists for User Identity & Mind Map system
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS `identity_nodes` (
+                    `id` TEXT NOT NULL PRIMARY KEY,
+                    `category` TEXT NOT NULL,
+                    `subcategory` TEXT,
+                    `title` TEXT NOT NULL,
+                    `detail` TEXT NOT NULL,
+                    `classification` TEXT NOT NULL,
+                    `confidence` INTEGER NOT NULL,
+                    `confidenceLevel` TEXT NOT NULL,
+                    `supportingEvidence` TEXT NOT NULL,
+                    `sourceSessionId` TEXT,
+                    `confirmationCount` INTEGER NOT NULL DEFAULT 1,
+                    `isContradicted` INTEGER NOT NULL DEFAULT 0,
+                    `contradictionNote` TEXT,
+                    `createdAt` INTEGER NOT NULL,
+                    `lastUpdatedAt` INTEGER NOT NULL
+                )
+            """.trimIndent())
+        }
+
+        val MIGRATION_1_7 = object : androidx.room.migration.Migration(1, 7) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-                migrateAnyTo6(db)
+                migrateAnyTo7(db)
             }
         }
-        val MIGRATION_2_6 = object : androidx.room.migration.Migration(2, 6) {
+        val MIGRATION_2_7 = object : androidx.room.migration.Migration(2, 7) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-                migrateAnyTo6(db)
+                migrateAnyTo7(db)
             }
         }
-        val MIGRATION_3_6 = object : androidx.room.migration.Migration(3, 6) {
+        val MIGRATION_3_7 = object : androidx.room.migration.Migration(3, 7) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-                migrateAnyTo6(db)
+                migrateAnyTo7(db)
             }
         }
-        val MIGRATION_4_6 = object : androidx.room.migration.Migration(4, 6) {
+        val MIGRATION_4_7 = object : androidx.room.migration.Migration(4, 7) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-                migrateAnyTo6(db)
+                migrateAnyTo7(db)
             }
         }
-        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+        val MIGRATION_5_7 = object : androidx.room.migration.Migration(5, 7) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
-                migrateAnyTo6(db)
+                migrateAnyTo7(db)
+            }
+        }
+        val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                migrateAnyTo7(db)
             }
         }
 
@@ -392,7 +468,7 @@ abstract class DepthDatabase : RoomDatabase() {
                             }
                         }
                     })
-                    .addMigrations(MIGRATION_1_6, MIGRATION_2_6, MIGRATION_3_6, MIGRATION_4_6, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_7, MIGRATION_2_7, MIGRATION_3_7, MIGRATION_4_7, MIGRATION_5_7, MIGRATION_6_7)
                     .build()
                     
                     // Verify database opens
@@ -418,7 +494,7 @@ abstract class DepthDatabase : RoomDatabase() {
                                 DepthDatabase::class.java,
                                 "depthlens_database"
                             )
-                            .addMigrations(MIGRATION_1_6, MIGRATION_2_6, MIGRATION_3_6, MIGRATION_4_6, MIGRATION_5_6)
+                            .addMigrations(MIGRATION_1_7, MIGRATION_2_7, MIGRATION_3_7, MIGRATION_4_7, MIGRATION_5_7, MIGRATION_6_7)
                             .build()
                             instance.openHelper.writableDatabase
                         } catch (restoreEx: Exception) {
@@ -432,7 +508,7 @@ abstract class DepthDatabase : RoomDatabase() {
                     DepthDatabase::class.java,
                     "depthlens_database"
                 )
-                .addMigrations(MIGRATION_1_6, MIGRATION_2_6, MIGRATION_3_6, MIGRATION_4_6, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_7, MIGRATION_2_7, MIGRATION_3_7, MIGRATION_4_7, MIGRATION_5_7, MIGRATION_6_7)
                 .build()
 
                 // Immediately run local backup recovery if database is currently empty

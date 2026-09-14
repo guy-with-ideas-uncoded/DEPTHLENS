@@ -350,3 +350,178 @@ data class ExportConversation(
     val messages: List<ExportMessage>
 )
 
+// ==========================================
+// USER IDENTITY & MIND MAP ARCHITECTURE
+// ==========================================
+
+enum class EpistemicClassification(
+    val id: String,
+    val displayName: String,
+    val shortBadge: String,
+    val description: String
+) {
+    EXPLICIT_FACT(
+        id = "EXPLICIT_FACT",
+        displayName = "Explicit Fact",
+        shortBadge = "Fact",
+        description = "Directly stated by the user. High ground-truth status."
+    ),
+    STRONG_PATTERN(
+        id = "STRONG_PATTERN",
+        displayName = "Strong Pattern",
+        shortBadge = "Pattern",
+        description = "Consistently observed across multiple conversations."
+    ),
+    INFERENCE(
+        id = "INFERENCE",
+        displayName = "Inference",
+        shortBadge = "Inference",
+        description = "Reasonable conclusion from conversational context, not 100% certain."
+    ),
+    TEMPORARY_STATE(
+        id = "TEMPORARY_STATE",
+        displayName = "Temporary State",
+        shortBadge = "Transient",
+        description = "Situational emotion or temporary context. Not a permanent identity trait."
+    );
+
+    companion object {
+        fun fromId(raw: String?): EpistemicClassification {
+            if (raw.isNullOrBlank()) return INFERENCE
+            val clean = raw.trim().uppercase()
+            return when {
+                clean.contains("FACT") -> EXPLICIT_FACT
+                clean.contains("PATTERN") -> STRONG_PATTERN
+                clean.contains("TEMP") || clean.contains("TRANSIENT") -> TEMPORARY_STATE
+                else -> INFERENCE
+            }
+        }
+    }
+}
+
+object IdentityCategories {
+    const val PERSONALITY = "Personality"
+    const val THINKING_REASONING = "Thinking & Reasoning"
+    const val VALUES = "Values"
+    const val GOALS = "Goals"
+    const val INTERESTS = "Interests"
+    const val PREFERENCES = "Preferences"
+    const val HABITS_ROUTINES = "Habits & Routines"
+    const val RELATIONSHIPS_SOCIAL = "Relationships / Social"
+    const val WORK_PROJECTS = "Work / Projects"
+    const val LIFESTYLE = "Lifestyle"
+    const val TRAVEL = "Travel"
+    const val COMMUNICATION_STYLE = "Communication Style"
+    const val RECURRING_CONCERNS = "Recurring Problems / Concerns"
+    const val STRENGTHS = "Strengths"
+    const val WEAKNESSES = "Weaknesses / Friction Points"
+    const val IMPORTANT_EXPERIENCES = "Important Experiences"
+    const val EVOLVING_BELIEFS = "Evolving Beliefs"
+
+    val ALL = listOf(
+        PERSONALITY,
+        THINKING_REASONING,
+        VALUES,
+        GOALS,
+        INTERESTS,
+        PREFERENCES,
+        HABITS_ROUTINES,
+        RELATIONSHIPS_SOCIAL,
+        WORK_PROJECTS,
+        LIFESTYLE,
+        TRAVEL,
+        COMMUNICATION_STYLE,
+        RECURRING_CONCERNS,
+        STRENGTHS,
+        WEAKNESSES,
+        IMPORTANT_EXPERIENCES,
+        EVOLVING_BELIEFS
+    )
+
+    fun getCategoryIconKey(category: String): String = when (category) {
+        PERSONALITY -> "psychology"
+        THINKING_REASONING -> "lightbulb"
+        VALUES -> "diamond"
+        GOALS -> "flag"
+        INTERESTS -> "palette"
+        PREFERENCES -> "tune"
+        HABITS_ROUTINES -> "schedule"
+        RELATIONSHIPS_SOCIAL -> "group"
+        WORK_PROJECTS -> "rocket"
+        LIFESTYLE -> "spa"
+        TRAVEL -> "flight"
+        COMMUNICATION_STYLE -> "chat"
+        RECURRING_CONCERNS -> "warning"
+        STRENGTHS -> "bolt"
+        WEAKNESSES -> "build"
+        IMPORTANT_EXPERIENCES -> "history_edu"
+        EVOLVING_BELIEFS -> "sync"
+        else -> "bubble_chart"
+    }
+
+    fun getCategoryColorHex(category: String): Long = when (category) {
+        PERSONALITY -> 0xFF8B5CF6 // Violet
+        THINKING_REASONING -> 0xFF38BDF8 // Sky Blue
+        VALUES -> 0xFFF59E0B // Amber
+        GOALS -> 0xFF10B981 // Emerald
+        INTERESTS -> 0xFFEC4899 // Pink
+        PREFERENCES -> 0xFF06B6D4 // Cyan
+        HABITS_ROUTINES -> 0xFF6366F1 // Indigo
+        RELATIONSHIPS_SOCIAL -> 0xFFF97316 // Orange
+        WORK_PROJECTS -> 0xFF14B8A6 // Teal
+        LIFESTYLE -> 0xFF22C55E // Green
+        TRAVEL -> 0xFF0EA5E9 // Bright Blue
+        COMMUNICATION_STYLE -> 0xFFA855F7 // Purple
+        RECURRING_CONCERNS -> 0xFFEF4444 // Red
+        STRENGTHS -> 0xFFEAB308 // Gold
+        WEAKNESSES -> 0xFFFB923C // Coral
+        IMPORTANT_EXPERIENCES -> 0xFF818CF8 // Periwinkle
+        EVOLVING_BELIEFS -> 0xFF00E5FF // Neon Cyan
+        else -> 0xFF94A3B8
+    }
+}
+
+@Immutable
+@Entity(tableName = "identity_nodes")
+data class IdentityNodeEntity(
+    @PrimaryKey val id: String, // UUID
+    val category: String, // from IdentityCategories or custom
+    val subcategory: String? = null, // e.g. "Short-term", "Long-term" for Goals
+    val title: String, // Short trait statement
+    val detail: String, // Rich elaboration
+    val classification: String = "EXPLICIT_FACT", // EXPLICIT_FACT, STRONG_PATTERN, INFERENCE, TEMPORARY_STATE
+    val confidence: Int = 85, // 0..100
+    val confidenceLevel: String = "High", // "High", "Medium", "Low"
+    val supportingEvidence: String = "", // Past conversation context / citation
+    val sourceSessionId: String? = null,
+    val confirmationCount: Int = 1, // Observation / confirmation frequency
+    val isContradicted: Boolean = false, // True if superseded or disputed
+    val contradictionNote: String? = null, // Detail on why it was updated or superseded
+    val createdAt: Long = System.currentTimeMillis(),
+    val lastUpdatedAt: Long = System.currentTimeMillis()
+) {
+    fun getEpistemic(): EpistemicClassification = EpistemicClassification.fromId(classification)
+}
+
+@Immutable
+data class MindMapCategoryGroup(
+    val category: String,
+    val nodes: List<IdentityNodeEntity>,
+    val subcategories: Map<String, List<IdentityNodeEntity>> = emptyMap(),
+    val factsCount: Int = nodes.count { it.classification.contains("FACT", ignoreCase = true) },
+    val patternsCount: Int = nodes.count { it.classification.contains("PATTERN", ignoreCase = true) },
+    val inferencesCount: Int = nodes.count { it.classification.contains("INFERENCE", ignoreCase = true) },
+    val averageConfidence: Int = if (nodes.isNotEmpty()) nodes.sumOf { it.confidence } / nodes.size else 0
+)
+
+@Immutable
+data class UserIdentitySummary(
+    val totalNodes: Int,
+    val categoriesCount: Int,
+    val explicitFactsCount: Int,
+    val strongPatternsCount: Int,
+    val inferencesCount: Int,
+    val highConfidenceCount: Int,
+    val lastLearnedTime: Long
+)
+

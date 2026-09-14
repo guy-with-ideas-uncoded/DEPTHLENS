@@ -77,8 +77,8 @@ android {
     applicationId = "com.aistudio.depthlens.v6.final"
     minSdk = 24
     targetSdk = 35
-    versionCode = 6101
-    versionName = "6.1.1"
+    versionCode = 6200
+    versionName = "6.2.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -309,8 +309,8 @@ androidComponents {
         val rootDirResolved = rootProject.rootDir
         val buildOutputDirResolved = File(rootDirResolved, "build-outputs")
         val dotBuildOutputDirResolved = File(rootDirResolved, ".build-outputs")
-        val curVer = android.defaultConfig.versionName ?: "6.1.1"
-        val singleApkName = if (vName == "release") "DepthLens_v$curVer.apk" else "DepthLens_v$curVer-debug.apk"
+        val curVer = android.defaultConfig.versionName ?: "6.2.0"
+        val singleApkName = "DepthLens_v$curVer.apk"
 
         tasks.matching { it.name == "package$variantName" }.configureEach {
             doLast {

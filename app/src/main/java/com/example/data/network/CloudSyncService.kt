@@ -1309,9 +1309,9 @@ object CloudSyncService {
      * Broadcast latest release metadata across cloud nodes so all running versions receive update notification
      */
     suspend fun broadcastReleaseUpdate(
-        versionName: String = "6.1.1",
-        versionCode: Long = 6101L,
-        changelog: String = "• ChatGPT-style Branch in New Chat: full conversation context lineage cloned up to selected message\n• Quoted Context Persistence: branch reference stays active in new chat input & permanent reply header\n• Double-Tap Word Selection: natural word boundary selection in chat input field (ChatGPT/Claude/WhatsApp style)\n• In-app update system & APK refresh for v6.1.1\n• iOS 27 Liquid Glass Navigation & performance optimizations"
+        versionName: String = "6.2.0",
+        versionCode: Long = 6200L,
+        changelog: String = "• Reality-First Reasoning Constitution: master truth engine & anti-sycophancy\n• Compact Response Workflow: 10-step reality/evidence/scenario execution sequence\n• Meaningful Scope Engine: 7.5 boundary test & diminishing-return hard stop\n• In-app update system & APK refresh for v6.2.0\n• APK naming modernized to DepthLens_v6.2.0.apk"
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val db = FirebaseFirestore.getInstance()
@@ -1320,14 +1320,14 @@ object CloudSyncService {
                 "versionCode" to versionCode,
                 "latestVersion" to versionName,
                 "tagName" to versionName,
-                "title" to "DepthLens v$versionName — iOS 27 Glass Navigation & Intelligence Polish",
+                "title" to "DepthLens v$versionName — Reality-First Reasoning & Meaningful Scope Engine",
                 "changelog" to changelog,
                 "body" to changelog,
-                "publishedAt" to "September 7, 2026",
+                "publishedAt" to "September 14, 2026",
                 "timestamp" to System.currentTimeMillis(),
-                "apkUrl" to "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/$versionName/DepthLens_v${versionName}-debug.apk",
-                "apkFileName" to "DepthLens_v${versionName}-debug.apk",
-                "apkSize" to 28818277L,
+                "apkUrl" to "https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/$versionName/DepthLens_v${versionName}.apk",
+                "apkFileName" to "DepthLens_v${versionName}.apk",
+                "apkSize" to 29073613L,
                 "forceUpdate" to false
             )
             // Broadcast across app_updates and system collections

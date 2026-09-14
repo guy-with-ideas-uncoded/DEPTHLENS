@@ -116,6 +116,115 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
         _replySelectedText.value = null
     }
 
+    // ==========================================
+    // USER IDENTITY & MIND MAP ARCHITECTURE
+    // ==========================================
+    val allActiveIdentityNodes: StateFlow<List<IdentityNodeEntity>> = repository.allActiveIdentityNodesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val identityCategoryGroups: StateFlow<List<MindMapCategoryGroup>> = repository.identityCategoryGroupsFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val userIdentitySummary: StateFlow<UserIdentitySummary> = repository.userIdentitySummaryFlow
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            UserIdentitySummary(0, 0, 0, 0, 0, 0, 0L)
+        )
+
+    val higherSelfProfile: StateFlow<HigherSelfProfile> = repository.higherSelfProfileFlow
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            HigherSelfProfile()
+        )
+
+    private val _currentSelfReflection = MutableStateFlow<SelfReflectionComparison?>(null)
+    val currentSelfReflection: StateFlow<SelfReflectionComparison?> = _currentSelfReflection.asStateFlow()
+
+    private val _isReflecting = MutableStateFlow(false)
+    val isReflecting: StateFlow<Boolean> = _isReflecting.asStateFlow()
+
+    fun requestSelfReflection(dilemma: String) {
+        if (dilemma.isBlank()) return
+        viewModelScope.launch {
+            _isReflecting.value = true
+            try {
+                val comparison = repository.generateSelfReflection(dilemma)
+                _currentSelfReflection.value = comparison
+            } catch (e: Exception) {
+                // Keep existing or fallback handled in repository
+            } finally {
+                _isReflecting.value = false
+            }
+        }
+    }
+
+    fun clearSelfReflection() {
+        _currentSelfReflection.value = null
+    }
+
+    private val _isSynthesizingMindMap = MutableStateFlow(false)
+    val isSynthesizingMindMap: StateFlow<Boolean> = _isSynthesizingMindMap.asStateFlow()
+
+    private val _mindMapSynthesisStatus = MutableStateFlow("")
+    val mindMapSynthesisStatus: StateFlow<String> = _mindMapSynthesisStatus.asStateFlow()
+
+    fun addManualIdentityTrait(
+        category: String,
+        subcategory: String?,
+        title: String,
+        detail: String,
+        classification: EpistemicClassification,
+        confidence: Int
+    ) {
+        viewModelScope.launch {
+            repository.addManualIdentityTrait(category, subcategory, title, detail, classification, confidence)
+        }
+    }
+
+    fun updateIdentityTrait(node: IdentityNodeEntity) {
+        viewModelScope.launch {
+            repository.updateIdentityTrait(node)
+        }
+    }
+
+    fun deleteIdentityTrait(id: String) {
+        viewModelScope.launch {
+            repository.deleteIdentityTrait(id)
+        }
+    }
+
+    fun clearIdentityCategory(category: String) {
+        viewModelScope.launch {
+            repository.clearIdentityCategory(category)
+        }
+    }
+
+    fun clearAllIdentityTraits() {
+        viewModelScope.launch {
+            repository.clearAllIdentityTraits()
+        }
+    }
+
+    fun triggerMindMapSynthesisFromHistory() {
+        viewModelScope.launch {
+            _isSynthesizingMindMap.value = true
+            _mindMapSynthesisStatus.value = "Starting conversation history scan..."
+            try {
+                val count = repository.synthesizeMindMapFromHistory { progress, status ->
+                    _mindMapSynthesisStatus.value = status
+                }
+                _mindMapSynthesisStatus.value = "Synthesized identity across conversations successfully!"
+            } catch (e: Exception) {
+                _mindMapSynthesisStatus.value = "Synthesis error: ${e.message}"
+            } finally {
+                kotlinx.coroutines.delay(2000)
+                _isSynthesizingMindMap.value = false
+            }
+        }
+    }
+
     private val _sessionScrollPositions = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     fun saveSessionScrollPosition(sessionId: String, scrollY: Int) {
@@ -1269,6 +1378,13 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
                                 text = """
                                     You are DepthLens Deep-Dive AI. Respond as if having a thoughtful, natural conversation with an intelligent partner.
                                     Default to natural, flowing prose rather than structured formatting, lists, bullet points, or document templates.
+                                    
+                                    REALITY-FIRST REASONING DIRECTIVE & COMPACT WORKFLOW:
+                                    - One-Line Rule: Strip narratives → establish facts → separate certainty levels → weigh both upside and downside → test scenarios → reject unsupported conspiracies → stop when analysis stops adding value → give the clearest defensible conclusion.
+                                    - Sequence: 1. Reality Check (remove narratives/propaganda/assumptions) -> 2. Evidence Check (Fact vs Inference vs Possibility vs Speculation) -> 3. Multi-Angle Scan (Positive + Negative + Neutral) -> 4. Weight Factors (Evidence × Probability × Impact × Relevance) -> 5. Scenario Check (Base + Upside + Downside) -> 6. Anti-Conspiracy Check (reject unsupported conspiracies) -> 7. Anti-Negativity Check (include genuine positives) -> 8. Anti-Paralysis Check (stop when analysis stops adding value) -> 9. Convergence (what is most likely true, what matters most, what to do) -> 10. Final Calibration (clarity, realistic expectations, agency — not fear or uncertainty).
+                                    - Meaningful Scope: Explore an angle only if it materially affects what the user should believe, expect, decide, or do. Prefer 5 highly meaningful insights > 20 technically possible ones. Stop when analysis stops changing the conclusion or action.
+                                    - "Collapse" does not mean only bad: trace the full causal chain through breakdown, adaptation, alternatives, and new equilibrium / renewal.
+                                    
                                     Explore the hidden causal gears, immediate dynamics, second-order ripples, and long-term evolutionary shifts naturally as a fluid, deeply reasoned discussion.
                                     Connect ideas naturally without artificial section breaks, headers, or corporate report markers.
                                 """.trimIndent()
@@ -1768,7 +1884,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun submitFeedback(category: String, message: String, email: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
             val pInfo = try { getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0) } catch (e: Exception) { null }
-            val appVer = pInfo?.versionName ?: "6.1.1"
+            val appVer = pInfo?.versionName ?: "6.2.0"
             
             // Send to Firestore
             val success = com.example.data.network.CloudSyncService.submitFeedback(
@@ -1804,7 +1920,7 @@ class IntelligenceViewModel(application: Application) : AndroidViewModel(applica
     fun submitBugReport(message: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
             val pInfo = try { getApplication<Application>().packageManager.getPackageInfo(getApplication<Application>().packageName, 0) } catch (e: Exception) { null }
-            val appVer = pInfo?.versionName ?: "6.1.1"
+            val appVer = pInfo?.versionName ?: "6.2.0"
             val deviceModel = android.os.Build.MODEL ?: "Unknown Device"
             val androidVer = android.os.Build.VERSION.RELEASE ?: "Unknown Android"
             val deviceInfo = "$deviceModel (Android $androidVer)"

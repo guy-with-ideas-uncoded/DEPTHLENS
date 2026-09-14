@@ -754,7 +754,7 @@ fun DashboardScreen(
 
     if (showUpdatesDialog) {
         val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        val curVerStr = packageInfo.versionName ?: "6.1.1"
+        val curVerStr = packageInfo.versionName ?: "6.2.0"
         SoftwareUpdatesDialog(
             onDismissRequest = { showUpdatesDialog = false },
             onManualCheck = {
@@ -1309,7 +1309,7 @@ fun DashboardScreen(
         } catch (e: java.lang.Exception) {
             null
         }
-        val appVersion = packageInfo?.versionName ?: "6.1.1"
+        val appVersion = packageInfo?.versionName ?: "6.2.0"
         
         AlertDialog(
             onDismissRequest = { showAboutDialog = false },
@@ -1814,7 +1814,7 @@ Text(
         } catch (e: Exception) {
             null
         }
-        val appVerStr = packageInfoReport?.versionName ?: "6.1.1"
+        val appVerStr = packageInfoReport?.versionName ?: "6.2.0"
         val deviceModel = android.os.Build.MODEL ?: "Unknown Device"
         val androidVer = android.os.Build.VERSION.RELEASE ?: "Unknown Android"
         val reportTimestamp = remember { java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()) }
@@ -2141,6 +2141,7 @@ Text(
                                 ) {
                                     listOf(
                                         Triple("home", "Chat", "home"),
+                                        Triple("mindmap", "Mind Map", "mindmap"),
                                         Triple("insights", "Insights", "insights"),
                                         Triple("settings", "Settings", "settings")
                                     ).forEach { (tabId, label, _) ->
@@ -2298,10 +2299,17 @@ Text(
                                 probabilityForecast = probabilityForecast
                             )
                         }
+                        "mindmap" -> {
+                            MindMapScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { currentTab = "home" }
+                            )
+                        }
                         "settings" -> {
                             SettingsScreen(
                                 isMemoryEnabled = isMemoryEnabled,
                                 onMemoryEnabledChanged = { viewModel.setMemoryEnabled(it) },
+                                onOpenMindMap = { currentTab = "mindmap" },
                                 notificationsEnabled = notificationsEnabled,
                                 onNotificationsEnabledChanged = { viewModel.setNotificationsEnabled(it) },
                                 voiceOutputEnabled = voiceOutputEnabled,
@@ -5900,6 +5908,42 @@ fun BottomTabItem(
                                     radius = 2.2.dp.toPx(),
                                     center = Offset(cx, cy)
                                 )
+                            }
+                        }
+                        "mindmap" -> {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val w = size.width
+                                val h = size.height
+                                val cx = w / 2f
+                                val cy = h / 2f
+
+                                // Central core node
+                                drawCircle(
+                                    color = if (isActive) PremiumCyan else tint,
+                                    radius = 2.5.dp.toPx(),
+                                    center = Offset(cx, cy)
+                                )
+
+                                // Mind map branching satellites
+                                val satellites = listOf(
+                                    Offset(cx - w * 0.28f, cy - h * 0.24f),
+                                    Offset(cx + w * 0.28f, cy - h * 0.24f),
+                                    Offset(cx - w * 0.26f, cy + h * 0.26f),
+                                    Offset(cx + w * 0.26f, cy + h * 0.26f)
+                                )
+                                satellites.forEach { sat ->
+                                    drawLine(
+                                        color = tint.copy(alpha = if (isActive) 0.85f else 0.45f),
+                                        start = Offset(cx, cy),
+                                        end = sat,
+                                        strokeWidth = 1.2.dp.toPx()
+                                    )
+                                    drawCircle(
+                                        color = if (isActive) ElectricViolet else tint,
+                                        radius = 1.8.dp.toPx(),
+                                        center = sat
+                                    )
+                                }
                             }
                         }
                         "settings" -> {
