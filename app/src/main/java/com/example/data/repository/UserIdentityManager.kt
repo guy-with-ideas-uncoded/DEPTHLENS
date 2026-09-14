@@ -298,10 +298,12 @@ class UserIdentityManager(
         val q = query.lowercase().trim()
         val patterns = listOf(
             "kaisa insaan", "kaisi personality", "meri personality", "meri strengths",
-            "mere baare mein", "mere goals", "mere interests", "main kaisa", "main kaun",
+            "mere baare mein", "mere bare me", "mere bare mein", "mere goals", "mere interests", "main kaisa", "main kaun",
+            "meri soch", "mera nature", "mera behavior", "meri aadat", "mere patterns",
             "who am i", "what kind of person", "my personality", "my goals", "my interests",
             "what do you know about me", "tell me about myself", "my strengths", "my weaknesses",
-            "maine pehle", "kya bola tha", "what did i say before", "what are my preferences"
+            "maine pehle", "kya bola tha", "what did i say before", "what are my preferences",
+            "analyze me", "analyze my mindset", "tum mujhe kitna jaante ho", "tum mujhe kitna samajhte ho"
         )
         return patterns.any { q.contains(it) }
     }
@@ -332,10 +334,11 @@ class UserIdentityManager(
             "relationship", "career", "kya choose", "kya select",
             "apne baare mein batao", "tell me about myself",
             "what should i do", "what would be best for me", "what is best for me",
-            "help me decide", "which choice", "guidance",
+            "help me decide", "which choice", "guidance", "guide me", "guide karo",
+            "mujhe guide", "advice chahiye", "advice do", "salah do", "raay do",
             "higher self", "inner guide", "self-reflection", "reflect on me",
             "challenge me", "am i lying to myself", "am i making a mistake",
-            "what aligns with me", "mere values"
+            "what aligns with me", "mere values", "mujhe kya karna chahiye"
         )
         return patterns.any { q.contains(it) }
     }
@@ -539,13 +542,14 @@ User: "$userMessageText"
 Assistant: "${modelResponseText.take(600)}"
 
 TASK:
-1. Did this message provide materially useful, permanent information about the user?
-2. If YES:
-   - Did the user explicitly say "I've changed" ("main badal gaya hoon", "now I think differently") or shift their values/goals? If so, mark the prior trait action "CONTRADICT" with an informative contradictionNote, and insert the newly evolved perspective with high confidence under "Evolving Beliefs" or the relevant category. Remember: Identity is an evolving model based on evidence, not a fixed dogma.
+1. Thoroughly analyze the user's questions, inquiry types (e.g. philosophical, career, decision-making, technical, psychological, self-reflection), topic choices, and conversational style.
+2. Determine what this reveals about who the user is, what they care about, how they think, their recurring concerns, strengths, weaknesses, and priorities.
+3. If meaningful traits/patterns/facts are identified:
+   - Did the user explicitly say "I've changed" ("main badal gaya hoon", "now I think differently") or shift their values/goals? If so, mark the prior trait action "CONTRADICT" with an informative contradictionNote, and insert the newly evolved perspective with high confidence under "Evolving Beliefs" or the relevant category.
    - Does it CONFIRM an existing trait? (reference existingId, increment count)
    - Does it CONTRADICT or SUPERSEDE an existing trait? (mark contradiction, prioritize latest explicit statement)
-   - Is it a genuinely NEW trait? (category, subcategory, title, detail, classification, confidence 0-100, supportingEvidence)
-3. If it is trivial banter, momentary state, or irrelevant noise, return empty updates.
+   - Is it a genuinely NEW trait or question pattern? (category, subcategory, title, detail, classification, confidence 0-100, supportingEvidence)
+4. If it is purely transient noise or momentary state (e.g., "I'm sleepy"), return empty array [].
 
 OUTPUT FORMAT: Strict JSON array of objects only. No markdown formatting, no commentary.
 [

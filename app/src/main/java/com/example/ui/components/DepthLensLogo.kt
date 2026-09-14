@@ -22,17 +22,18 @@ import com.example.R
 fun DepthLensLogo(
     modifier: Modifier = Modifier,
     size: Dp = 72.dp,
-    showGlow: Boolean = true
+    showGlow: Boolean = true,
+    isGenerating: Boolean = false
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "depthlens_logo_breathe")
     
-    // Smooth scale animation from 1.00 -> 1.05 -> 1.00
+    // Smooth scale animation: faster pulse when generating (1.00 -> 1.12), calm breathing when idle (1.00 -> 1.05)
     val scale by infiniteTransition.animateFloat(
-        initialValue = 1.00f,
-        targetValue = 1.05f,
+        initialValue = if (isGenerating) 0.98f else 1.00f,
+        targetValue = if (isGenerating) 1.12f else 1.05f,
         animationSpec = infiniteRepeatable(
             animation = tween(
-                durationMillis = 1400, // 2.8 seconds total cycle (1400ms to scale up, 1400ms to scale down)
+                durationMillis = if (isGenerating) 650 else 1400,
                 easing = FastOutSlowInEasing
             ),
             repeatMode = RepeatMode.Reverse
@@ -40,13 +41,13 @@ fun DepthLensLogo(
         label = "logo_scale"
     )
     
-    // Soft glow intensity synchronized with breathing
+    // Soft glow intensity synchronized with breathing (brighter aura when generating)
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.15f,
-        targetValue = 0.35f,
+        initialValue = if (isGenerating) 0.35f else 0.15f,
+        targetValue = if (isGenerating) 0.75f else 0.35f,
         animationSpec = infiniteRepeatable(
             animation = tween(
-                durationMillis = 1400,
+                durationMillis = if (isGenerating) 650 else 1400,
                 easing = FastOutSlowInEasing
             ),
             repeatMode = RepeatMode.Reverse
@@ -71,7 +72,7 @@ fun DepthLensLogo(
                         brush = Brush.radialGradient(
                             colors = listOf(
                                 logoViolet.copy(alpha = glowAlpha),
-                                logoCyan.copy(alpha = glowAlpha * 0.4f),
+                                logoCyan.copy(alpha = glowAlpha * (if (isGenerating) 0.7f else 0.4f)),
                                 Color.Transparent
                             )
                         ),
@@ -83,7 +84,7 @@ fun DepthLensLogo(
         Image(
             painter = painterResource(id = R.drawable.ic_depthlens_logo),
             contentDescription = "DepthLens Logo",
-            modifier = Modifier.size(size * 0.8f)
+            modifier = Modifier.size(size * 0.85f)
         )
     }
 }

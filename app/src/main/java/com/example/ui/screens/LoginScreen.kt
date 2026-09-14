@@ -165,26 +165,35 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            Text(
-                text = "Welcome to DepthLens",
-                color = TextPrimaryColor,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                fontFamily = InstrumentSansFontFamily
-            )
+            // Title & Subtitle block aligned from 'W' to 's' with cohesive typography
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.width(IntrinsicSize.Max)
+            ) {
+                Text(
+                    text = "Welcome to DepthLens",
+                    color = TextPrimaryColor,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    fontFamily = InstrumentSansFontFamily,
+                    maxLines = 1
+                )
 
-            Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-            Text(
-                text = "See beneath the surface. Sign in to sync your sessions.",
-                color = TextMutedColor,
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                lineHeight = 16.sp,
-                modifier = Modifier.widthIn(max = 260.dp),
-                fontFamily = InstrumentSansFontFamily
-            )
+                Text(
+                    text = "SEE BENEATH SURFACE",
+                    color = TextMutedColor.copy(alpha = 0.9f),
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.3.sp,
+                    textAlign = TextAlign.Center,
+                    fontFamily = InstrumentSansFontFamily,
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 1
+                )
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 

@@ -1073,26 +1073,52 @@ fun HomeScreen(
                     )
                 }
 
-                // Center slot: Title and Caption
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = "DepthLens",
-                        color = TextPrimaryColor,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = InstrumentSansFontFamily
-                    )
-                    Text(
-                        text = "SEE BEYOND SURFACE",
-                        color = PremiumCyan,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.5.sp,
-                        fontFamily = InstrumentSansFontFamily
-                    )
+                // Center slot: Title & Subtitle (empty chat) <-> Animated DepthLens Logo (active chat)
+                AnimatedContent(
+                    targetState = activeMessages.isNotEmpty(),
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(320)) + scaleIn(initialScale = 0.82f, animationSpec = tween(320)))
+                            .togetherWith(fadeOut(animationSpec = tween(220)) + scaleOut(targetScale = 0.82f, animationSpec = tween(220)))
+                    },
+                    label = "top_bar_center_transition",
+                    modifier = Modifier.align(Alignment.Center)
+                ) { hasActiveChat ->
+                    if (!hasActiveChat) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier.width(IntrinsicSize.Max)
+                        ) {
+                            Text(
+                                text = "DepthLens",
+                                color = TextPrimaryColor,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 3.6.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                                fontFamily = InstrumentSansFontFamily,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = "SEE BENEATH SURFACE",
+                                color = PremiumCyan,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.4.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
+                                fontFamily = InstrumentSansFontFamily,
+                                maxLines = 1
+                            )
+                        }
+                    } else {
+                        DepthLensLogo(
+                            size = 36.dp,
+                            showGlow = true,
+                            isGenerating = isLoading
+                        )
+                    }
                 }
 
                 // Right slot: More options/⋮ Button

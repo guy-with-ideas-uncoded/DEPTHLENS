@@ -66,7 +66,6 @@ fun SettingsScreen(
     userEmail: String = "",
     userPhotoUrl: String = "",
     onNavigateToEditProfile: () -> Unit = {},
-    onOpenMindMap: () -> Unit = {},
     githubToken: String = "",
     repoOwnerAndName: String = "",
     onSaveGithubSettings: (String, String) -> Unit = { _, _ -> },
@@ -137,7 +136,6 @@ fun SettingsScreen(
                     onModelSelected = onModelSelected,
                     isMemoryEnabled = isMemoryEnabled,
                     onMemoryEnabledChanged = onMemoryEnabledChanged,
-                    onOpenMindMap = onOpenMindMap,
                     onBack = { currentSubscreen = null }
                 )
             }
@@ -1236,7 +1234,6 @@ fun AiIntelligenceSubscreen(
     onModelSelected: (String) -> Unit,
     isMemoryEnabled: Boolean,
     onMemoryEnabledChanged: (Boolean) -> Unit,
-    onOpenMindMap: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1556,38 +1553,6 @@ fun AiIntelligenceSubscreen(
                                 uncheckedTrackColor = Color.White.copy(alpha = 0.15f),
                                 uncheckedBorderColor = Color.Transparent
                             )
-                        )
-                    }
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.06f), thickness = 1.dp)
-
-                    // User Identity & Mind Map
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .bounceClick(scaleOnPress = 0.98f) { onOpenMindMap() }
-                            .padding(horizontal = 14.dp, vertical = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("User Identity & Mind Map", color = textPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, fontFamily = InstrumentSansFontFamily)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    color = ThemeManager.accentColor.copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Evolving Model", color = ThemeManager.accentColor, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text("Explore, edit, and understand your evolving personality, goals & thinking map", color = textMuted, fontSize = 10.sp, fontFamily = InstrumentSansFontFamily)
-                        }
-                        Text(
-                            text = "View Map ›",
-                            color = ThemeManager.accentColor,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
                         )
                     }
                     HorizontalDivider(color = Color.White.copy(alpha = 0.06f), thickness = 1.dp)

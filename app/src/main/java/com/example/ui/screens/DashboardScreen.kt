@@ -2141,7 +2141,6 @@ Text(
                                 ) {
                                     listOf(
                                         Triple("home", "Chat", "home"),
-                                        Triple("mindmap", "Mind Map", "mindmap"),
                                         Triple("insights", "Insights", "insights"),
                                         Triple("settings", "Settings", "settings")
                                     ).forEach { (tabId, label, _) ->
@@ -2299,17 +2298,10 @@ Text(
                                 probabilityForecast = probabilityForecast
                             )
                         }
-                        "mindmap" -> {
-                            MindMapScreen(
-                                viewModel = viewModel,
-                                onNavigateBack = { currentTab = "home" }
-                            )
-                        }
                         "settings" -> {
                             SettingsScreen(
                                 isMemoryEnabled = isMemoryEnabled,
                                 onMemoryEnabledChanged = { viewModel.setMemoryEnabled(it) },
-                                onOpenMindMap = { currentTab = "mindmap" },
                                 notificationsEnabled = notificationsEnabled,
                                 onNotificationsEnabledChanged = { viewModel.setNotificationsEnabled(it) },
                                 voiceOutputEnabled = voiceOutputEnabled,
@@ -5908,42 +5900,6 @@ fun BottomTabItem(
                                     radius = 2.2.dp.toPx(),
                                     center = Offset(cx, cy)
                                 )
-                            }
-                        }
-                        "mindmap" -> {
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val w = size.width
-                                val h = size.height
-                                val cx = w / 2f
-                                val cy = h / 2f
-
-                                // Central core node
-                                drawCircle(
-                                    color = if (isActive) PremiumCyan else tint,
-                                    radius = 2.5.dp.toPx(),
-                                    center = Offset(cx, cy)
-                                )
-
-                                // Mind map branching satellites
-                                val satellites = listOf(
-                                    Offset(cx - w * 0.28f, cy - h * 0.24f),
-                                    Offset(cx + w * 0.28f, cy - h * 0.24f),
-                                    Offset(cx - w * 0.26f, cy + h * 0.26f),
-                                    Offset(cx + w * 0.26f, cy + h * 0.26f)
-                                )
-                                satellites.forEach { sat ->
-                                    drawLine(
-                                        color = tint.copy(alpha = if (isActive) 0.85f else 0.45f),
-                                        start = Offset(cx, cy),
-                                        end = sat,
-                                        strokeWidth = 1.2.dp.toPx()
-                                    )
-                                    drawCircle(
-                                        color = if (isActive) ElectricViolet else tint,
-                                        radius = 1.8.dp.toPx(),
-                                        center = sat
-                                    )
-                                }
                             }
                         }
                         "settings" -> {
