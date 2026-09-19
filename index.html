@@ -645,22 +645,547 @@ body {
 .hero .logo{animation:breathe 4s ease-in-out infinite!important}
 @keyframes breathe{0%,100%{transform:scale(1);filter:drop-shadow(0 0 10px rgba(0,229,255,.35))}50%{transform:scale(1.09);filter:drop-shadow(0 0 26px rgba(0,229,255,.7)) drop-shadow(0 0 40px rgba(123,92,245,.4))}}
 </style>
+<style id="web-login-modal-styles">
+/* Modal Dialog Styling */
+.login-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(3, 2, 9, 0.78);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s ease;
+}
+.login-modal-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.login-modal-card {
+  width: 100%;
+  max-width: 440px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(145deg, rgba(22, 18, 48, 0.94), rgba(7, 8, 22, 0.98));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 0 40px rgba(123, 92, 245, 0.18);
+  padding: 32px 28px;
+  position: relative;
+  transform: scale(0.94) translateY(14px);
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  color: #f7f4ff;
+  font-family: inherit;
+}
+.login-modal-overlay.open .login-modal-card {
+  transform: scale(1) translateY(0);
+}
+.modal-close-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(247, 244, 255, 0.7);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  border-color: rgba(0, 229, 255, 0.4);
+}
+.modal-tabs {
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 4px;
+  margin: 22px 0;
+  gap: 4px;
+}
+.modal-tab-btn {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: rgba(247, 244, 255, 0.6);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.modal-tab-btn.active {
+  background: linear-gradient(135deg, rgba(123, 92, 245, 0.35), rgba(0, 229, 255, 0.2));
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.login-input-group {
+  margin-bottom: 16px;
+}
+.login-input-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(247, 244, 255, 0.75);
+  margin-bottom: 6px;
+  letter-spacing: 0.02em;
+}
+.login-input-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 13px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(8, 9, 22, 0.75);
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.login-input-field:focus {
+  outline: none;
+  border-color: var(--cyan);
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.25);
+}
+.login-submit-btn {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.35), rgba(123, 92, 245, 0.45));
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition: transform 0.2s ease, filter 0.2s ease;
+  margin-top: 8px;
+}
+.login-submit-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+}
+.login-guest-btn {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(247, 244, 255, 0.85);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  margin-top: 10px;
+}
+.login-guest-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.login-status-box {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  margin-bottom: 16px;
+  display: none;
+}
+.login-status-box.error {
+  display: block;
+  background: rgba(245, 100, 100, 0.12);
+  border: 1px solid rgba(245, 100, 100, 0.35);
+  color: #ff9d9d;
+}
+.login-status-box.success {
+  display: block;
+  background: rgba(123, 245, 192, 0.12);
+  border: 1px solid rgba(123, 245, 192, 0.35);
+  color: #7bf5c0;
+}
+.active-session-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  margin-bottom: 18px;
+}
+
+/* Hero Button Layout */
+.hero-cta-wrapper {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 16px !important;
+  margin-top: 24px !important;
+}
+.hero-btns-row {
+  display: flex !important;
+  gap: 14px !important;
+  justify-content: center !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+}
+.hero-center-login {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 12px !important;
+  min-height: 48px !important;
+  padding: 0 32px !important;
+  border-radius: 999px !important;
+  border: 1.5px solid #00e5ff !important;
+  background: linear-gradient(135deg, rgba(110, 85, 210, 0.42) 0%, rgba(45, 55, 135, 0.35) 100%) !important;
+  backdrop-filter: blur(20px) saturate(1.3) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.3) !important;
+  box-shadow: 0 0 22px rgba(0, 229, 255, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  font-size: 15px !important;
+  font-weight: 750 !important;
+  letter-spacing: 0.015em !important;
+  cursor: pointer !important;
+  text-decoration: none !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.hero-center-login:hover {
+  background: linear-gradient(135deg, rgba(125, 95, 235, 0.55) 0%, rgba(55, 70, 165, 0.48) 100%) !important;
+  border-color: #55f0ff !important;
+  box-shadow: 0 0 32px rgba(0, 229, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+  transform: translateY(-2px);
+  color: #ffffff !important;
+}
+.hero-center-login .sparkle-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.85));
+}
+.hero-center-login .live-dot {
+  display: inline-block;
+  width: 7.5px;
+  height: 7.5px;
+  border-radius: 50%;
+  background: #00e5ff;
+  box-shadow: 0 0 8px #00e5ff, 0 0 14px rgba(0, 229, 255, 0.7);
+  margin-left: 4px;
+  flex-shrink: 0;
+  animation: liveDotPulse 1.8s infinite ease-in-out;
+}
+@keyframes liveDotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 8px #00e5ff, 0 0 14px rgba(0, 229, 255, 0.7); }
+  50% { opacity: 0.45; transform: scale(0.82); box-shadow: 0 0 4px #00e5ff; }
+}
+
+/* Interactive Android Demo Phone Styles */
+.phone-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+.phone-app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 10px;
+}
+.phone-app-header b {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.demo-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--mint);
+  background: rgba(123, 245, 192, 0.15);
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(123, 245, 192, 0.3);
+}
+.pulse-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--mint);
+  box-shadow: 0 0 8px var(--mint);
+  animation: pulseDot 1.6s infinite ease-in-out;
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+.demo-chat-feed {
+  height: 185px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
+  scrollbar-width: none;
+}
+.demo-chat-feed::-webkit-scrollbar {
+  display: none;
+}
+.demo-chat-feed .bubble {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  padding: 9px 12px;
+}
+.demo-layer-tag {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--cyan);
+  background: rgba(0, 229, 255, 0.14);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  letter-spacing: 0.04em;
+}
+.demo-action-callout {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: #fff;
+  background: rgba(123, 92, 245, 0.22);
+  border-left: 2px solid var(--violet2);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.demo-preset-chips {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.demo-preset-chips::-webkit-scrollbar {
+  display: none;
+}
+.demo-chip {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--soft);
+  font-size: 10px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.demo-chip:hover, .demo-chip.active {
+  background: rgba(0, 229, 255, 0.18);
+  border-color: var(--cyan);
+  color: #fff;
+}
+.demo-input-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.demo-input-bar input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #fff;
+  outline: none;
+}
+.demo-input-bar input:focus {
+  border-color: var(--cyan);
+  background: rgba(0, 229, 255, 0.05);
+}
+.demo-input-bar button {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--cyan);
+  color: #05040d;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.demo-open-app-link {
+  width: 100%;
+  background: linear-gradient(90deg, rgba(0, 229, 255, 0.15), rgba(123, 92, 245, 0.15));
+  border: 1px solid rgba(0, 229, 255, 0.35);
+  color: var(--cyan);
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+}
+.demo-open-app-link:hover {
+  background: linear-gradient(90deg, rgba(0, 229, 255, 0.25), rgba(123, 92, 245, 0.25));
+  border-color: var(--cyan);
+  color: #fff;
+}
+.reality-node-graph {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+}
+.map-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.map-node:hover, .map-node.node-active {
+  background: rgba(0, 229, 255, 0.14);
+  border-color: var(--cyan);
+}
+.map-node b {
+  font-size: 11px;
+  color: #fff;
+}
+.node-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 8px currentColor;
+}
+.map-arrow {
+  text-align: center;
+  font-size: 10px;
+  color: var(--dim);
+}
+</style>
 </head>
 <body>
+<div id="landing-view">
 <div class="aurora"><i></i><i></i><i></i><i></i></div><canvas id="network"></canvas><div class="noise"></div>
-<nav class="nav"><a class="brand" href="#top"><svg class="logo" viewBox="0 0 108 108" fill="none"><path d="M24 54C39 33 69 33 84 54C69 75 39 75 24 54Z" stroke="#8B5CF6" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M39 54a15 15 0 1 1 30 0a15 15 0 1 1-30 0" stroke="#00D9FF" stroke-width="4"/><path d="M43.4 64.6L64.6 43.4" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round"/><circle cx="48.7" cy="59.3" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/><circle cx="59.3" cy="48.7" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/></svg><span>DEPTHLENS</span></a><div class="navlinks"><a href="#demo">Reality Lens</a><a href="#engine">Engine</a><a href="#app">App</a><a href="#roadmap">Roadmap</a></div><div class="nav-actions"><a class="pill magnetic" href="#download">Download</a><button class="menu-dots" type="button" aria-label="Open navigation" aria-expanded="false"><span></span><span></span><span></span></button></div><div class="mobile-menu" aria-hidden="true"><a href="#demo">Reality Lens</a><a href="#engine">Engine</a><a href="#app">App</a><a href="#roadmap">Roadmap</a></div></nav>
+<nav class="nav"><a class="brand" href="#top"><svg class="logo" viewBox="0 0 108 108" fill="none"><path d="M24 54C39 33 69 33 84 54C69 75 39 75 24 54Z" stroke="#8B5CF6" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M39 54a15 15 0 1 1 30 0a15 15 0 1 1-30 0" stroke="#00D9FF" stroke-width="4"/><path d="M43.4 64.6L64.6 43.4" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round"/><circle cx="48.7" cy="59.3" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/><circle cx="59.3" cy="48.7" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/></svg><span>DEPTHLENS</span></a><div class="navlinks"><a href="#demo">Reality Lens</a><a href="#engine">Engine</a><a href="#app">App</a><a href="#roadmap">Roadmap</a></div><div class="nav-actions"><a class="pill magnetic" href="#download">Download</a><button class="menu-dots" type="button" aria-label="Open navigation" aria-expanded="false"><span></span><span></span><span></span></button></div><div class="mobile-menu" aria-hidden="true"><a href="#demo">Reality Lens</a><a href="#engine">Engine</a><a href="#app">App</a><a href="#roadmap">Roadmap</a><a href="#download">Download</a><a href="https://depthlens.web.app/" id="mob-login" style="color:var(--cyan);font-weight:700">&#10022; Launch Web App</a></div></nav>
 <main class="wrap" id="top">
-<section class="section hero"><div class="frame"><svg class="logo" viewBox="0 0 108 108" fill="none"><path d="M24 54C39 33 69 33 84 54C69 75 39 75 24 54Z" stroke="#8B5CF6" stroke-width="4.5"/><path d="M39 54a15 15 0 1 1 30 0a15 15 0 1 1-30 0" stroke="#00D9FF" stroke-width="4"/><path d="M43.4 64.6L64.6 43.4" stroke="#8B5CF6" stroke-width="3"/><circle cx="48.7" cy="59.3" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/><circle cx="59.3" cy="48.7" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/></svg><p class="eyebrow">Reality Intelligence Engine</p><h1>See beneath<br>the surface.</h1><p>DepthLens turns messy human situations, decisions, systems, and patterns into layered intelligence you can act on.</p><div class="cta"><a class="pill primary magnetic" href="#demo">Enter the Lens</a><a class="pill magnetic" href="#app">View App</a></div></div><div class="scrollhint">Scroll the reality stack</div></section>
+<section class="section hero"><div class="frame"><svg class="logo" viewBox="0 0 108 108" fill="none"><path d="M24 54C39 33 69 33 84 54C69 75 39 75 24 54Z" stroke="#8B5CF6" stroke-width="4.5"/><path d="M39 54a15 15 0 1 1 30 0a15 15 0 1 1-30 0" stroke="#00D9FF" stroke-width="4"/><path d="M43.4 64.6L64.6 43.4" stroke="#8B5CF6" stroke-width="3"/><circle cx="48.7" cy="59.3" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/><circle cx="59.3" cy="48.7" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/></svg><p class="eyebrow">Reality Intelligence Engine</p><h1>See beneath<br>the surface.</h1><p>DepthLens turns messy human situations, decisions, systems, and patterns into layered intelligence you can act on.</p><div class="cta hero-cta-wrapper"><div class="hero-btns-row"><a class="pill primary magnetic" href="#demo">Enter the Lens</a><a class="pill magnetic" href="#download">Get APK</a></div><a class="pill magnetic hero-center-login" id="btn-hero-login" href="https://depthlens.web.app/">
+  <svg class="sparkle-icon" viewBox="0 0 24 24" fill="none" stroke="#00E5FF" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C12 7.5 7.5 12 2 12C7.5 12 12 16.5 12 22C12 16.5 16.5 12 22 12C16.5 12 12 7.5 12 2Z"/></svg>
+  <span>Launch Web App</span>
+  <span class="live-dot"></span>
+</a></div></div><div class="scrollhint">Scroll the reality stack</div></section>
 <section class="section" id="demo"><div class="frame story"><div class="copy reveal"><p class="eyebrow">Reality Lens</p><h2>The surface collapses into signal.</h2><p>What looks like one problem is often a stack of hidden incentives, emotions, systems, and timing. DepthLens refracts the situation until the structure becomes visible.</p></div><div class="stage reveal"><div class="glass"><div class="lens"></div><div class="scan"></div><div class="metric m1">Surface noise: 84%</div><div class="metric m2">Pattern lock detected</div><div class="metric m3">Root pressure: rising</div><div class="metric m4">Clarity path: open</div></div></div></div></section>
 <section class="section"><div class="frame story"><div class="stage layers reveal"><div class="layer" data-step="01"><b>Surface Reality</b><span>visible facts</span></div><div class="layer" data-step="02"><b>Emotional Reality</b><span>unspoken charge</span></div><div class="layer" data-step="03"><b>Psychological Reality</b><span>inner pattern</span></div><div class="layer" data-step="04"><b>Strategic Reality</b><span>incentive field</span></div><div class="layer" data-step="05"><b>Systems Reality</b><span>feedback loops</span></div><div class="layer" data-step="06"><b>Temporal Reality</b><span>past and future</span></div><div class="layer" data-step="07"><b>Root Cause</b><span>source node</span></div></div><div class="copy reveal"><p class="eyebrow">Reality Layers</p><h2>Seven lenses. One coherent picture.</h2><p>Each layer explains a different truth. Together they reveal why the situation keeps repeating, what is actually driving it, and where leverage lives.</p></div></div></section>
 <section class="section" id="engine"><div class="frame story"><div class="copy reveal"><p class="eyebrow">Intelligence Engine</p><h2>An offline mind for systemic clarity.</h2><p>The engine decomposes ambiguity into causal maps, pressure points, contradiction checks, and next actions. Your thinking stays local, private, and owned by you.</p></div><div class="stage engine reveal"><div class="orbit"><i class="node"></i><i class="node"></i><i class="node"></i></div><div class="orbit"><i class="node"></i><i class="node"></i><i class="node"></i></div><div class="orbit"><i class="node"></i><i class="node"></i><i class="node"></i></div><div class="core"></div></div></div></section>
 <section class="section"><div class="frame story"><div class="stage probability reveal"><div class="glass"><div class="wave"></div><div class="futureline"></div><div class="chance">87%<small>pattern continuation</small></div></div></div><div class="copy reveal"><p class="eyebrow">Future Probability</p><h2>Forecast the shape of what happens next.</h2><p>DepthLens models likely trajectories from the current structure, then highlights the few interventions that can bend the outcome.</p></div></div></section>
-<section class="section" id="app"><div class="frame showcase"><div class="phone reveal"><div class="screen"><h3>Ask anything.</h3><div class="bubble">Why does this conflict keep returning?</div><div class="bubble ai">Root cause: unclear ownership is creating competing incentives.</div><div class="bubble">Show me the leverage point.</div></div></div><div class="copy reveal"><p class="eyebrow">App Showcase</p><h2>A calm interface for intense thinking.</h2><p>No clutter. No theater. Just a focused workspace where your situation becomes navigable layer by layer.</p></div><div class="phone reveal"><div class="screen"><h3>Reality Map</h3><div class="bubble ai">Systems loop found between urgency, avoidance, and delayed decisions.</div><div class="bubble ai">Recommended action: define decision rights before the next meeting.</div></div></div></div></section>
+<section class="section" id="app"><div class="frame showcase"><div class="phone reveal"><div class="screen" id="demo-phone-screen"><div class="phone-status-bar"><span>09:41</span><span style="display:flex;gap:4px">5G ● 100%</span></div><div class="phone-app-header"><div style="display:flex;align-items:center;gap:6px"><svg class="logo" viewBox="0 0 108 108" fill="none" style="width:18px;height:18px"><path d="M24 54C39 33 69 33 84 54C69 75 39 75 24 54Z" stroke="#8B5CF6" stroke-width="4.5"/><path d="M39 54a15 15 0 1 1 30 0a15 15 0 1 1-30 0" stroke="#00D9FF" stroke-width="4"/><path d="M43.4 64.6L64.6 43.4" stroke="#8B5CF6" stroke-width="3"/><circle cx="48.7" cy="59.3" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/><circle cx="59.3" cy="48.7" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/></svg><b>DepthLens Android</b></div><span class="demo-live-badge"><i class="pulse-dot"></i> Live Demo</span></div><div class="demo-chat-feed" id="demo-chat-feed"><div class="bubble">Why does this conflict keep returning?</div><div class="bubble ai" id="demo-ai-reply"><div class="demo-layer-tag">L7: Root Cause</div><div>Unclear ownership creates competing incentives between velocity and stability.</div><div class="demo-action-callout">⚡ Leverage: Fix decision rights in writing.</div></div></div><div class="demo-preset-chips" id="demo-chips"><button type="button" class="demo-chip active" data-q="Why does this conflict keep returning?" data-a="Unclear ownership creates competing incentives between speed and safety." data-layer="L7: Root Cause" data-action="⚡ Leverage: Establish single-owner decision rights.">Conflict Loop</button><button type="button" class="demo-chip" data-q="Should I resign or renegotiate?" data-a="You are reacting to temporal exhaustion rather than strategic dead-end." data-layer="L4: Strategic Reality" data-action="⚡ Leverage: Test 3 boundaries before choosing departure.">Career Pivot</button><button type="button" class="demo-chip" data-q="Why are team decisions always delayed?" data-a="Consensus-seeking creates social risk avoidance at every review." data-layer="L5: Systems Reality" data-action="⚡ Leverage: Switch from consensus to consent framework.">Decisions</button></div><form class="demo-input-bar" id="demo-input-form"><input type="text" id="demo-user-input" placeholder="Ask Android demo app..." autocomplete="off"><button type="submit" id="demo-send-btn" aria-label="Send query">➤</button></form><a class="demo-open-app-link" id="demo-launch-full-app" href="https://depthlens.web.app/" style="display:block;text-decoration:none">&#10022; Open Full DepthLens App →</a></div></div><div class="copy reveal"><p class="eyebrow">Interactive Android Demo</p><h2>A calm interface for intense thinking.</h2><p>Experience the DepthLens engine live in your browser or take the native Android app everywhere you go. Decompose conflict, decision dilemmas, and systemic knots in real time.</p></div><div class="phone reveal"><div class="screen reality-map-screen"><div class="phone-status-bar"><span>09:41</span><span style="display:flex;gap:4px">5G ● 100%</span></div><div class="phone-app-header"><div style="display:flex;align-items:center;gap:6px"><b>Reality Causal Map</b></div><span style="font-size:9.5px;color:var(--cyan);font-weight:700">SYSTEM LOOP</span></div><div class="reality-node-graph" id="demo-map-graph"><div class="map-node node-active" data-info="Surface urgency forces quick patches that accumulate technical debt."><span class="node-dot"></span> <b>Surface Urgency</b></div><div class="map-arrow">↓ triggers</div><div class="map-node" data-info="Avoidance of core conflict creates hidden friction."><span class="node-dot" style="background:var(--rose)"></span> <b>Avoidance Loop</b></div><div class="map-arrow">↓ leads to</div><div class="map-node" data-info="Delayed decisions compound into repeated organizational crisis."><span class="node-dot" style="background:var(--violet2)"></span> <b>Delayed Decisions</b></div></div><div class="bubble ai" id="map-info-box" style="margin-top:8px;font-size:11px;line-height:1.45">Click any node above to trace the causal feedback loop.</div><a class="demo-open-app-link" id="demo-launch-map-app" href="https://depthlens.web.app/" style="display:block;text-decoration:none;margin-top:10px">&#10022; Launch Full Visualizer →</a></div></div></div></section>
 <section class="section" id="features"><div class="frame"><div class="copy reveal" style="margin-bottom:44px"><p class="eyebrow">Features</p><h2>Built for depth, speed, and ownership.</h2></div><div class="featuregrid reveal"><div class="feature"><i></i><h3>Layered analysis</h3><p>Decompose complex situations across emotional, strategic, systemic, and temporal realities.</p></div><div class="feature"><i></i><h3>Root cause tracing</h3><p>Find the origin point beneath symptoms, reactions, and repeated surface events.</p></div><div class="feature"><i></i><h3>Local-first privacy</h3><p>Designed around client-side ownership so your private reasoning remains yours.</p></div><div class="feature"><i></i><h3>Action synthesis</h3><p>Convert insight into high-leverage next steps, decision paths, and framing language.</p></div></div></div></section>
 <section class="section philosophy"><div class="frame reveal"><p class="eyebrow">Philosophy</p><h2>Clarity is not more information. It is better depth perception.</h2><p>DepthLens exists for people who refuse shallow answers. It is a tool for seeing structure, naming truth precisely, and acting without surrendering your judgment.</p></div></section>
 <section class="section" id="roadmap"><div class="frame"><div class="copy reveal" style="margin-bottom:34px"><p class="eyebrow">Roadmap</p><h2>The lens keeps widening.</h2></div><div class="road reveal"><div class="step"><b>01</b><h3>Smarter AI</h3><p>Smarter conversations<br>Faster responses<br>Better memory &amp; context<br>UI refinements</p></div><div class="step"><b>02</b><h3>Reality Intelligence</h3><p>Contextual Scenario Simulation<br>Adaptive Insight Generation<br>Real-Time Situation Awareness<br>Cognitive Bias Detection</p></div><div class="step"><b>03</b><h3>Universal Intelligence</h3><p>Real-Time Data Integration<br>Knowledge Graph Expansion<br>Autonomous Research Capabilities<br>Context-Aware Recommendations</p></div><div class="step"><b>04</b><h3>Personal Intelligence</h3><p>Goal &amp; Progress Tracking<br>Personalized Insights<br>Daily Intelligence Reports<br>Long-Term Memory</p></div></div><p style="text-align:center;margin-top:32px;color:var(--soft);font-size:18px"><b style="color:var(--cyan)">Vision:</b> Build the world's most advanced Reality Intelligence System.</p></div></section>
-<section class="section download" id="download"><div class="frame reveal"><p class="eyebrow">Download</p><h2>Take the lens with you.</h2><p>DepthLens for Android gives you a private reasoning environment for decisions, conflict, strategy, and self-analysis.</p><div class="cta"><a class="pill primary magnetic" href="https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.2.0/DepthLens_v6.2.0.apk" target="_blank" rel="noreferrer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Download APK (v6.2.0)</a><a class="pill magnetic" href="https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases" target="_blank" rel="noreferrer">GitHub Releases</a></div></div></section>
-</main><footer class="footer"><div class="frame"><div class="footer-brand-lockup"><div class="brand"><svg class="logo" viewBox="0 0 108 108" fill="none"><path d="M24 54C39 33 69 33 84 54C69 75 39 75 24 54Z" stroke="#8B5CF6" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M39 54a15 15 0 1 1 30 0a15 15 0 1 1-30 0" stroke="#00D9FF" stroke-width="4"/><path d="M43.4 64.6L64.6 43.4" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round"/><circle cx="48.7" cy="59.3" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/><circle cx="59.3" cy="48.7" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/></svg><span class="brand-textcol"><span class="brand-name">DEPTHLENS</span><span class="footer-tagline">See Beneath Surface</span></span></div></div><div class="footer-links"><a href="#features">Features</a><a href="https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.2.0/DepthLens_v6.2.0.apk" target="_blank" rel="noreferrer">Download APK</a><a href="https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases" target="_blank" rel="noreferrer">Releases</a></div></div></footer>
+<section class="section download" id="download"><div class="frame reveal"><p class="eyebrow">Download</p><h2>Take the lens with you.</h2><p>DepthLens for Android gives you a private reasoning environment for decisions, conflict, strategy, and self-analysis.</p><div class="cta download-cta-row" style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:28px"><a class="pill primary magnetic" href="https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases/download/6.1.1/DepthLens_v6.1.1.apk" target="_blank" rel="noreferrer" style="padding:0 28px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;vertical-align:middle"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download Android APK (v6.1.1)</a><a class="pill magnetic" id="btn-download-login" href="https://depthlens.web.app/" style="border-color:rgba(0,229,255,.45);color:var(--cyan);padding:0 26px">Open Web App (No Install)</a><a class="pill magnetic" href="https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases" target="_blank" rel="noreferrer" style="padding:0 22px">GitHub Releases</a></div></div></section>
+</main><footer class="footer"><div class="frame"><div class="footer-brand-lockup"><div class="brand"><svg class="logo" viewBox="0 0 108 108" fill="none"><path d="M24 54C39 33 69 33 84 54C69 75 39 75 24 54Z" stroke="#8B5CF6" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M39 54a15 15 0 1 1 30 0a15 15 0 1 1-30 0" stroke="#00D9FF" stroke-width="4"/><path d="M43.4 64.6L64.6 43.4" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round"/><circle cx="48.7" cy="59.3" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/><circle cx="59.3" cy="48.7" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/></svg><span class="brand-textcol"><span class="brand-name">DEPTHLENS</span><span class="footer-tagline">See Beyond Surface</span></span></div></div><div class="footer-links"><a href="#features">Features</a><a href="#app">Android Demo</a><a href="#download">Download</a><a href="https://depthlens.web.app/" id="footer-login">&#10022; Launch Web App</a><a href="https://github.com/guy-with-ideas-uncoded/DEPTHLENS/releases" target="_blank" rel="noreferrer">Releases</a></div></div></footer>
+
+<!-- Real Web Login Modal (Firebase Auth Integrated) -->
+<div id="web-login-modal" class="login-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="login-modal-card">
+    <button class="modal-close-btn" id="modal-close-btn" type="button" aria-label="Close modal">✕</button>
+    
+    <div style="text-align: center; margin-bottom: 6px;">
+      <svg class="logo" viewBox="0 0 108 108" fill="none" style="width: 48px; height: 48px; margin: 0 auto 12px; display: block;">
+        <path d="M24 54C39 33 69 33 84 54C69 75 39 75 24 54Z" stroke="#8B5CF6" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M39 54a15 15 0 1 1 30 0a15 15 0 1 1-30 0" stroke="#00D9FF" stroke-width="4"/>
+        <path d="M43.4 64.6L64.6 43.4" stroke="#8B5CF6" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="48.7" cy="59.3" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/>
+        <circle cx="59.3" cy="48.7" r="4.5" fill="#071326" stroke="#00D9FF" stroke-width="2.5"/>
+      </svg>
+      <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.22em; color: var(--cyan); font-weight: 800; margin-bottom: 4px;">REALITY INTELLIGENCE</div>
+      <h3 id="modal-title" style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.01em;">Sign in to DepthLens</h3>
+    </div>
+
+    <!-- Active Session Card (if user is already logged in) -->
+    <div id="active-session-block" style="display: none;">
+      <div class="active-session-pill">
+        <div>
+          <div id="session-user-name" style="font-size: 13px; font-weight: 700; color: #fff;">Explorer</div>
+          <div id="session-user-email" style="font-size: 11px; color: var(--soft);">user@example.com</div>
+        </div>
+        <button id="btn-enter-workspace" type="button" style="padding: 6px 14px; border-radius: 999px; background: var(--cyan); color: #05040d; font-size: 12px; font-weight: 700; border: none; cursor: pointer;">Enter App →</button>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <span style="font-size: 12px; color: var(--dim);">Or sign in with another account</span>
+        <button id="btn-signout-session" type="button" style="background: none; border: none; color: #ff9d9d; font-size: 12px; cursor: pointer; text-decoration: underline;">Sign Out</button>
+      </div>
+    </div>
+
+    <!-- Mode Selector Tabs -->
+    <div class="modal-tabs">
+      <button class="modal-tab-btn active" id="tab-signin" type="button">Sign In</button>
+      <button class="modal-tab-btn" id="tab-signup" type="button">Create Account</button>
+    </div>
+
+    <div id="login-status-box" class="login-status-box"></div>
+
+    <form id="firebase-auth-form">
+      <div class="login-input-group" id="group-name" style="display: none;">
+        <label class="login-input-label" for="auth-name">Your Full Name</label>
+        <input class="login-input-field" type="text" id="auth-name" placeholder="e.g. Maya Chen" autocomplete="name" />
+      </div>
+
+      <div class="login-input-group">
+        <label class="login-input-label" for="auth-email">Email Address</label>
+        <input class="login-input-field" type="email" id="auth-email" placeholder="name@domain.com" required autocomplete="email" />
+      </div>
+
+      <div class="login-input-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label class="login-input-label" for="auth-password" style="margin-bottom: 0;">Password</label>
+          <span style="font-size: 11px; color: var(--dim); cursor: pointer;" id="toggle-pw-visibility">Show</span>
+        </div>
+        <input class="login-input-field" type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password" minlength="6" />
+      </div>
+
+      <button class="login-submit-btn" id="btn-submit-auth" type="submit">Sign In to DepthLens</button>
+      <button class="login-guest-btn" id="btn-guest-login" type="button">✦ Instant Explorer (Guest Mode)</button>
+    </form>
+  </div>
+</div>
+</div>
+
+<!-- React Web Application Root Container (Mounted directly for #chat / #app / #insights) -->
+<div id="root" style="display: none; min-height: 100vh; width: 100%;"></div>
+
 <script>
 const root=document.documentElement;let mx=innerWidth/2,my=innerHeight/2,tx=mx,ty=my;addEventListener('pointermove',e=>{tx=e.clientX;ty=e.clientY},{passive:true});function mouseLoop(){mx+=(tx-mx)*.14;my+=(ty-my)*.14;root.style.setProperty('--mx',mx+'px');root.style.setProperty('--my',my+'px');requestAnimationFrame(mouseLoop)}mouseLoop();
 const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;document.querySelectorAll('.magnetic').forEach(el=>{el.addEventListener('pointermove',e=>{if(reduce)return;const r=el.getBoundingClientRect();el.style.transform=`translate3d(${(e.clientX-r.left-r.width/2)*.16}px,${(e.clientY-r.top-r.height/2)*.2}px,0)`});el.addEventListener('pointerleave',()=>el.style.transform='translate3d(0,0,0)')});
@@ -694,24 +1219,396 @@ document.querySelectorAll('.mobile-menu a').forEach(function(a){
     menu&&menu.setAttribute('aria-hidden','true');
   });
 });
-</script></body></html>
+</script>
 
+<!-- Real Web Login & App Route Management Script -->
+<script id="real-web-login-script">
+(function() {
+  const FIREBASE_API_KEY = "AIzaSyBeTF0j10K4huSdIl5Otx5EBiM_SXCVeWc";
+  const modal = document.getElementById('web-login-modal');
+  const landingView = document.getElementById('landing-view');
+  const appRoot = document.getElementById('root');
+  const statusBox = document.getElementById('login-status-box');
+  const submitBtn = document.getElementById('btn-submit-auth');
+  const guestBtn = document.getElementById('btn-guest-login');
+  const tabSignIn = document.getElementById('tab-signin');
+  const tabSignUp = document.getElementById('tab-signup');
+  const groupName = document.getElementById('group-name');
+  const authName = document.getElementById('auth-name');
+  const authEmail = document.getElementById('auth-email');
+  const authPassword = document.getElementById('auth-password');
+  const togglePw = document.getElementById('toggle-pw-visibility');
+  const activeSessionBlock = document.getElementById('active-session-block');
+  const sessionUserName = document.getElementById('session-user-name');
+  const sessionUserEmail = document.getElementById('session-user-email');
+  const enterWorkspaceBtn = document.getElementById('btn-enter-workspace');
+  const signoutSessionBtn = document.getElementById('btn-signout-session');
 
+  let isSignUpMode = false;
 
+  function showStatus(msg, isError) {
+    if (!statusBox) return;
+    statusBox.textContent = msg;
+    statusBox.className = 'login-status-box ' + (isError ? 'error' : 'success');
+  }
 
+  function clearStatus() {
+    if (!statusBox) return;
+    statusBox.textContent = '';
+    statusBox.className = 'login-status-box';
+  }
 
+  function updateActiveSessionDisplay() {
+    const isAuth = localStorage.getItem('depthlens-auth') === 'true';
+    const email = localStorage.getItem('depthlens-userEmail') || '';
+    const name = localStorage.getItem('depthlens-userName') || 'Active Explorer';
+    
+    // Navbar login button remains strictly "Login"
+    const navLoginBtn = document.getElementById('btn-nav-login');
+    if (navLoginBtn) {
+      navLoginBtn.textContent = 'Login';
+    }
 
+    if (isAuth && email) {
+      if (activeSessionBlock) activeSessionBlock.style.display = 'block';
+      if (sessionUserName) sessionUserName.textContent = name;
+      if (sessionUserEmail) sessionUserEmail.textContent = email;
+    } else {
+      if (activeSessionBlock) activeSessionBlock.style.display = 'none';
+    }
+  }
 
+  function openLoginModal(signup) {
+    if (signup) {
+      setMode(true);
+    }
+    updateActiveSessionDisplay();
+    clearStatus();
+    if (modal) modal.classList.add('open');
+  }
 
+  function closeLoginModal() {
+    if (modal) modal.classList.remove('open');
+  }
 
+  function setMode(signup) {
+    isSignUpMode = signup;
+    clearStatus();
+    if (signup) {
+      tabSignUp.classList.add('active');
+      tabSignIn.classList.remove('active');
+      groupName.style.display = 'block';
+      submitBtn.textContent = 'Create DepthLens Account';
+      authPassword.setAttribute('autocomplete', 'new-password');
+    } else {
+      tabSignIn.classList.add('active');
+      tabSignUp.classList.remove('active');
+      groupName.style.display = 'none';
+      submitBtn.textContent = 'Sign In to DepthLens';
+      authPassword.setAttribute('autocomplete', 'current-password');
+    }
+  }
 
+  // Switch between Landing View and Web App Root
+  function launchApp() {
+    closeLoginModal();
+    sessionStorage.setItem('depthlens_view', 'app');
+    localStorage.setItem('depthlens-auth', 'true');
+    if (landingView) landingView.style.display = 'none';
+    if (appRoot) {
+      appRoot.style.display = 'block';
+      appRoot.style.visibility = 'visible';
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    window.dispatchEvent(new CustomEvent('depthlens:open-app'));
+  }
 
+  function showLanding() {
+    closeLoginModal();
+    sessionStorage.setItem('depthlens_view', 'landing');
+    if (landingView) landingView.style.display = 'block';
+    if (appRoot) appRoot.style.display = 'none';
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
 
+  function routeView() {
+    const hash = window.location.hash;
+    const viewMode = sessionStorage.getItem('depthlens_view');
+    
+    if (hash === '#login' || hash === '#chat') {
+      window.location.href = TARGET_CHAT_URL;
+      return;
+    }
 
+    if (hash === '#chat' || hash === '#workspace' || hash === '#insights' || hash === '#voice' || hash === '#settings') {
+      launchApp();
+      return;
+    }
 
+    // Landing sections
+    if (hash === '#demo' || hash === '#engine' || hash === '#app' || hash === '#features' || hash === '#roadmap' || hash === '#download' || hash === '#top' || hash === '') {
+      if (viewMode !== 'app') {
+        showLanding();
+      }
+      return;
+    }
 
+    if (viewMode === 'app') {
+      launchApp();
+    } else {
+      showLanding();
+    }
+  }
 
+  // Real Firebase Authentication execution
+  async function handleAuth(e) {
+    e.preventDefault();
+    clearStatus();
 
+    const email = authEmail.value.trim();
+    const password = authPassword.value;
+    const name = authName.value.trim() || 'Explorer';
 
+    if (!email || !password) {
+      showStatus('Please fill in both email and password.', true);
+      return;
+    }
 
+    submitBtn.disabled = true;
+    submitBtn.textContent = isSignUpMode ? 'Creating Account...' : 'Signing in...';
 
+    const endpoint = isSignUpMode
+      ? `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`
+      : `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`;
+
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          password: password,
+          returnSecureToken: true
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        let err = data.error?.message || 'Authentication failed';
+        if (err.includes('EMAIL_EXISTS')) err = 'This email is already registered. Please click Sign In.';
+        else if (err.includes('INVALID_LOGIN_CREDENTIALS') || err.includes('INVALID_PASSWORD')) err = 'Invalid email or password. Please verify your credentials.';
+        else if (err.includes('WEAK_PASSWORD')) err = 'Password should be at least 6 characters.';
+        else if (err.includes('USER_NOT_FOUND')) err = 'No user found with this email. Please click Create Account.';
+        showStatus(err, true);
+        submitBtn.disabled = false;
+        submitBtn.textContent = isSignUpMode ? 'Create DepthLens Account' : 'Sign In to DepthLens';
+        return;
+      }
+
+      // If sign up, set display name
+      if (isSignUpMode && data.idToken && name) {
+        try {
+          await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${FIREBASE_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              idToken: data.idToken,
+              displayName: name,
+              returnSecureToken: true
+            })
+          });
+        } catch (_) {}
+      }
+
+      // Store authenticated credentials in localStorage
+      const userDisplayName = data.displayName || name || 'Explorer';
+      localStorage.setItem('depthlens-auth', 'true');
+      localStorage.setItem('depthlens-userEmail', data.email);
+      localStorage.setItem('depthlens-userName', userDisplayName);
+      localStorage.setItem('depthlens-userUid', data.localId);
+      localStorage.setItem('depthlens-token', data.idToken);
+
+      showStatus('✓ Authenticated successfully! Entering DepthLens...', false);
+
+      setTimeout(() => {
+        launchApp();
+      }, 500);
+
+    } catch (networkErr) {
+      showStatus('Network connection error. Please check your connection.', true);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = isSignUpMode ? 'Create DepthLens Account' : 'Sign In to DepthLens';
+    }
+  }
+
+  // Instant Guest / Explorer Login
+  function handleGuestLogin() {
+    const guestId = 'guest_' + Math.random().toString(36).substring(2, 9);
+    localStorage.setItem('depthlens-auth', 'true');
+    localStorage.setItem('depthlens-userEmail', 'explorer@depthlens.ai');
+    localStorage.setItem('depthlens-userName', 'Active Explorer');
+    localStorage.setItem('depthlens-userUid', guestId);
+    showStatus('✓ Explorer session ready! Launching app...', false);
+    setTimeout(() => {
+      launchApp();
+    }, 350);
+  }
+
+  // Sign out
+  function handleSignOut() {
+    localStorage.removeItem('depthlens-auth');
+    localStorage.removeItem('depthlens-userEmail');
+    localStorage.removeItem('depthlens-userName');
+    localStorage.removeItem('depthlens-userUid');
+    localStorage.removeItem('depthlens-token');
+    updateActiveSessionDisplay();
+    showStatus('Signed out successfully.', false);
+    setTimeout(clearStatus, 1500);
+  }
+
+  // Attach event listeners
+  document.getElementById('modal-close-btn')?.addEventListener('click', closeLoginModal);
+  tabSignIn?.addEventListener('click', () => setMode(false));
+  tabSignUp?.addEventListener('click', () => setMode(true));
+  document.getElementById('firebase-auth-form')?.addEventListener('submit', handleAuth);
+  guestBtn?.addEventListener('click', handleGuestLogin);
+  enterWorkspaceBtn?.addEventListener('click', () => {
+    launchApp();
+  });
+  signoutSessionBtn?.addEventListener('click', handleSignOut);
+
+  const TARGET_CHAT_URL = "https://depthlens.web.app/";
+
+  function redirectToChat(e) {
+    if (e) e.preventDefault();
+    window.location.href = TARGET_CHAT_URL;
+  }
+
+  function openLoginModal(signup) {
+    window.location.href = TARGET_CHAT_URL;
+  }
+
+  function launchApp() {
+    window.location.href = TARGET_CHAT_URL;
+  }
+
+  // Direct login & app triggers to Cloud Run Chat URL
+  document.getElementById('btn-hero-login')?.addEventListener('click', redirectToChat);
+  document.getElementById('btn-download-login')?.addEventListener('click', redirectToChat);
+  document.getElementById('mob-login')?.addEventListener('click', redirectToChat);
+  document.getElementById('footer-login')?.addEventListener('click', redirectToChat);
+  document.getElementById('demo-launch-full-app')?.addEventListener('click', redirectToChat);
+  document.getElementById('demo-launch-map-app')?.addEventListener('click', redirectToChat);
+
+  // Password visibility toggle
+  togglePw?.addEventListener('click', () => {
+    if (authPassword.type === 'password') {
+      authPassword.type = 'text';
+      togglePw.textContent = 'Hide';
+    } else {
+      authPassword.type = 'password';
+      togglePw.textContent = 'Show';
+    }
+  });
+
+  // Outside click to close modal
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeLoginModal();
+  });
+
+  // Interactive Android Demo Simulator in #app section
+  const demoFeed = document.getElementById('demo-chat-feed');
+  const demoChips = document.querySelectorAll('.demo-chip');
+  const demoForm = document.getElementById('demo-input-form');
+  const demoInput = document.getElementById('demo-user-input');
+  const demoLaunchFull = document.getElementById('demo-launch-full-app');
+  const demoLaunchMap = document.getElementById('demo-launch-map-app');
+
+  demoChips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      demoChips.forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      const q = chip.getAttribute('data-q');
+      const a = chip.getAttribute('data-a');
+      const layer = chip.getAttribute('data-layer');
+      const action = chip.getAttribute('data-action');
+      
+      if (demoFeed) {
+        demoFeed.innerHTML = `
+          <div class="bubble">${q}</div>
+          <div class="bubble ai">
+            <div class="demo-layer-tag">${layer}</div>
+            <div>${a}</div>
+            <div class="demo-action-callout">${action}</div>
+          </div>
+        `;
+        demoFeed.scrollTop = demoFeed.scrollHeight;
+      }
+    });
+  });
+
+  demoForm?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const query = demoInput?.value.trim();
+    if (!query || !demoFeed) return;
+
+    // Add user bubble
+    const userBubble = document.createElement('div');
+    userBubble.className = 'bubble';
+    userBubble.textContent = query;
+    demoFeed.appendChild(userBubble);
+    demoInput.value = '';
+
+    // Add thinking indicator
+    const thinkingBubble = document.createElement('div');
+    thinkingBubble.className = 'bubble ai';
+    thinkingBubble.innerHTML = '<span style="opacity:0.7">✦ Analyzing 7 reality layers...</span>';
+    demoFeed.appendChild(thinkingBubble);
+    demoFeed.scrollTop = demoFeed.scrollHeight;
+
+    setTimeout(() => {
+      thinkingBubble.innerHTML = `
+        <div class="demo-layer-tag">L7: Root Cause</div>
+        <div>System loop detected: Surface tension is driven by misaligned incentive structures and unspoken boundaries.</div>
+        <div class="demo-action-callout">⚡ Leverage: Frame explicit agreement before the next cycle.</div>
+      `;
+      demoFeed.scrollTop = demoFeed.scrollHeight;
+    }, 600);
+  });
+
+  // Interactive Reality Map Graph Nodes
+  const mapNodes = document.querySelectorAll('.map-node');
+  const mapInfo = document.getElementById('map-info-box');
+  mapNodes.forEach(node => {
+    node.addEventListener('click', () => {
+      mapNodes.forEach(n => n.classList.remove('node-active'));
+      node.classList.add('node-active');
+      const info = node.getAttribute('data-info');
+      if (mapInfo && info) {
+        mapInfo.innerHTML = `<b>Feedback Node:</b> ${info}`;
+      }
+    });
+  });
+
+  demoLaunchFull?.addEventListener('click', launchApp);
+  demoLaunchMap?.addEventListener('click', launchApp);
+
+  window.addEventListener('hashchange', routeView);
+  window.addEventListener('load', () => {
+    updateActiveSessionDisplay();
+    routeView();
+  });
+
+  // Global helpers
+  window.depthlensOpenLogin = openLoginModal;
+  window.depthlensLaunchApp = launchApp;
+  window.depthlensShowLanding = showLanding;
+})();
+</script>
+
+<!-- Mount React Application (Loads asynchronously in background) -->
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
